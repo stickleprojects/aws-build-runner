@@ -49,6 +49,24 @@ jobs:
       - name: Install tools (pinned)
         run: pip install --quiet "pyyaml==${PYYAML_VERSION}" "parliament==${PARLIAMENT_VERSION}" "setuptools<81"
 
+      - name: Commits use noreply email addresses only
+        if: github.event_name == 'pull_request'
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # Authors, committers and co-authors: GitHub noreply addresses (and Anthropic's, for Claude) only.
+          allowed='(@users\.noreply\.github\.com|^noreply@github\.com|^noreply@anthropic\.com)$'
+          bad="$( { git log --format='%ae%n%ce' "${BASE}..${HEAD}";
+                    git log --format='%(trailers:key=Co-authored-by,valueonly)' "${BASE}..${HEAD}" | sed -n 's/.*<\(.*\)>.*/\1/p'; } \
+                  | sort -u | grep -v -E "$allowed" || true)"
+          if [[ -n "$bad" ]]; then
+            echo "::error::Commits in this PR use non-noreply email addresses. Rewrite them with your GitHub noreply address."
+            echo "$bad" | sed 's/@.*/@…/'   # don't echo full addresses into a public log
+            exit 1
+          fi
+          echo "All commit emails are noreply addresses."
+
       - name: Regenerate policies and POLICY.md
         run: python3 -I part1-godmode/build-policies.py --draft
 
