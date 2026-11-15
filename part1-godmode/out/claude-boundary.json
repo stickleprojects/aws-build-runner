@@ -12,6 +12,7 @@
         "events:*",
         "lambda:*",
         "logs:*",
+        "resource-groups:*",
         "s3:*",
         "scheduler:*",
         "ssm:*",
@@ -180,6 +181,117 @@
           "ec2:VolumeType": [
             "io1",
             "io2"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "CreateOnlyInApprovedGroup0",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:CreateVolume",
+        "ec2:RunInstances"
+      ],
+      "Resource": [
+        "arn:aws:ec2:*:*:instance/*",
+        "arn:aws:ec2:*:*:volume/*"
+      ],
+      "Condition": {
+        "StringNotEquals": {
+          "aws:RequestTag/resource-group": [
+            "build-runner"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "CreateOnlyInApprovedGroup1",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:CreateImage",
+        "ec2:CreateLaunchTemplate",
+        "ec2:CreateSecurityGroup",
+        "ec2:CreateSnapshot"
+      ],
+      "Resource": [
+        "arn:aws:ec2:*:*:snapshot/*",
+        "arn:aws:ec2:*:*:image/*",
+        "arn:aws:ec2:*:*:launch-template/*",
+        "arn:aws:ec2:*:*:security-group/*"
+      ],
+      "Condition": {
+        "StringNotEquals": {
+          "aws:RequestTag/resource-group": [
+            "build-runner"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "CreateOnlyInApprovedGroup2",
+      "Effect": "Deny",
+      "Action": [
+        "cloudformation:CreateStack",
+        "iam:CreateInstanceProfile",
+        "iam:CreatePolicy",
+        "iam:CreateRole",
+        "lambda:CreateFunction",
+        "logs:CreateLogGroup"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:RequestTag/resource-group": [
+            "build-runner"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "ResourceGroupTagCantBeRemoved",
+      "Effect": "Deny",
+      "Action": [
+        "cloudformation:UntagResource",
+        "ec2:DeleteTags",
+        "iam:UntagInstanceProfile",
+        "iam:UntagPolicy",
+        "iam:UntagRole",
+        "lambda:UntagResource",
+        "logs:UntagLogGroup",
+        "logs:UntagResource"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "ForAnyValue:StringEquals": {
+          "aws:TagKeys": [
+            "resource-group"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "ResourceGroupTagOnlyApprovedValues",
+      "Effect": "Deny",
+      "Action": [
+        "cloudformation:TagResource",
+        "ec2:CreateTags",
+        "iam:TagInstanceProfile",
+        "iam:TagPolicy",
+        "iam:TagRole",
+        "lambda:TagResource",
+        "logs:TagLogGroup",
+        "logs:TagResource"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "ForAnyValue:StringEquals": {
+          "aws:TagKeys": [
+            "resource-group"
+          ]
+        },
+        "StringNotEquals": {
+          "aws:RequestTag/resource-group": [
+            "build-runner"
           ]
         }
       }

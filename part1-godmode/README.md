@@ -24,7 +24,7 @@ the IAM policies, so the description and what AWS enforces can't drift apart.
 | Stage | Where you see it | What has happened |
 |---|---|---|
 | **Proposed** | A pull request; `approved: pending` in policy.yaml | Claude drafted it; the `approved` check is red |
-| **Generated and checked** | The `policy` check on the PR or commit; its run summary shows the POLICY.md diff | `out/*.json` and POLICY.md regenerated (pushed back to the PR if stale); lint (parliament); ≈316 allow/deny checks for scope and cost; stored as the artifact `policies-<commit>` with checksums |
+| **Generated and checked** | The `policy` check on the PR or commit; its run summary shows the POLICY.md diff | `out/*.json` and POLICY.md regenerated (pushed back to the PR if stale); lint (parliament); ≈514 allow/deny checks for scope and cost; stored as the artifact `policies-<commit>` with checksums |
 | **Approved** | `approved: YYYY-MM-DD Kieron`; the `approved` check goes green; you merge | Only approved policy reaches main |
 | **Not yet applied** | Run summary on main: "AWS: not yet applied"; `./check-live.py` | Main is ahead of AWS |
 | **Applied** | GitHub deployment to the `aws` environment (repo sidebar → Deployments): *"Applied ⟨date⟩ by ⟨GitHub user⟩ as ⟨AWS identity⟩"*. IAM tags `applied-commit`, `applied-at` and `applied-by` on each policy. Run summary: "this commit is applied" | `apply.sh` re-checked the artifact, applied exactly it, and confirmed AWS matches |
@@ -65,7 +65,7 @@ Commands for drafting: `python3 -I build-policies.py --draft`, `./verify.py --of
 | [POLICY.md](POLICY.md) | Plain-English summary, generated. Read this |
 | [out/](out/) | Generated IAM JSON. Committed, so PRs show the real diff |
 | [build-policies.py](build-policies.py) | `policy.yaml` → `out/*.json` + `POLICY.md`. Refuses pending items unless `--draft`; `--check` reports a stale POLICY.md |
-| [verify.py](verify.py) | ≈316 allow/deny checks, for the user and for the worst role Claude could create. `--offline`: local evaluator. `--local`: IAM simulator on the drafts. Default: IAM simulator on the live policies |
+| [verify.py](verify.py) | ≈514 allow/deny checks, for the user and for the worst role Claude could create. `--offline`: local evaluator. `--local`: IAM simulator on the drafts. Default: IAM simulator on the live policies |
 | [config.py](config.py) | Account id and IAM user name, which are kept out of this public repo. Read from env vars, `.env.local` or GitHub repo variables. Committed JSON uses `{{ACCOUNT_ID}}`, filled in only when checking against AWS or applying |
 | [check-live.py](check-live.py) | Live AWS vs this checkout: drift, applied commit, date, who |
 | [apply.sh](apply.sh) | **Admin only.** Applies main's checked artifact and records it |
@@ -75,7 +75,7 @@ Commands for drafting: `python3 -I build-policies.py --draft`, `./verify.py --of
 ## Status
 
 Drafted 2026-11-16; everything is `approved: pending`, and nothing is applied: `check-live.py`
-shows the old v1 policy live. The checks pass on the offline evaluator (316 of 316). A deliberately
+shows the old v1 policy live. The checks pass on the offline evaluator (514 of 514). A deliberately
 broken draft was caught in all six ways tried. The real IAM simulator and Access Analyzer run inside
 `apply.sh`.
 

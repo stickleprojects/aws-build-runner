@@ -29,7 +29,9 @@ Read [readme.md](readme.md) first; costs in [PRICING.md](PRICING.md).
 - IAM roles, policies and instance profiles Claude creates: path `/claude/`, permissions boundary
   `arn:aws:iam::<account>:policy/guardrails/claude-boundary` (creating a role without it fails).
   Give each role only what its job needs, never the whole boundary.
-- Tag every resource `managed-by=build-machine` (or the project it belongs to).
+- Every resource carries `resource-group=<approved group>` (today: `build-runner`). The policy denies the main
+  creates without it; for the rest (S3 buckets, schedules, VPCs…) use CloudFormation stack tags. A new group is a
+  policy change. One AWS Resource Group per group, so it can all be seen in the console.
 - SSM parameters under `/build/`; secrets as SecureString. Never write secrets into this repo.
 - Infrastructure as CloudFormation stacks named `build-*`; tear down what tests create.
 - Approved instance types: `t3.*`, `t3a.*`, `t4g.*`, `m*`/`c*` at `large`/`xlarge`. No NAT gateways.
