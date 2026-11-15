@@ -42,7 +42,8 @@ EventBridge Scheduler, every 15 min ─> reaper Lambda: terminates build-runner 
 - GitHub credential: a fine-grained PAT, or better a GitHub App, with repository
   *Administration: read & write* on spellbound3d only (that is what JIT runner configs need),
   stored as an SSM SecureString under `/build/github/`. The webhook secret is stored there too.
-- Tags: everything `managed-by=build-machine`, so cost reports and the reaper can find it.
+- Tags: everything `resource-group=build-runner` (required by the policy), so the Resource Group, cost reports and
+  the reaper can find it. The stack carries the tag, so resources that can't be tagged at creation get it too.
 - IaC: one CloudFormation stack `build-runner` (Lambda code packaged to an S3 bucket).
 
 ## Steps

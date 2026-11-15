@@ -36,11 +36,43 @@ def is_approved(value) -> bool:
 def pending_items(p: dict) -> list:
     items = [f"service: {s['title']}" for s in p["services"] if not is_approved(s.get("approved"))]
     items += [f"global: {g['title']}" for g in p["global"] if not is_approved(g.get("approved"))]
-    for key, label in (("see_everywhere", "read-only everywhere"), ("iam", "IAM for what Claude builds")):
+    for key, label in (("see_everywhere", "read-only everywhere"), ("iam", "IAM for what Claude builds"),
+                       ("resource_groups", "resource-group tag on everything Claude creates")):
+        if key not in p:
+            continue
         if not is_approved(p[key].get("approved")):
             items.append(label)
     items += [f"change {c['date']}: {c['what']}" for c in p.get("changes", []) if not is_approved(c.get("approved"))]
     return items
+
+
+def resource_group_statements(p: dict) -> list:
+    """Denies that make every tag-on-create resource carry an approved resource-group tag."""
+    rg = p.get("resource_groups")
+    if not rg:
+        return []
+    key, values = rg["tag_key"], sorted(rg["groups"])
+    request_tag = f"aws:RequestTag/{key}"
+    stmts = []
+    for i, group in enumerate(rg["enforced_on"]):
+        types = group["resources"]
+        stmts.append({
+            "Sid": f"CreateOnlyInApprovedGroup{i}", "Effect": "Deny", "Action": sorted(group["actions"]),
+            "Resource": "*" if types == "*" else [f"arn:aws:ec2:*:*:{t}/*" for t in types],
+            # Also true when the tag is missing: StringNotEquals on an absent key matches.
+            "Condition": {"StringNotEquals": {request_tag: values}},
+        })
+    stmts.append({
+        "Sid": "ResourceGroupTagCantBeRemoved", "Effect": "Deny", "Action": sorted(rg["untag_actions"]),
+        "Resource": "*", "Condition": {"ForAnyValue:StringEquals": {"aws:TagKeys": [key]}},
+    })
+    stmts.append({
+        "Sid": "ResourceGroupTagOnlyApprovedValues", "Effect": "Deny", "Action": sorted(rg["tag_actions"]),
+        "Resource": "*",
+        "Condition": {"ForAnyValue:StringEquals": {"aws:TagKeys": [key]},
+                      "StringNotEquals": {request_tag: values}},
+    })
+    return stmts
 
 
 def statements(p: dict) -> dict:
@@ -127,6 +159,8 @@ def statements(p: dict) -> dict:
             "Resource": "arn:aws:ec2:*:*:volume/*",
             "Condition": {"StringEquals": {"ec2:VolumeType": limits["blocked_volume_types"]}},
         })
+
+    denies += resource_group_statements(p)
 
     role_arn = f"arn:aws:iam::{acct}:role{path}*"
     pass_roles = {
@@ -271,6 +305,28 @@ def summary(p: dict, pending: list, sizes: dict) -> str:
     w(f"- **Cannot**: create IAM users, access keys or groups; change its own permissions; touch roles or policies")
     w(f"  outside `{path}` (for example the account's `AccountFullAccessRole`).")
     w("")
+    rg = p.get("resource_groups")
+    if rg:
+        key = rg["tag_key"]
+        w("## Resource groups")
+        w("")
+        w(f"Everything Claude creates belongs to a resource group: the tag **`{key}`** with one of these values.")
+        w("Each group also has an AWS Resource Group of the same name (a saved tag search) to see it all in the console.")
+        w("")
+        w("| Group | For |")
+        w("|---|---|")
+        for name, what in rg["groups"].items():
+            w(f"| `{name}` | {what} |")
+        w("")
+        enforced = ", ".join(f"`{a}`" for g in rg["enforced_on"] for a in g["actions"])
+        w(f"- **Enforced at creation**: {enforced}. Without an approved `{key}` tag, these are denied.")
+        w(f"- **Can't be removed or changed** to an unapproved group, on the resources above.")
+        w("- **Not enforceable at creation** (AWS doesn't accept tags there, so requiring one would block them):")
+        w("  S3 buckets, SSM parameter updates, EventBridge rules and schedules; also VPCs, subnets, route tables")
+        w("  and gateways (their creation touches an existing VPC). These get the tag from their CloudFormation")
+        w("  stack's tags; Claude creates them through stacks.")
+        w("- **A new group** goes through the change process, like any other permission.")
+        w("")
     w("## Set by godmode, outside the policy")
     w("")
     if "budget_usd" in settings:

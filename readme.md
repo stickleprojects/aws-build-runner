@@ -51,7 +51,7 @@ part1-godmode/
   policy.yaml          the definition: approved services, limits, approvals   <- the only file to edit
   build-policies.py    policy.yaml -> IAM JSON in out/ + POLICY.md
   out/                 generated IAM JSON (committed, so PRs show the real diff)
-  verify.py            ~316 allow/deny checks (offline, or with the IAM simulator)
+  verify.py            ~514 allow/deny checks (offline, or with the IAM simulator)
   check-live.py        live AWS vs the checkout: drift, applied commit, date, who
   apply.sh             admin only: applies main's CI-checked artifact, records who applied it and when
   CHECKLIST.md         the first godmode session, step by step
@@ -68,7 +68,7 @@ date and who). See [part1-godmode/README.md](part1-godmode/README.md#lifecycle-o
 
 ## Status
 
-- [x] Part 1 drafted as an allow-list (2026-11-16). 316 of 316 checks pass on the offline evaluator,
+- [x] Part 1 drafted as an allow-list (2026-11-16). 514 of 514 checks pass on the offline evaluator,
       and deliberately broken drafts were caught.
 - [ ] Part 1 approved: read [POLICY.md](part1-godmode/POLICY.md); everything is `approved: pending`.
 - [ ] Part 1 applied (godmode: [CHECKLIST](part1-godmode/CHECKLIST.md)). AWS's validator and the real
