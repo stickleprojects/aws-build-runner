@@ -1,0 +1,195 @@
+# Policy CI. Never touches AWS: applying stays a godmode step (part1-godmode/apply.sh).
+#
+#   policy    Regenerates out/*.json and POLICY.md from policy.yaml (pushing them back to a stale
+#             same-repo PR branch), lints them, and runs the offline allow/deny checks. Then it stores
+#             the checked files as the artifact "policies-<commit>", with SHA256SUMS and
+#             manifest.json. apply.sh applies only that artifact, for the commit at main's head.
+#   approved  Fails while anything in policy.yaml is "approved: pending". Required for merging,
+#             so main only ever holds approved policy.
+name: policy
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:  # re-runs after the bot pushes regenerated files, or refreshes an expired artifact
+
+permissions:
+  contents: read
+
+concurrency:
+  group: policy-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYYAML_VERSION: "6.0.3"
+  PARLIAMENT_VERSION: "1.6.4"
+
+jobs:
+  policy:
+    # GitHub-hosted only: PRs may come from forks.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # push regenerated files to same-repo PR branches
+      actions: write    # re-dispatch this workflow on the pushed commit
+      deployments: read # report whether this commit has been applied to AWS
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          # The branch itself (not the merge commit), so regenerated files can be pushed to it.
+          ref: ${{ github.event.pull_request.head.ref || github.ref }}
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install tools (pinned)
+        run: pip install --quiet "pyyaml==${PYYAML_VERSION}" "parliament==${PARLIAMENT_VERSION}" "setuptools<81"
+
+      - name: Regenerate policies and POLICY.md
+        run: python3 -I part1-godmode/build-policies.py --draft
+
+      - name: Push regenerated files (same-repo PRs)
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [[ -z "$(git status --porcelain -- part1-godmode/out part1-godmode/POLICY.md)" ]]; then
+            echo "Generated files are up to date."; exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add part1-godmode/out part1-godmode/POLICY.md
+          git commit -m "Regenerate policies from policy.yaml"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "HEAD:${BRANCH}"
+          gh workflow run policy.yml --repo "$REPO" --ref "$BRANCH"
+          echo "::notice::Regenerated files were stale and have been pushed; checks run again on the new commit."
+
+      - name: Generated files must match policy.yaml
+        run: |
+          if [[ -n "$(git status --porcelain -- part1-godmode/out part1-godmode/POLICY.md)" ]]; then
+            git --no-pager diff --stat
+            echo "::error::out/ or POLICY.md is stale. Run: python3 -I part1-godmode/build-policies.py --draft"
+            exit 1
+          fi
+
+      - name: Lint the IAM policies (parliament)
+        env:
+          # A dummy account fills the {{ACCOUNT_ID}} placeholder, so the ARNs are well-formed.
+          # CI never reads the real account id or user name.
+          AWS_ACCOUNT_ID: "000000000000"
+          AWS_CLAUDE_USER: example-claude-user
+        run: |
+          status=0
+          for f in part1-godmode/out/*.json; do
+            doc="$(python3 -I part1-godmode/config.py --render "$f")"
+            findings="$(parliament --minimum_severity MEDIUM --string "$doc" < /dev/null 2>/dev/null || true)"
+            # rds:DatabaseClass is a real key that parliament's data doesn't know; nothing else is expected.
+            findings="$(grep -v 'Unknown condition rds:DatabaseClass' <<<"$findings" || true)"
+            if [[ -n "$findings" ]]; then echo "== $f"; echo "$findings"; status=1; fi
+          done
+          exit $status
+
+      - name: Offline allow/deny checks
+        run: |
+          set -o pipefail
+          python3 -I part1-godmode/verify.py --offline | tee "$RUNNER_TEMP/verify.txt" | grep -E '^FAIL|checks'
+
+      - name: Package the checked policies
+        id: package
+        env:
+          REF: ${{ github.ref }}
+          EVENT: ${{ github.event_name }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          REPO: ${{ github.repository }}
+        run: |
+          commit="$(git rev-parse HEAD)"
+          dir="$RUNNER_TEMP/policies"
+          mkdir -p "$dir/out"
+          cp part1-godmode/out/*.json "$dir/out/"
+          cp part1-godmode/POLICY.md part1-godmode/policy.yaml "$dir/"
+          (cd "$dir" && sha256sum out/*.json POLICY.md policy.yaml > SHA256SUMS)
+          pending=false; grep -q '^> \*\*DRAFT' part1-godmode/POLICY.md && pending=true
+          jq -n --arg commit "$commit" --arg ref "$REF" --arg event "$EVENT" --arg repo "$REPO" \
+                --arg run_id "$RUN_ID" --arg run_attempt "$RUN_ATTEMPT" --argjson pending "$pending" \
+                --arg checks "$(tail -1 "$RUNNER_TEMP/verify.txt")" \
+            '{repository:$repo, commit:$commit, ref:$ref, event:$event, run_id:$run_id,
+              run_attempt:$run_attempt, pending_approval:$pending, offline_checks:$checks}' > "$dir/manifest.json"
+          cat "$dir/manifest.json"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "dir=$dir" >> "$GITHUB_OUTPUT"
+
+      - name: Store as artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: policies-${{ steps.package.outputs.commit }}
+          path: ${{ steps.package.outputs.dir }}
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Summary
+        if: always()
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          COMMIT: ${{ steps.package.outputs.commit }}
+        run: |
+          # Latest successful deployment to the "aws" environment = what apply.sh last applied.
+          applied="$(gh api "repos/${REPO}/deployments?environment=aws&per_page=30" --jq '.[] | "\(.id) \(.sha)"' 2>/dev/null \
+            | while read -r id sha; do
+                status="$(gh api "repos/${REPO}/deployments/${id}/statuses?per_page=1" --jq '.[0] | "\(.state)|\(.description)"')"
+                if [[ "$status" == success\|* ]]; then printf '%s|%s\n' "$sha" "${status#success|}"; break; fi
+              done || true)"
+          {
+            echo "## Policy"
+            echo
+            tail -1 "$RUNNER_TEMP/verify.txt" 2>/dev/null | sed 's/^/**Checks:** /' || true
+            echo
+            echo "**Artifact:** \`policies-${COMMIT}\` (generated and checked)"
+            echo
+            if [[ -z "$applied" ]]; then
+              echo "**AWS:** nothing has been applied yet."
+            elif [[ "${applied%%|*}" == "$COMMIT" ]]; then
+              echo "**AWS:** this commit is applied: ${applied#*|}."
+            else
+              echo "**AWS:** not yet applied. AWS has \`${applied:0:12}\`: ${applied#*|}."
+            fi
+            echo
+            if grep -q '^> \*\*DRAFT' part1-godmode/POLICY.md; then
+              echo "**Pending approval:**"; echo
+              sed -n '/^> - /s/^> //p' part1-godmode/POLICY.md
+            else
+              echo "**Nothing pending.**"
+            fi
+            echo
+            if [[ -n "${BASE:-}" ]] && git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+              echo "### POLICY.md changes"; echo
+              echo '```diff'
+              git --no-pager diff "$BASE" -- part1-godmode/POLICY.md || true
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  approved:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - run: pip install --quiet "pyyaml==${PYYAML_VERSION}"
+      - name: Everything in policy.yaml is approved
+        # Exits 2 and lists what's pending; otherwise builds, which must change nothing.
+        run: |
+          python3 -I part1-godmode/build-policies.py
+          git diff --exit-code -- part1-godmode/out part1-godmode/POLICY.md

@@ -1,0 +1,165 @@
+# What Claude's IAM user may do in AWS. The ONE source of truth.
+#
+# Everything not granted here is denied, because nothing else grants it.
+# build-policies.py turns this file into the IAM policies (out/*.json) and the
+# plain-English summary (POLICY.md). Don't edit either output by hand.
+#
+# Changing it (see README.md, "Change process"):
+#   1. Claude proposes the change and adds it here with  approved: pending
+#   2. python3 -I build-policies.py --draft   and   ./verify.py --local   (draft POLICY.md + tests)
+#   3. Kieron reads the POLICY.md diff; approves by setting  approved: YYYY-MM-DD Kieron
+#   4. godmode: ./apply.sh EMAIL   (refuses while anything is pending)
+
+# The account id and IAM user name are not in this (public) repo: see config.py.
+region: ap-southeast-2
+region_name: Sydney
+
+# Services Claude may create, change and delete things with, in Sydney only.
+# actions:  IAM action patterns granted.
+# probe:    one action the tests expect to be allowed (in Sydney) and denied (elsewhere).
+# blocked:  actions inside the service that stay denied, with the reason.
+services:
+  - id: ec2
+    title: EC2 and VPC
+    use: Build machines, AMIs, snapshots, volumes, launch templates; VPCs, subnets, security groups, internet gateways
+    approved: pending
+    actions: ["ec2:*"]
+    probe: ec2:CreateSecurityGroup
+    limits:
+      instance_types: ["t3.*", "t3a.*", "t4g.*", "m*.large", "m*.xlarge", "c*.large", "c*.xlarge"]
+      max_volume_gib: 256
+      blocked_volume_types: [io1, io2]
+      shared_tenancy_only: true
+    blocked:
+      "ec2:CreateNatGateway": NAT gateway (≈US$45/month each, plus data)
+      "ec2:CreateTransitGateway": Transit gateway (≈US$50/month per attachment)
+      "ec2:CreateVpnConnection": Site-to-site VPN (≈US$36/month)
+      "ec2:CreateClientVpnEndpoint": Client VPN (≈US$73/month per subnet)
+      "ec2:CreateVerifiedAccess*": Verified Access (≈US$200/month per app)
+      "ec2:EnableFastSnapshotRestores": Fast snapshot restore (≈US$650/month per snapshot per zone)
+      "ec2:Purchase*": Reserved instances, capacity blocks, host reservations (long commitments)
+      "ec2:ModifyReservedInstances": Reserved instance changes
+      "ec2:AcceptReservedInstancesExchangeQuote": Reserved instance exchanges
+      "ec2:AllocateHosts": Dedicated hosts
+      "ec2:CreateCapacityReservation*": Capacity reservations (billed whether used or not)
+      "ec2:CreateFleet": EC2 Fleet (launches many instances in one call, skipping the type limits)
+      "ec2:RequestSpotFleet": Spot Fleet (same)
+      "ec2:RequestSpotInstances": Legacy spot requests (spot goes through RunInstances instead)
+      "ec2:DisableImageBlockPublicAccess": Making AMIs public
+      "ec2:DisableSnapshotBlockPublicAccess": Making EBS snapshots public
+      "ec2:DisableEbsEncryptionByDefault": Turning off disk encryption by default
+
+  - id: ssm
+    title: Systems Manager
+    use: Parameters and secrets (Parameter Store), Session Manager shell into instances, Run Command
+    approved: pending
+    actions: ["ssm:*", "ssmmessages:*", "ec2messages:*"]
+    probe: ssm:PutParameter
+
+  - id: lambda
+    title: Lambda
+    use: The runner webhook and the reaper that removes stray instances
+    approved: pending
+    actions: ["lambda:*"]
+    probe: lambda:CreateFunction
+    blocked:
+      "lambda:PutProvisionedConcurrencyConfig": Provisioned concurrency (billed around the clock)
+
+  - id: events
+    title: EventBridge and Scheduler
+    use: Scheduled jobs (the reaper), event rules
+    approved: pending
+    actions: ["events:*", "scheduler:*"]
+    probe: scheduler:CreateSchedule
+
+  - id: logs
+    title: CloudWatch Logs and metrics
+    use: Logs from Lambda and the runner instances; metrics and alarms
+    approved: pending
+    actions: ["logs:*", "cloudwatch:*"]
+    probe: logs:CreateLogGroup
+
+  - id: s3
+    title: S3
+    use: Lambda code and template packages, build artifacts
+    approved: pending
+    actions: ["s3:*"]
+    probe: s3:CreateBucket
+    blocked:
+      "s3:PutAccountPublicAccessBlock": Turning off the account-wide public access block
+      "s3:PutBucketObjectLockConfiguration": Object lock (locked data can't be deleted, so it is billed until the lock ends)
+
+  - id: cloudformation
+    title: CloudFormation
+    use: Deploying and tearing down stacks (runs with Claude's own rights, so the same limits apply)
+    approved: pending
+    actions: ["cloudformation:*"]
+    probe: cloudformation:CreateStack
+
+  - id: kms
+    title: KMS, through other services only
+    use: Encrypted disks, SecureString parameters, encrypted S3 objects and Lambda settings, all with AWS-managed keys. No creating keys
+    approved: pending
+    actions: ["kms:Decrypt", "kms:Encrypt", "kms:GenerateDataKey*", "kms:ReEncrypt*", "kms:DescribeKey", "kms:CreateGrant"]
+    via_services: [ec2, ssm, s3, lambda]
+    probe: kms:Decrypt
+
+# Services that aren't regional (IAM, STS, billing). Read or narrow rights only.
+global:
+  - id: identity
+    title: Who am I
+    approved: pending
+    actions: ["sts:GetCallerIdentity"]
+  - id: billing
+    title: Costs and prices, read only
+    use: Checking spend, budgets and prices before suggesting anything
+    approved: pending
+    actions: ["budgets:View*", "budgets:Describe*", "ce:Get*", "ce:Describe*", "ce:List*", "pricing:*"]
+
+# Read-only everywhere (all regions), to find forgotten resources. Listing and metadata only.
+see_everywhere:
+  approved: pending
+  actions:
+    - "ec2:Describe*"
+    - "lambda:List*"
+    - "lambda:GetFunction*"
+    - "cloudformation:Describe*"
+    - "cloudformation:List*"
+    - "s3:ListAllMyBuckets"
+    - "s3:GetBucketLocation"
+    - "s3:GetBucketTagging"
+    - "tag:GetResources"
+    - "tag:GetTagKeys"
+    - "tag:GetTagValues"
+    - "logs:DescribeLogGroups"
+    - "cloudtrail:LookupEvents"
+    - "servicequotas:Get*"
+    - "servicequotas:List*"
+    - "iam:Get*"
+    - "iam:List*"
+    - "iam:GenerateServiceLastAccessedDetails"
+    - "iam:SimulatePrincipalPolicy"
+    - "iam:SimulateCustomPolicy"
+    - "access-analyzer:ValidatePolicy"
+    - "access-analyzer:CheckNoNewAccess"
+    - "access-analyzer:CheckAccessNotGranted"
+    - "access-analyzer:CheckNoPublicAccess"
+
+# Permissions for what Claude builds: roles, policies, instance profiles.
+iam:
+  approved: pending
+  path: /claude/
+  boundary: guardrails/claude-boundary
+  pass_roles_to: [ec2.amazonaws.com, lambda.amazonaws.com, scheduler.amazonaws.com, events.amazonaws.com, cloudformation.amazonaws.com]
+  service_linked_roles: [spot.amazonaws.com]
+
+# Applied by apply.sh (godmode), outside the policy. Claude can't change them.
+account_settings:
+  budget_usd: 30
+  block_public_access: [S3 (whole account), AMIs, EBS snapshots]
+  ebs_encryption_by_default: true
+
+changes:
+  - date: 2026-11-16
+    what: First allow-list, for building the runner; replaces the old claude-assistant-policy v1
+    approved: pending

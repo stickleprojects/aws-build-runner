@@ -1,0 +1,208 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ApprovedServicesInHomeRegion",
+      "Effect": "Allow",
+      "Action": [
+        "cloudformation:*",
+        "cloudwatch:*",
+        "ec2:*",
+        "ec2messages:*",
+        "events:*",
+        "lambda:*",
+        "logs:*",
+        "s3:*",
+        "scheduler:*",
+        "ssm:*",
+        "ssmmessages:*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-southeast-2"
+        }
+      }
+    },
+    {
+      "Sid": "KmsOnlyThroughApprovedServices",
+      "Effect": "Allow",
+      "Action": [
+        "kms:Decrypt",
+        "kms:Encrypt",
+        "kms:GenerateDataKey*",
+        "kms:ReEncrypt*",
+        "kms:DescribeKey",
+        "kms:CreateGrant"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "kms:ViaService": [
+            "ec2.ap-southeast-2.amazonaws.com",
+            "ssm.ap-southeast-2.amazonaws.com",
+            "s3.ap-southeast-2.amazonaws.com",
+            "lambda.ap-southeast-2.amazonaws.com"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "GlobalIdentityAndBilling",
+      "Effect": "Allow",
+      "Action": [
+        "budgets:Describe*",
+        "budgets:View*",
+        "ce:Describe*",
+        "ce:Get*",
+        "ce:List*",
+        "pricing:*",
+        "sts:GetCallerIdentity"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ReadOnlyEverywhere",
+      "Effect": "Allow",
+      "Action": [
+        "access-analyzer:CheckAccessNotGranted",
+        "access-analyzer:CheckNoNewAccess",
+        "access-analyzer:CheckNoPublicAccess",
+        "access-analyzer:ValidatePolicy",
+        "cloudformation:Describe*",
+        "cloudformation:List*",
+        "cloudtrail:LookupEvents",
+        "ec2:Describe*",
+        "iam:GenerateServiceLastAccessedDetails",
+        "iam:Get*",
+        "iam:List*",
+        "iam:SimulateCustomPolicy",
+        "iam:SimulatePrincipalPolicy",
+        "lambda:GetFunction*",
+        "lambda:List*",
+        "logs:DescribeLogGroups",
+        "s3:GetBucketLocation",
+        "s3:GetBucketTagging",
+        "s3:ListAllMyBuckets",
+        "servicequotas:Get*",
+        "servicequotas:List*",
+        "tag:GetResources",
+        "tag:GetTagKeys",
+        "tag:GetTagValues"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "BlockedActions",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:AcceptReservedInstancesExchangeQuote",
+        "ec2:AllocateHosts",
+        "ec2:CreateCapacityReservation*",
+        "ec2:CreateClientVpnEndpoint",
+        "ec2:CreateFleet",
+        "ec2:CreateNatGateway",
+        "ec2:CreateTransitGateway",
+        "ec2:CreateVerifiedAccess*",
+        "ec2:CreateVpnConnection",
+        "ec2:DisableEbsEncryptionByDefault",
+        "ec2:DisableImageBlockPublicAccess",
+        "ec2:DisableSnapshotBlockPublicAccess",
+        "ec2:EnableFastSnapshotRestores",
+        "ec2:ModifyReservedInstances",
+        "ec2:Purchase*",
+        "ec2:RequestSpotFleet",
+        "ec2:RequestSpotInstances",
+        "lambda:PutProvisionedConcurrencyConfig",
+        "s3:PutAccountPublicAccessBlock",
+        "s3:PutBucketObjectLockConfiguration"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "OnlyApprovedInstanceTypes",
+      "Effect": "Deny",
+      "Action": "ec2:RunInstances",
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": {
+        "StringNotLike": {
+          "ec2:InstanceType": [
+            "t3.*",
+            "t3a.*",
+            "t4g.*",
+            "m*.large",
+            "m*.xlarge",
+            "c*.large",
+            "c*.xlarge"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "NoResizingPastApprovedTypes",
+      "Effect": "Deny",
+      "Action": "ec2:ModifyInstanceAttribute",
+      "Resource": "*",
+      "Condition": {
+        "Null": {
+          "ec2:Attribute/InstanceType": "false"
+        },
+        "StringNotLike": {
+          "ec2:Attribute/InstanceType": [
+            "t3.*",
+            "t3a.*",
+            "t4g.*",
+            "m*.large",
+            "m*.xlarge",
+            "c*.large",
+            "c*.xlarge"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "SharedTenancyOnly",
+      "Effect": "Deny",
+      "Action": "ec2:RunInstances",
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": {
+        "StringNotEquals": {
+          "ec2:Tenancy": "default"
+        }
+      }
+    },
+    {
+      "Sid": "MaxVolumeSize",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:CreateVolume",
+        "ec2:ModifyVolume",
+        "ec2:RunInstances"
+      ],
+      "Resource": "arn:aws:ec2:*:*:volume/*",
+      "Condition": {
+        "NumericGreaterThan": {
+          "ec2:VolumeSize": "256"
+        }
+      }
+    },
+    {
+      "Sid": "BlockedVolumeTypes",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:CreateVolume",
+        "ec2:ModifyVolume",
+        "ec2:RunInstances"
+      ],
+      "Resource": "arn:aws:ec2:*:*:volume/*",
+      "Condition": {
+        "StringEquals": {
+          "ec2:VolumeType": [
+            "io1",
+            "io2"
+          ]
+        }
+      }
+    }
+  ]
+}
