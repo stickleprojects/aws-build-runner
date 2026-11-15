@@ -2,24 +2,6 @@
 
 Generated from [policy.yaml](policy.yaml) by `build-policies.py`. Don't edit this file.
 
-> **DRAFT, not approved yet.** Pending:
-> - service: EC2 and VPC
-> - service: Systems Manager
-> - service: Lambda
-> - service: EventBridge and Scheduler
-> - service: CloudWatch Logs and metrics
-> - service: S3
-> - service: CloudFormation
-> - service: Resource Groups
-> - service: KMS, through other services only
-> - global: Who am I
-> - global: Costs and prices, read only
-> - read-only everywhere
-> - IAM for what Claude builds
-> - resource-group tag on everything Claude creates
-> - change 2026-11-16: First allow-list, for building the runner; replaces the old claude-assistant-policy v1
-> - change 2026-11-16: Every resource Claude creates must carry an approved resource-group tag (first group build-runner); adds AWS Resource Groups
-
 Claude's IAM user (`AWS_CLAUDE_USER`) in the account `AWS_ACCOUNT_ID` · home region Sydney (`ap-southeast-2`). The account id and user name aren't in the repo: see [config.py](config.py).
 
 ## In short
@@ -35,15 +17,15 @@ Claude's IAM user (`AWS_CLAUDE_USER`) in the account `AWS_ACCOUNT_ID` · home re
 
 | Service | Used for | Allowed | Approved |
 |---|---|---|---|
-| EC2 and VPC | Build machines, AMIs, snapshots, volumes, launch templates; VPCs, subnets, security groups, internet gateways | everything, except 17 blocked actions (below); instance type and disk limits | pending |
-| Systems Manager | Parameters and secrets (Parameter Store), Session Manager shell into instances, Run Command | everything | pending |
-| Lambda | The runner webhook and the reaper that removes stray instances | everything, except 1 blocked action (below) | pending |
-| EventBridge and Scheduler | Scheduled jobs (the reaper), event rules | everything | pending |
-| CloudWatch Logs and metrics | Logs from Lambda and the runner instances; metrics and alarms | everything | pending |
-| S3 | Lambda code and template packages, build artifacts | everything, except 2 blocked actions (below) | pending |
-| CloudFormation | Deploying and tearing down stacks (runs with Claude's own rights, so the same limits apply) | everything | pending |
-| Resource Groups | One saved tag search per approved resource group, to see everything in it (free) | everything | pending |
-| KMS, through other services only | Encrypted disks, SecureString parameters, encrypted S3 objects and Lambda settings, all with AWS-managed keys. No creating keys | `kms:Decrypt`, `kms:Encrypt`, `kms:GenerateDataKey*`, `kms:ReEncrypt*`, `kms:DescribeKey`, `kms:CreateGrant`; only through ec2, ssm, s3, lambda | pending |
+| EC2 and VPC | Build machines, AMIs, snapshots, volumes, launch templates; VPCs, subnets, security groups, internet gateways | everything, except 17 blocked actions (below); instance type and disk limits | 2026-11-16 Kieron |
+| Systems Manager | Parameters and secrets (Parameter Store), Session Manager shell into instances, Run Command | everything | 2026-11-16 Kieron |
+| Lambda | The runner webhook and the reaper that removes stray instances | everything, except 1 blocked action (below) | 2026-11-16 Kieron |
+| EventBridge and Scheduler | Scheduled jobs (the reaper), event rules | everything | 2026-11-16 Kieron |
+| CloudWatch Logs and metrics | Logs from Lambda and the runner instances; metrics and alarms | everything | 2026-11-16 Kieron |
+| S3 | Lambda code and template packages, build artifacts | everything, except 2 blocked actions (below) | 2026-11-16 Kieron |
+| CloudFormation | Deploying and tearing down stacks (runs with Claude's own rights, so the same limits apply) | everything | 2026-11-16 Kieron |
+| Resource Groups | One saved tag search per approved resource group, to see everything in it (free) | everything | 2026-11-16 Kieron |
+| KMS, through other services only | Encrypted disks, SecureString parameters, encrypted S3 objects and Lambda settings, all with AWS-managed keys. No creating keys | `kms:Decrypt`, `kms:Encrypt`, `kms:GenerateDataKey*`, `kms:ReEncrypt*`, `kms:DescribeKey`, `kms:CreateGrant`; only through ec2, ssm, s3, lambda | 2026-11-16 Kieron |
 
 ## Limits inside approved services
 
@@ -127,8 +109,8 @@ Each group also has an AWS Resource Group of the same name (a saved tag search) 
 
 | Date | Change | Approved |
 |---|---|---|
-| 2026-11-16 | First allow-list, for building the runner; replaces the old claude-assistant-policy v1 | pending |
-| 2026-11-16 | Every resource Claude creates must carry an approved resource-group tag (first group build-runner); adds AWS Resource Groups | pending |
+| 2026-11-16 | First allow-list, for building the runner; replaces the old claude-assistant-policy v1 | 2026-11-16 Kieron |
+| 2026-11-16 | Every resource Claude creates must carry an approved resource-group tag (first group build-runner); adds AWS Resource Groups | 2026-11-16 Kieron |
 
 ## Policy sizes
 
