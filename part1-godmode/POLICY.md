@@ -10,18 +10,21 @@ Generated from [policy.yaml](policy.yaml) by `build-policies.py`. Don't edit thi
 > - service: CloudWatch Logs and metrics
 > - service: S3
 > - service: CloudFormation
+> - service: Resource Groups
 > - service: KMS, through other services only
 > - global: Who am I
 > - global: Costs and prices, read only
 > - read-only everywhere
 > - IAM for what Claude builds
+> - resource-group tag on everything Claude creates
 > - change 2026-11-16: First allow-list, for building the runner; replaces the old claude-assistant-policy v1
+> - change 2026-11-16: Every resource Claude creates must carry an approved resource-group tag (first group build-runner); adds AWS Resource Groups
 
 Claude's IAM user (`AWS_CLAUDE_USER`) in the account `AWS_ACCOUNT_ID` · home region Sydney (`ap-southeast-2`). The account id and user name aren't in the repo: see [config.py](config.py).
 
 ## In short
 
-- **Can build** with the 8 approved services below, **in Sydney only**.
+- **Can build** with the 9 approved services below, **in Sydney only**.
 - **Can see** a short list of read-only things in every region, to find forgotten resources.
 - **Everything else is denied**, because nothing grants it: other services, other regions, IAM users,
   access keys, budgets, quotas, billing changes, Organizations, account settings.
@@ -39,6 +42,7 @@ Claude's IAM user (`AWS_CLAUDE_USER`) in the account `AWS_ACCOUNT_ID` · home re
 | CloudWatch Logs and metrics | Logs from Lambda and the runner instances; metrics and alarms | everything | pending |
 | S3 | Lambda code and template packages, build artifacts | everything, except 2 blocked actions (below) | pending |
 | CloudFormation | Deploying and tearing down stacks (runs with Claude's own rights, so the same limits apply) | everything | pending |
+| Resource Groups | One saved tag search per approved resource group, to see everything in it (free) | everything | pending |
 | KMS, through other services only | Encrypted disks, SecureString parameters, encrypted S3 objects and Lambda settings, all with AWS-managed keys. No creating keys | `kms:Decrypt`, `kms:Encrypt`, `kms:GenerateDataKey*`, `kms:ReEncrypt*`, `kms:DescribeKey`, `kms:CreateGrant`; only through ec2, ssm, s3, lambda | pending |
 
 ## Limits inside approved services
@@ -95,6 +99,23 @@ Read-only in every region (lists and metadata, no data, no changes):
 - **Cannot**: create IAM users, access keys or groups; change its own permissions; touch roles or policies
   outside `/claude/` (for example the account's `AccountFullAccessRole`).
 
+## Resource groups
+
+Everything Claude creates belongs to a resource group: the tag **`resource-group`** with one of these values.
+Each group also has an AWS Resource Group of the same name (a saved tag search) to see it all in the console.
+
+| Group | For |
+|---|---|
+| `build-runner` | The on-demand GitHub runner for spellbound3d (part 2) |
+
+- **Enforced at creation**: `ec2:RunInstances`, `ec2:CreateVolume`, `ec2:CreateSnapshot`, `ec2:CreateImage`, `ec2:CreateLaunchTemplate`, `ec2:CreateSecurityGroup`, `lambda:CreateFunction`, `logs:CreateLogGroup`, `cloudformation:CreateStack`, `iam:CreateRole`, `iam:CreatePolicy`, `iam:CreateInstanceProfile`. Without an approved `resource-group` tag, these are denied.
+- **Can't be removed or changed** to an unapproved group, on the resources above.
+- **Not enforceable at creation** (AWS doesn't accept tags there, so requiring one would block them):
+  S3 buckets, SSM parameter updates, EventBridge rules and schedules; also VPCs, subnets, route tables
+  and gateways (their creation touches an existing VPC). These get the tag from their CloudFormation
+  stack's tags; Claude creates them through stacks.
+- **A new group** goes through the change process, like any other permission.
+
 ## Set by godmode, outside the policy
 
 - Monthly budget **US$30**, email alerts at 50 %, 80 % and 100 % actual, and 100 % forecast.
@@ -107,9 +128,10 @@ Read-only in every region (lists and metadata, no data, no changes):
 | Date | Change | Approved |
 |---|---|---|
 | 2026-11-16 | First allow-list, for building the runner; replaces the old claude-assistant-policy v1 | pending |
+| 2026-11-16 | Every resource Claude creates must carry an approved resource-group tag (first group build-runner); adds AWS Resource Groups | pending |
 
 ## Policy sizes
 
-- `claude-assistant-policy.json`: 3332 of 6144 characters
+- `claude-assistant-policy.json`: 5009 of 6144 characters
 - `claude-assistant-iam.json`: 1814 of 6144 characters
-- `claude-boundary.json`: 2889 of 6144 characters
+- `claude-boundary.json`: 4566 of 6144 characters

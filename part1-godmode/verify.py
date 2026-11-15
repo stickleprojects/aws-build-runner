@@ -50,6 +50,16 @@ MUST_STAY_DENIED = [
     "s3:PutAccountPublicAccessBlock", "s3:PutBucketObjectLockConfiguration",
 ]
 
+# Creates that must always need an approved resource-group tag. Kept apart from policy.yaml, so
+# dropping one from resource_groups.enforced_on fails the tests: a deliberate second edit.
+MUST_REQUIRE_GROUP = [
+    ("ec2:RunInstances", "instance"), ("ec2:RunInstances", "volume"), ("ec2:CreateVolume", "volume"),
+    ("ec2:CreateSnapshot", "snapshot"), ("ec2:CreateImage", "image"),
+    ("ec2:CreateLaunchTemplate", "launch-template"), ("ec2:CreateSecurityGroup", "security-group"),
+    ("lambda:CreateFunction", None), ("logs:CreateLogGroup", None), ("cloudformation:CreateStack", None),
+    ("iam:CreateRole", None), ("iam:CreatePolicy", None), ("iam:CreateInstanceProfile", None),
+]
+
 # Must be denied unless the service gets approved (then the case is skipped).
 UNAPPROVED = [
     "rds:CreateDBInstance", "dynamodb:CreateTable", "ecs:CreateCluster", "eks:CreateCluster",
@@ -80,17 +90,21 @@ def build_cases(p, cfg):
     approved_prefixes = {a.split(":")[0] for s in p["services"] for a in s["actions"]}
     inst = f"arn:aws:ec2:{home}:{acct}:instance/*"
     vol = f"arn:aws:ec2:{home}:{acct}:volume/*"
+    rg = p.get("resource_groups")
+    # Tags on every create that should succeed; {} when there's no resource-group rule.
+    tag = ({f"aws:RequestTag/{rg['tag_key']}": sorted(rg["groups"])[0], "aws:TagKeys": [rg["tag_key"]]}
+           if rg else {})
     cases = []
     add = cases.append
 
     for s in p["services"]:
         if s.get("via_services"):
             via = f"{s['via_services'][0]}.{home}.amazonaws.com"
-            add(Case(s["probe"], "allowed", region=home, **{"kms:ViaService": via}))
+            add(Case(s["probe"], "allowed", region=home, **{"kms:ViaService": via}, **tag))
             add(Case(s["probe"], "denied", region=home))  # not through a service
         else:
-            add(Case(s["probe"], "allowed", region=home))
-            add(Case(s["probe"], "denied", region=OTHER_REGION))
+            add(Case(s["probe"], "allowed", region=home, **tag))
+            add(Case(s["probe"], "denied", region=OTHER_REGION, **tag))
         for pattern in s.get("blocked") or {}:
             if "*" in pattern and pattern not in WILDCARD_EXAMPLES:
                 raise SystemExit(f"verify.py: add an example for blocked pattern {pattern} to WILDCARD_EXAMPLES")
@@ -102,14 +116,14 @@ def build_cases(p, cfg):
     limits = next((s.get("limits") or {} for s in p["services"] if s["id"] == "ec2"), {})
     if limits:
         for t in ("t3.large", "t3a.medium", "c7i.xlarge", "m5.large"):
-            add(Case("ec2:RunInstances", "allowed", inst, home, **{"ec2:InstanceType": t, "ec2:Tenancy": "default"}))
+            add(Case("ec2:RunInstances", "allowed", inst, home, **{"ec2:InstanceType": t, "ec2:Tenancy": "default"}, **tag))
         for t in ("m5.4xlarge", "c5.2xlarge", "g4dn.xlarge", "p5.48xlarge", "trn1.2xlarge", "r5.large", "t2.micro"):
-            add(Case("ec2:RunInstances", "denied", inst, home, **{"ec2:InstanceType": t, "ec2:Tenancy": "default"}))
-        add(Case("ec2:RunInstances", "denied", inst, home, **{"ec2:InstanceType": "t3.large", "ec2:Tenancy": "dedicated"}))
+            add(Case("ec2:RunInstances", "denied", inst, home, **{"ec2:InstanceType": t, "ec2:Tenancy": "default"}, **tag))
+        add(Case("ec2:RunInstances", "denied", inst, home, **{"ec2:InstanceType": "t3.large", "ec2:Tenancy": "dedicated"}, **tag))
         add(Case("ec2:ModifyInstanceAttribute", "denied", inst, home, **{"ec2:Attribute/InstanceType": "c5.9xlarge"}))
-        add(Case("ec2:CreateVolume", "allowed", vol, home, **{"ec2:VolumeSize": 100, "ec2:VolumeType": "gp3"}))
-        add(Case("ec2:CreateVolume", "denied", vol, home, **{"ec2:VolumeSize": 500, "ec2:VolumeType": "gp3"}))
-        add(Case("ec2:CreateVolume", "denied", vol, home, **{"ec2:VolumeSize": 50, "ec2:VolumeType": "io2"}))
+        add(Case("ec2:CreateVolume", "allowed", vol, home, **{"ec2:VolumeSize": 100, "ec2:VolumeType": "gp3"}, **tag))
+        add(Case("ec2:CreateVolume", "denied", vol, home, **{"ec2:VolumeSize": 500, "ec2:VolumeType": "gp3"}, **tag))
+        add(Case("ec2:CreateVolume", "denied", vol, home, **{"ec2:VolumeSize": 50, "ec2:VolumeType": "io2"}, **tag))
 
     for action in UNAPPROVED:
         if action.split(":")[0] in approved_prefixes and action.split(":")[0] != "kms":
@@ -126,9 +140,9 @@ def build_cases(p, cfg):
     # IAM for what Claude builds.
     g = GLOBAL_REGION
     user_only = {"user": "allowed", "role": "denied"}
-    add(Case("iam:CreateRole", user_only, role, g, **{"iam:PermissionsBoundary": boundary}))
-    add(Case("iam:CreateRole", "denied", role, g))
-    add(Case("iam:CreateRole", "denied", f"arn:aws:iam::{acct}:role/outside-path", g, **{"iam:PermissionsBoundary": boundary}))
+    add(Case("iam:CreateRole", user_only, role, g, **{"iam:PermissionsBoundary": boundary}, **tag))
+    add(Case("iam:CreateRole", "denied", role, g, **tag))
+    add(Case("iam:CreateRole", "denied", f"arn:aws:iam::{acct}:role/outside-path", g, **{"iam:PermissionsBoundary": boundary}, **tag))
     add(Case("iam:DeleteRolePermissionsBoundary", "denied", role, g))
     add(Case("iam:PassRole", "allowed", role, g, **{"iam:PassedToService": "ec2.amazonaws.com"}))
     add(Case("iam:PassRole", "denied", role, g, **{"iam:PassedToService": "sagemaker.amazonaws.com"}))
@@ -146,13 +160,58 @@ def build_cases(p, cfg):
         add(Case(action, "denied", me, g))
     add(Case("iam:CreateServiceLinkedRole", user_only, "*", g, **{"iam:AWSServiceName": "spot.amazonaws.com"}))
     add(Case("iam:CreateServiceLinkedRole", "denied", "*", g, **{"iam:AWSServiceName": "rds.amazonaws.com"}))
+
+    if rg:
+        key = rg["tag_key"]
+        good = tag
+        missing = {}
+        wrong = {f"aws:RequestTag/{key}": "not-an-approved-group", "aws:TagKeys": [key]}
+        # What each enforced create needs to pass every other rule, so only the tag decides.
+        def target(action, rtype):
+            if action.startswith("ec2:"):
+                extra = {"ec2:RunInstances": {"ec2:InstanceType": "t3.large", "ec2:Tenancy": "default"},
+                         "ec2:CreateVolume": {"ec2:VolumeSize": 10, "ec2:VolumeType": "gp3"}}.get(action, {})
+                return f"arn:aws:ec2:{home}:{acct}:{rtype}/*", home, extra, "allowed"
+            if action == "iam:CreateRole":
+                return role, g, {"iam:PermissionsBoundary": boundary}, user_only
+            if action == "iam:CreatePolicy":
+                return f"arn:aws:iam::{acct}:policy{path}verify-example", g, {}, user_only
+            if action == "iam:CreateInstanceProfile":
+                return f"arn:aws:iam::{acct}:instance-profile{path}verify-example", g, {}, user_only
+            service = action.split(":")[0]
+            arn = {"lambda": f"arn:aws:lambda:{home}:{acct}:function:verify-example",
+                   "logs": f"arn:aws:logs:{home}:{acct}:log-group:verify-example",
+                   "cloudformation": f"arn:aws:cloudformation:{home}:{acct}:stack/build-verify/x"}[service]
+            return arn, home, {}, "allowed"
+        for action, rtype in MUST_REQUIRE_GROUP:
+            resource, region, extra, _ = target(action, rtype)
+            add(Case(action, "denied", resource, region, **extra, **missing))
+        for group in rg["enforced_on"]:
+            types = group["resources"] if group["resources"] != "*" else [None]
+            for action in group["actions"]:
+                for rtype in types:
+                    resource, region, extra, ok = target(action, rtype)
+                    add(Case(action, ok, resource, region, **extra, **good))
+                    add(Case(action, "denied", resource, region, **extra, **missing))
+                    add(Case(action, "denied", resource, region, **extra, **wrong))
+        instance = f"arn:aws:ec2:{home}:{acct}:instance/*"
+        add(Case("ec2:DeleteTags", "denied", instance, home, **{"aws:TagKeys": [key]}))
+        add(Case("ec2:DeleteTags", "allowed", instance, home, **{"aws:TagKeys": ["some-other-tag"]}))
+        add(Case("ec2:CreateTags", "denied", instance, home, **wrong))
+        add(Case("ec2:CreateTags", "allowed", instance, home, **good))
+        add(Case("iam:UntagRole", "denied", role, g, **{"aws:TagKeys": [key]}))
+        add(Case("lambda:UntagResource", "denied", f"arn:aws:lambda:{home}:{acct}:function:verify-example", home,
+                 **{"aws:TagKeys": [key]}))
     return cases
 
 
 def context_entries(region, ctx):
     entries = [f"ContextKeyName=aws:RequestedRegion,ContextKeyValues={region},ContextKeyType=string"]
     for key, value in sorted(ctx.items()):
-        kind = "numeric" if isinstance(value, int) else "string"
+        if isinstance(value, list):
+            kind, value = "stringList", ",".join(value)
+        else:
+            kind = "numeric" if isinstance(value, int) else "string"
         entries.append(f"ContextKeyName={key},ContextKeyValues={value},ContextKeyType={kind}")
     return entries
 
@@ -174,12 +233,14 @@ def simulate(who, source, cases):
     """source: ('principal', arn) or ('custom', [docs], boundary_doc or None)"""
     groups = defaultdict(list)
     for c in cases:
-        groups[(c.resource, c.region, tuple(sorted(c.ctx.items())))].append(c)
+        groups[(c.resource, c.region, tuple(sorted((k, tuple(v) if isinstance(v, list) else v)
+                                                   for k, v in c.ctx.items())))].append(c)
     results = {}
     for (resource, region, ctx), group in groups.items():
         actions = sorted({c.action for c in group})
         common = ["--action-names", *actions, "--resource-arns", resource,
-                  "--context-entries", *context_entries(region, dict(ctx))]
+                  "--context-entries", *context_entries(region, {k: list(v) if isinstance(v, tuple) else v
+                                                                 for k, v in ctx})]
         if source[0] == "principal":
             out = aws("iam", "simulate-principal-policy", "--policy-source-arn", source[1], *common)
         else:
@@ -204,6 +265,10 @@ def _as_list(x):
 
 
 def _condition_holds(op, key, wanted, ctx):
+    if op.startswith("ForAnyValue:"):
+        # True if any value of a multi-valued key meets the condition; false if the key is absent.
+        values = _as_list(ctx.get(key, []))
+        return any(_condition_holds(op.split(":", 1)[1], key, wanted, {key: v}) for v in values)
     wanted = [str(w) for w in _as_list(wanted)]
     present = key in ctx
     value = str(ctx.get(key, ""))

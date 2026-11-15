@@ -96,6 +96,13 @@ services:
     actions: ["cloudformation:*"]
     probe: cloudformation:CreateStack
 
+  - id: resource-groups
+    title: Resource Groups
+    use: One saved tag search per approved resource group, to see everything in it (free)
+    approved: pending
+    actions: ["resource-groups:*"]
+    probe: resource-groups:CreateGroup
+
   - id: kms
     title: KMS, through other services only
     use: Encrypted disks, SecureString parameters, encrypted S3 objects and Lambda settings, all with AWS-managed keys. No creating keys
@@ -153,6 +160,35 @@ iam:
   pass_roles_to: [ec2.amazonaws.com, lambda.amazonaws.com, scheduler.amazonaws.com, events.amazonaws.com, cloudformation.amazonaws.com]
   service_linked_roles: [spot.amazonaws.com]
 
+# Every resource Claude creates belongs to a resource group: the tag below, with an approved value.
+# AWS has no Azure-style containers, so a "resource group" is this tag plus an AWS Resource Group
+# (a saved tag search) of the same name, so the console can show everything in it.
+resource_groups:
+  approved: pending
+  tag_key: resource-group
+  groups:
+    build-runner: The on-demand GitHub runner for spellbound3d (part 2)
+  # Creates that accept tags at creation; each is denied unless it carries an approved group.
+  # Grouped by resource scope: EC2 creates are scoped to the types they make (instance, volume…),
+  # because the existing resources they also touch (a VPC, a source volume) carry no request tag.
+  # A group never mixes an action with a type that action only touches. "*" = non-EC2 services.
+  # Not enforced at creation, because AWS doesn't accept tags there or they touch an existing VPC:
+  # S3 buckets, SSM parameter updates, EventBridge rules and schedules, VPCs/subnets/route tables/
+  # gateways. They get the tag from their CloudFormation stack's tags instead.
+  enforced_on:
+    - actions: ["ec2:RunInstances", "ec2:CreateVolume"]
+      resources: [instance, volume]
+    - actions: ["ec2:CreateSnapshot", "ec2:CreateImage", "ec2:CreateLaunchTemplate", "ec2:CreateSecurityGroup"]
+      resources: [snapshot, image, launch-template, security-group]
+    - actions: ["lambda:CreateFunction", "logs:CreateLogGroup", "cloudformation:CreateStack",
+                "iam:CreateRole", "iam:CreatePolicy", "iam:CreateInstanceProfile"]
+      resources: "*"
+  # Tag and untag actions guarded so the tag can't be removed or set to an unapproved group.
+  tag_actions: ["ec2:CreateTags", "lambda:TagResource", "logs:TagResource", "logs:TagLogGroup",
+                "cloudformation:TagResource", "iam:TagRole", "iam:TagPolicy", "iam:TagInstanceProfile"]
+  untag_actions: ["ec2:DeleteTags", "lambda:UntagResource", "logs:UntagResource", "logs:UntagLogGroup",
+                  "cloudformation:UntagResource", "iam:UntagRole", "iam:UntagPolicy", "iam:UntagInstanceProfile"]
+
 # Applied by apply.sh (godmode), outside the policy. Claude can't change them.
 account_settings:
   budget_usd: 30
@@ -162,4 +198,7 @@ account_settings:
 changes:
   - date: 2026-11-16
     what: First allow-list, for building the runner; replaces the old claude-assistant-policy v1
+    approved: pending
+  - date: 2026-11-16
+    what: Every resource Claude creates must carry an approved resource-group tag (first group build-runner); adds AWS Resource Groups
     approved: pending
