@@ -78,11 +78,14 @@ check("event: the local runner's label ignored",
 check("event: ubuntu-latest ignored", runner.wanted_event("workflow_job", event(labels=["ubuntu-latest"])) is not None)
 check("event: self-hosted plus ours ignored (a JIT runner only has our label)",
       runner.wanted_event("workflow_job", event(labels=["self-hosted", "aws-spellbound3d"])) is not None)
-check("launch: runners registered with our label only (never self-hosted: the local runner's)",
-      runner.RUNNER_LABELS == {"aws-spellbound3d"})
+check("event: the check label is ours too", runner.wanted_event("workflow_job", event(labels=["aws-spellbound3d-check"])) is None)
+check("event: both of our labels at once ignored (no single runner has both)",
+      runner.wanted_event("workflow_job", event(labels=["aws-spellbound3d", "aws-spellbound3d-check"])) is not None)
 check("event: label case doesn't matter", runner.wanted_event("workflow_job", event(labels=["AWS-Spellbound3d"])) is None)
 check("event: our label plus one we don't have ignored",
       runner.wanted_event("workflow_job", event(labels=["aws-spellbound3d", "gpu"])) is not None)
+check("pools: never self-hosted (the local runner's label, and the rollback)",
+      not any(l in runner.POOLS for l in ("self-hosted", "linux", "x64", "spellbound3d")))
 
 
 # webhook handler end to end, with a fake Lambda client and secret
@@ -112,30 +115,44 @@ check("webhook: base64 body handled", r["statusCode"] == 202 and len(fake_lambda
 
 # --- planning
 now = time.time()
+L, C = "aws-spellbound3d", "aws-spellbound3d-check"
 
 
-def inst(name, age_min, job="1"):
-    return {"id": "i-" + name, "name": name, "job_id": job, "launched": now - age_min * 60, "runner_id": "9"}
+def inst(name, age_min, job="1", pool=L):
+    return {"id": "i-" + name, "name": name, "job_id": job, "launched": now - age_min * 60, "runner_id": "9",
+            "pool": pool}
 
 
 def run_(name, busy=False, status="online"):
     return {"id": hash(name) % 1000, "name": name, "busy": busy, "status": status}
 
 
-q = [{"id": n} for n in range(3)]
-check("plan: nothing running, 3 queued → 3", runner.launches_needed(q, [], [], now, cap=4) == 3)
-check("plan: cap respected", runner.launches_needed([{"id": n} for n in range(9)], [], [], now, cap=4) == 4)
+def jobs(n, pool=L, start=0):
+    return [{"id": start + i, "pool": pool, "created_at": f"2026-11-16T07:{start + i:02d}:00Z"} for i in range(n)]
+
+
+plan = runner.launches_needed
+q = jobs(3)
+check("plan: nothing running, 3 queued → 3", plan(q, [], [], now, cap=4) == {L: 3})
+check("plan: cap respected", plan(jobs(9), [], [], now, cap=4) == {L: 4})
 check("plan: busy runners count against the cap, not the queue",
-      runner.launches_needed(q, [inst("aws-a", 3)], [run_("aws-a", busy=True)], now, cap=4) == 3)
-check("plan: idle runner covers a queued job",
-      runner.launches_needed(q, [inst("aws-a", 3)], [run_("aws-a")], now, cap=4) == 2)
+      plan(q, [inst("aws-a", 3)], [run_("aws-a", busy=True)], now, cap=4) == {L: 3})
+check("plan: idle runner covers a queued job", plan(q, [inst("aws-a", 3)], [run_("aws-a")], now, cap=4) == {L: 2})
 check("plan: booting instance (runner not listed yet) covers a queued job",
-      runner.launches_needed(q, [inst("aws-a", 1)], [], now, cap=4) == 2)
+      plan(q, [inst("aws-a", 1)], [], now, cap=4) == {L: 2})
 check("plan: finished instance (runner gone, powering off) doesn't cover one",
-      runner.launches_needed(q, [inst("aws-a", 30)], [], now, cap=4) == 3)
+      plan(q, [inst("aws-a", 30)], [], now, cap=4) == {L: 3})
 check("plan: duplicate webhook doesn't launch twice",
-      runner.launches_needed([{"id": 1}], [inst("aws-a", 0)], [run_("aws-a", status="offline")], now) == 0)
-check("plan: never negative", runner.launches_needed([], [inst("aws-a", 1)], [], now) == 0)
+      plan(jobs(1), [inst("aws-a", 0)], [run_("aws-a", status="offline")], now) == {})
+check("plan: never negative", plan([], [inst("aws-a", 1)], [], now) == {})
+check("plan: a check job and a Claude job queued together get one runner each, sized per label",
+      plan(jobs(1, C) + jobs(1, L, 1), [], [], now) == {C: 1, L: 1})
+check("plan: an idle 2-vCPU runner doesn't cover a check job",
+      plan(jobs(1, C), [inst("aws-a", 3, pool=L)], [run_("aws-a")], now) == {C: 1})
+check("plan: an idle 4-vCPU runner doesn't cover a Claude job either (it couldn't take it)",
+      plan(jobs(1, L), [inst("aws-a", 3, pool=C)], [run_("aws-a")], now) == {L: 1})
+check("plan: the cap is shared, oldest queued job first",
+      plan(jobs(3, C, 0) + jobs(3, L, 10), [], [], now, cap=4) == {C: 3, L: 1})
 
 p = runner.reap_plan([], [inst("aws-old", 95), inst("aws-busy", 30), inst("aws-idle", 25), inst("aws-new", 5)],
                      [run_("aws-old", busy=True), run_("aws-busy", busy=True), run_("aws-idle"), run_("aws-new"),
@@ -145,18 +162,21 @@ check("reap: older than 90 min", [i["name"] for i in p["terminate"]] == ["aws-ol
 check("reap: idle over 20 min with nothing queued", [i["name"] for i in p["idle"]] == ["aws-idle"], str(p["idle"]))
 check("reap: stale registrations, ours only, not busy",
       [r["name"] for r in p["stale_runners"]] == ["aws-gone"], str(p["stale_runners"]))
-p = runner.reap_plan([{"id": 1}], [inst("aws-idle", 25)], [run_("aws-idle")], now)
-check("reap: idle runner kept while a job is queued", p["idle"] == [])
+p = runner.reap_plan(jobs(1), [inst("aws-idle", 25)], [run_("aws-idle")], now)
+check("reap: idle runner kept while a job for its label is queued", p["idle"] == [])
+p = runner.reap_plan(jobs(1, C), [inst("aws-idle", 25, pool=L)], [run_("aws-idle")], now)
+check("reap: idle runner reaped when only the other label has jobs queued", [i["name"] for i in p["idle"]] == ["aws-idle"])
 
 # --- launch fallback: spot through each type and subnet, then on-demand
-defaults = runner.SPOT_TYPES + runner.ON_DEMAND_TYPES
-check("defaults: never 2 vCPU or t3 (spellbound3d's timing tests fail on 2 vCPU)",
-      bool(defaults) and all(t.split(".")[1] == "xlarge" and not t.startswith("t") for t in defaults), str(defaults))
+xl = runner.attempts(C)
+check("defaults: check runners never 2 vCPU or t3 (spellbound3d's timing tests fail on 2 vCPU)",
+      bool(xl) and all(t.split(".")[1] == "xlarge" and not t.startswith("t") for t, _ in xl), str(xl))
+check("defaults: Claude-job runners are the agreed 2-vCPU chain",
+      runner.attempts(L) == [("c7i.large", True), ("c7i-flex.large", True), ("t3.large", True), ("c7i.large", False)])
 runner.SUBNETS = ["subnet-a", "subnet-b"]
-runner.SPOT_TYPES = ["c7i.xlarge", "c6i.xlarge"]
-runner.ON_DEMAND_TYPES = ["c7i.xlarge"]
+runner.POOLS = {C: {"spot": ["c7i.xlarge", "c6i.xlarge"], "on_demand": ["c7i.xlarge"]}}
 check("attempts: spot types first, then on-demand",
-      runner.attempts() == [("c7i.xlarge", True), ("c6i.xlarge", True), ("c7i.xlarge", False)])
+      runner.attempts(C) == [("c7i.xlarge", True), ("c6i.xlarge", True), ("c7i.xlarge", False)])
 tried = []
 
 
@@ -169,11 +189,11 @@ def ec2_run(fail_until):
     return run
 
 
-iid, itype, spot = runner.run_instance("aws-1", 9, 1, "JIT", run=ec2_run(4))
+iid, itype, spot = runner.run_instance("aws-1", 9, 1, C, "JIT", run=ec2_run(4))
 check("fallback: on-demand after every spot type and subnet is short",
       (iid, itype, spot) == ("i-123", "c7i.xlarge", False) and len(tried) == 5, str(tried))
 tried.clear()
-runner.run_instance("aws-1", 9, 1, "JIT", run=ec2_run(0))
+runner.run_instance("aws-1", 9, 1, C, "JIT", run=ec2_run(0))
 check("fallback: first try is spot", tried[0][1] is True)
 tried.clear()
 
@@ -183,23 +203,26 @@ def run_args(**kw):
     return {"Instances": [{"InstanceId": "i-1"}]}
 
 
-runner.run_instance("aws-1", 9, 42, "JIT", run=run_args)
+runner.run_instance("aws-1", 9, 42, C, "JIT", run=run_args)
 kw = tried[0]
 check("launch: tagged resource-group on instance and volume",
       {t["ResourceType"] for t in kw["TagSpecifications"]} == {"instance", "volume"}
       and all({"Key": "resource-group", "Value": "build-runner"} in t["Tags"] for t in kw["TagSpecifications"]))
+check("launch: tagged with its label, so the planner knows its size",
+      all({"Key": "build-runner-label", "Value": C} in t["Tags"] for t in kw["TagSpecifications"]))
 check("launch: user data is the image's {jitconfig} JSON", json.loads(kw["UserData"]) == {"jitconfig": "JIT"})
 check("launch: from the launch template", "LaunchTemplate" in kw and "ImageId" not in kw)
 try:
-    runner.run_instance("aws-1", 9, 1, "JIT", run=lambda **kw: (_ for _ in ()).throw(ClientError("UnauthorizedOperation")))
+    runner.run_instance("aws-1", 9, 1, C, "JIT", run=lambda **kw: (_ for _ in ()).throw(ClientError("UnauthorizedOperation")))
     check("fallback: real errors aren't swallowed", False, "no exception")
 except ClientError:
     check("fallback: real errors aren't swallowed", True)
 try:
-    runner.run_instance("aws-1", 9, 1, "JIT", run=lambda **kw: (_ for _ in ()).throw(ClientError("InsufficientInstanceCapacity")))
+    runner.run_instance("aws-1", 9, 1, C, "JIT", run=lambda **kw: (_ for _ in ()).throw(ClientError("InsufficientInstanceCapacity")))
     check("fallback: gives up after the last option", False, "no exception")
 except RuntimeError:
     check("fallback: gives up after the last option", True)
+
 
 
 # --- the lock

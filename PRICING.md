@@ -68,11 +68,10 @@ t3's CPU credits made timings flaky. So jobs get fixed-performance c7i types, ch
 | Lambdas, SSM, Logs, data out | mostly free tier | < US$1 | < US$1 |
 | **Total** | | **≈ US$24–25** | **≈ US$13** |
 
-**As built, every runner is c7i.xlarge** (a JIT runner can take any queued job with its label, so a
-2-vCPU runner could end up with a check job: [PLAN.md](part2-runner/PLAN.md#instance-types-decided-2026-11-16-revised-when-building)).
-The Claude-job half then costs ≈ US$13.60 instead of ≈ US$7.40 at the busiest load: **total ≈ US$31
-busiest, ≈ US$16 at half**. Per-job sizing comes back (≈ US$24–25 / ≈ US$13) if spellbound3d gives
-heavy jobs their own label.
+**Per label, not per job** (Kieron, 2026-11-16): GitHub gives a queued job to any idle runner with its
+labels, so check jobs get their own label (`aws-spellbound3d-check`), being agreed with spellbound3d. These
+figures hold once that's in place. Without it, the only safe choice would be 4 vCPU for every job:
+≈ US$31 at the busiest load (over the stop), ≈ US$16 at half.
 
 **Watch out:** at the **busiest observed load all month**, this lands at the **US$25 budget**, so the
 automatic stop would fire near month end. The "busiest load" was a single day of 100 runs in 11.5

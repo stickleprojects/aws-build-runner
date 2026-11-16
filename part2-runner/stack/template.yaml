@@ -12,11 +12,16 @@ Parameters:
   Subnets: {Type: CommaDelimitedList, Description: "Public subnets (the default VPC's); no NAT gateway"}
   MaxRunners: {Type: Number, Default: 4, MinValue: 1, MaxValue: 8,
                Description: "Most runner instances alive at once (4 x c7i.xlarge = 16 of the 32-vCPU quota)"}
-  SpotTypes: {Type: String, Default: "c7i.xlarge,c6i.xlarge,m7i.xlarge", Description: "Tried in order, as spot"}
-  OnDemandTypes: {Type: String, Default: "c7i.xlarge", Description: "Tried after every spot type is short"}
+  Pools:
+    Type: String
+    Description: >-
+      Runner label -> instance types (JSON), tried in order: every spot type, then on-demand. One size per
+      label, because GitHub gives a queued job to any idle runner with its labels.
+    Default: >-
+      {"aws-spellbound3d": {"spot": ["c7i.large", "c7i-flex.large", "t3.large"], "on_demand": ["c7i.large"]},
+      "aws-spellbound3d-check": {"spot": ["c7i.xlarge", "c6i.xlarge", "m7i.xlarge"], "on_demand": ["c7i.xlarge"]}}
   MaxAgeMinutes: {Type: Number, Default: 90, Description: "The reaper terminates runner instances older than this"}
   IdleMinutes: {Type: Number, Default: 20, Description: "...and runners idle this long with nothing queued"}
-  RunnerLabel: {Type: String, Default: aws-spellbound3d}
   Repo: {Type: String, Default: stickleprojects/spellbound3d}
 
 Resources:
@@ -116,7 +121,7 @@ Resources:
       Role: !GetAtt WebhookRole.Arn
       Code: {S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey}
       Environment:
-        Variables: {REPO: !Ref Repo, RUNNER_LABEL: !Ref RunnerLabel, LAUNCHER_FUNCTION: !Ref Launcher}
+        Variables: {REPO: !Ref Repo, POOLS: !Ref Pools, LAUNCHER_FUNCTION: !Ref Launcher}
       Tags: [{Key: resource-group, Value: build-runner}]
 
   WebhookUrl:
@@ -235,10 +240,8 @@ Resources:
       Environment:
         Variables:
           REPO: !Ref Repo
-          RUNNER_LABEL: !Ref RunnerLabel
+          POOLS: !Ref Pools
           MAX_RUNNERS: !Ref MaxRunners
-          SPOT_TYPES: !Ref SpotTypes
-          ON_DEMAND_TYPES: !Ref OnDemandTypes
           MAX_AGE_MINUTES: !Ref MaxAgeMinutes
           IDLE_MINUTES: !Ref IdleMinutes
           SUBNETS: !Join [",", !Ref Subnets]

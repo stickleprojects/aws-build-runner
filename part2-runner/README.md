@@ -10,7 +10,7 @@ It is built in a normal Claude session as Claude's IAM user, after
 ## In one picture
 
 ```
-job queued on GitHub ──webhook──> Lambda ──> launcher ──> spot c7i.xlarge from the baked AMI
+job queued on GitHub ──webhook──> Lambda ──> launcher ──> a spot instance sized by label
                                                              runs one job (just-in-time runner), terminates
 every 5 min ──> launcher: catches missed webhooks; reaps runners > 90 min, or idle 20 min
 ```
@@ -33,7 +33,8 @@ every 5 min ──> launcher: catches missed webhooks; reaps runners > 90 min, o
       **The latest image's contract is always the latest [release](https://github.com/stickleprojects/aws-build-runner/releases/latest).**
 - [x] **The runner** (`stack/deploy.sh`): webhook and launcher Lambdas, launch template, 5-minute reconcile and reaper,
       at most 4 runners at once. Deployed and tested live (spot launch → runner online on GitHub in ≈ 40 s).
-- [ ] spellbound3d webhook, a test workflow, then the cut-over (PLAN.md steps 4–5).
+- [ ] spellbound3d: a second label for check jobs (4 vCPU; everything else 2 vCPU), then the webhook, a test
+      workflow and the cut-over (PLAN.md steps 4–6).
 
 | Path | Purpose |
 |---|---|

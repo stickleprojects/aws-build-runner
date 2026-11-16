@@ -1,19 +1,20 @@
 """The build-runner Lambda functions (stack build-runner, part2-runner/stack/template.yaml).
 
 webhook   behind a public function URL. Checks GitHub's HMAC signature, keeps only spellbound3d
-          workflow_job "queued" events for our label, and hands off to the launcher (asynchronously,
+          workflow_job "queued" events for one of our labels, and hands off to the launcher (asynchronously,
           so GitHub gets its answer well inside its 10 s limit).
 launcher  reconciles, one run at a time (an SSM-parameter lock: this account's Lambda concurrency is
-          the minimum 10, so none can be reserved): counts the queued jobs for our label against the
-          runners that haven't taken a job yet, and launches the difference, up to MAX_RUNNERS live
-          instances. Each instance gets a just-in-time (single-job) runner registration in its user
+          the minimum 10, so none can be reserved): per label, counts the queued jobs against the runners
+          that haven't taken a job yet, and launches the difference, up to MAX_RUNNERS live instances
+          in all. Each instance gets a just-in-time (single-job) runner registration in its user
           data; the image runs that one job and terminates itself.
           Every 5 minutes (EventBridge Scheduler) it also reconciles (catching missed webhooks) and reaps:
           instances older than MAX_AGE, runners idle for IDLE_MAX with nothing queued, and runner
           registrations whose instance is gone.
 
 GitHub assigns a queued job to any idle runner with matching labels, so a runner can't be reserved for
-one job: that is why every runner gets the same instance types (see PLAN.md, "Instance types").
+one job. Sizes are therefore per LABEL (a pool), never per job: aws-spellbound3d (2 vCPU, Claude jobs)
+and aws-spellbound3d-check (4 vCPU, make check). See PLAN.md, "Instance types".
 """
 import base64
 import contextlib
@@ -29,11 +30,15 @@ import time
 import ghapp
 
 REPO = os.environ.get("REPO", "stickleprojects/spellbound3d")
-LABEL = os.environ.get("RUNNER_LABEL", "aws-spellbound3d")
-# A JIT runner has exactly the labels it's registered with (seen 2026-11-16: no self-hosted, OS or
-# architecture added). Only ours, on purpose: with "self-hosted" it could take jobs meant for the local
-# runner (SDLC_RUNNER=self-hosted is the rollback), and the two must never compete.
-RUNNER_LABELS = {LABEL.lower()}
+# Label -> instance types, tried in order: every spot type, then on-demand. A JIT runner has exactly the
+# one label it's registered with (seen 2026-11-16: no self-hosted, OS or architecture added). Only ours,
+# on purpose: with "self-hosted" it could take jobs meant for the local runner (SDLC_RUNNER=self-hosted is
+# the rollback), and the two must never compete.
+DEFAULT_POOLS = {
+    "aws-spellbound3d": {"spot": ["c7i.large", "c7i-flex.large", "t3.large"], "on_demand": ["c7i.large"]},
+    "aws-spellbound3d-check": {"spot": ["c7i.xlarge", "c6i.xlarge", "m7i.xlarge"], "on_demand": ["c7i.xlarge"]},
+}
+POOLS = {k.lower(): v for k, v in json.loads(os.environ.get("POOLS") or json.dumps(DEFAULT_POOLS)).items()}
 NAME_PREFIX = "aws-"
 GROUP = os.environ.get("RESOURCE_GROUP", "build-runner")
 ROLE_TAG = "build-runner-role"
@@ -41,8 +46,6 @@ MAX_RUNNERS = int(os.environ.get("MAX_RUNNERS", "4"))
 MAX_AGE = int(os.environ.get("MAX_AGE_MINUTES", "90")) * 60
 IDLE_MAX = int(os.environ.get("IDLE_MINUTES", "20")) * 60
 BOOT_GRACE = 5 * 60   # an instance whose runner isn't listed yet counts as booting for this long
-SPOT_TYPES = [t for t in os.environ.get("SPOT_TYPES", "c7i.xlarge,c6i.xlarge,m7i.xlarge").split(",") if t]
-ON_DEMAND_TYPES = [t for t in os.environ.get("ON_DEMAND_TYPES", "c7i.xlarge").split(",") if t]
 SUBNETS = [s for s in os.environ.get("SUBNETS", "").split(",") if s]
 LAUNCH_TEMPLATE = os.environ.get("LAUNCH_TEMPLATE_ID", "")
 LAUNCHER = os.environ.get("LAUNCHER_FUNCTION", "build-runner-launcher")
@@ -83,10 +86,10 @@ def signature_ok(secret: str, body: bytes, header: str) -> bool:
     return hmac.compare_digest(expected, header[len("sha256="):])
 
 
-def labels_ok(labels) -> bool:
-    """Ours, and nothing a runner of ours doesn't have (else it couldn't take the job anyway)."""
+def pool_for(labels) -> str | None:
+    """The pool whose runners can take a job with these labels: exactly one of ours, nothing else."""
     wanted = {str(l).lower() for l in labels or []}
-    return LABEL.lower() in wanted and wanted <= RUNNER_LABELS
+    return next(iter(wanted)) if len(wanted) == 1 and wanted <= POOLS.keys() else None
 
 
 def wanted_event(kind: str, payload: dict) -> str | None:
@@ -97,8 +100,8 @@ def wanted_event(kind: str, payload: dict) -> str | None:
         return f"action {payload.get('action')}"
     if (payload.get("repository") or {}).get("full_name") != REPO:
         return "another repository"
-    if not labels_ok((payload.get("workflow_job") or {}).get("labels")):
-        return "not our label"
+    if not pool_for((payload.get("workflow_job") or {}).get("labels")):
+        return "not one of our labels"
     return None
 
 
@@ -124,9 +127,10 @@ def webhook(event, context):
     if why:
         return response(202, f"ignored: {why}")
     job = payload["workflow_job"]
-    log("queued", job_id=job.get("id"), workflow=job.get("workflow_name"), job=job.get("name"))
+    pool = pool_for(job.get("labels"))
+    log("queued", job_id=job.get("id"), pool=pool, workflow=job.get("workflow_name"), job=job.get("name"))
     aws("lambda").invoke(FunctionName=LAUNCHER, InvocationType="Event",
-                         Payload=json.dumps({"source": "webhook", "job_id": job.get("id")}).encode())
+                         Payload=json.dumps({"source": "webhook", "job_id": job.get("id"), "pool": pool}).encode())
     return response(202, "launching")
 
 
@@ -148,27 +152,42 @@ def unclaimed(instances: list[dict], runners: list[dict], now: float) -> list[di
 
 
 def launches_needed(queued: list[dict], instances: list[dict], runners: list[dict], now: float,
-                    cap: int = MAX_RUNNERS) -> int:
-    need = len(queued) - len(unclaimed(instances, runners, now))
+                    cap: int = MAX_RUNNERS) -> dict[str, int]:
+    """Launches per pool. Each pool covers only its own queue (a 2-vCPU runner can't take a check job);
+    the cap is for all pools together, filled oldest queued job first."""
+    spare = {}
+    for i in unclaimed(instances, runners, now):
+        spare[i["pool"]] = spare.get(i["pool"], 0) + 1
     room = cap - len(instances)
-    return max(0, min(need, room))
+    out = {}
+    for job in sorted(queued, key=lambda j: str(j.get("created_at", ""))):
+        p = job["pool"]
+        if spare.get(p, 0) > 0:
+            spare[p] -= 1
+        elif room > 0:
+            out[p] = out.get(p, 0) + 1
+            room -= 1
+    return out
 
 
 def reap_plan(queued: list[dict], instances: list[dict], runners: list[dict], now: float) -> dict:
     """What to clean up: {"terminate": [instance], "idle": [instance], "stale_runners": [runner]}."""
     by_name = {r["name"]: r for r in runners}
     old = [i for i in instances if now - i["launched"] > MAX_AGE]
-    idle = [] if queued else [i for i in unclaimed(instances, runners, now)
-                              if i not in old and i["name"] in by_name and now - i["launched"] > IDLE_MAX]
+    busy_pools = {j["pool"] for j in queued}
+    idle = [i for i in unclaimed(instances, runners, now)
+            if i["pool"] not in busy_pools and i not in old and i["name"] in by_name
+            and now - i["launched"] > IDLE_MAX]
     live = {i["name"] for i in instances}
     stale = [r for r in runners if r["name"].startswith(NAME_PREFIX) and r["name"] not in live
              and r.get("status") == "offline" and not r.get("busy")]
     return {"terminate": old, "idle": idle, "stale_runners": stale}
 
 
-def attempts() -> list[tuple[str, bool]]:
+def attempts(pool: str) -> list[tuple[str, bool]]:
     """(instance type, spot?) in the order tried: every spot type, then on-demand."""
-    return [(t, True) for t in SPOT_TYPES] + [(t, False) for t in ON_DEMAND_TYPES]
+    p = POOLS[pool]
+    return [(t, True) for t in p.get("spot", [])] + [(t, False) for t in p.get("on_demand", [])]
 
 
 # ---------------------------------------------------------------------------- AWS and GitHub
@@ -201,8 +220,9 @@ def queued_jobs(gh: GitHub) -> list[dict]:
     for status in ("queued", "in_progress", "pending", "waiting", "requested"):
         for run in gh.paged(f"/repos/{REPO}/actions/runs?status={status}", "workflow_runs"):
             for job in gh.paged(f"/repos/{REPO}/actions/runs/{run['id']}/jobs?filter=latest", "jobs"):
-                if job.get("status") == "queued" and labels_ok(job.get("labels")):
-                    jobs[job["id"]] = job
+                pool = pool_for(job.get("labels"))
+                if job.get("status") == "queued" and pool:
+                    jobs[job["id"]] = {**job, "pool": pool}
     return list(jobs.values())
 
 
@@ -217,25 +237,27 @@ def live_instances() -> list[dict]:
                 tags = {t["Key"]: t["Value"] for t in i.get("Tags", [])}
                 out.append({"id": i["InstanceId"], "name": tags.get("build-runner-name", ""),
                             "runner_id": tags.get("github-runner-id", ""), "job_id": tags.get("github-job-id", ""),
+                            "pool": tags.get("build-runner-label", ""),
                             "type": i["InstanceType"], "launched": i["LaunchTime"].timestamp()})
     return out
 
 
-def tags(name: str, runner_id, job_id) -> list[dict]:
+def tags(name: str, runner_id, job_id, pool: str) -> list[dict]:
     t = [{"Key": "resource-group", "Value": GROUP}, {"Key": "Name", "Value": f"build-runner {name}"},
          {"Key": ROLE_TAG, "Value": "runner"}, {"Key": "build-runner-name", "Value": name},
-         {"Key": "github-runner-id", "Value": str(runner_id)}, {"Key": "github-job-id", "Value": str(job_id)}]
+         {"Key": "github-runner-id", "Value": str(runner_id)}, {"Key": "github-job-id", "Value": str(job_id)},
+         {"Key": "build-runner-label", "Value": pool}]
     return [{"ResourceType": r, "Tags": t} for r in ("instance", "volume")]
 
 
-def run_instance(name: str, runner_id, job_id, jitconfig: str, run=None) -> tuple[str, str, bool]:
+def run_instance(name: str, runner_id, job_id, pool: str, jitconfig: str, run=None) -> tuple[str, str, bool]:
     """Launches one runner instance: spot first, through each type and subnet, then on-demand."""
     run = run or aws("ec2").run_instances
     last = None
-    for itype, spot in attempts():
+    for itype, spot in attempts(pool):
         for subnet in random.sample(SUBNETS, len(SUBNETS)) or [None]:
             args = dict(LaunchTemplate={"LaunchTemplateId": LAUNCH_TEMPLATE, "Version": "$Latest"},
-                        InstanceType=itype, MinCount=1, MaxCount=1, TagSpecifications=tags(name, runner_id, job_id),
+                        InstanceType=itype, MinCount=1, MaxCount=1, TagSpecifications=tags(name, runner_id, job_id, pool),
                         UserData=json.dumps({"jitconfig": jitconfig}))
             if subnet:
                 args["SubnetId"] = subnet
@@ -252,17 +274,17 @@ def run_instance(name: str, runner_id, job_id, jitconfig: str, run=None) -> tupl
     raise RuntimeError(f"no capacity for any instance type ({last})")
 
 
-def launch(gh: GitHub, job_id) -> None:
+def launch(gh: GitHub, job_id, pool: str) -> None:
     name = f"{NAME_PREFIX}{job_id}-{secrets.token_hex(3)}"
     _, jit = gh.call("POST", f"/repos/{REPO}/actions/runners/generate-jitconfig",
-                     {"name": name, "runner_group_id": 1, "labels": [LABEL], "work_folder": "_work"})
+                     {"name": name, "runner_group_id": 1, "labels": [pool], "work_folder": "_work"})
     runner_id = jit["runner"]["id"]
     try:
-        iid, itype, spot = run_instance(name, runner_id, job_id, jit["encoded_jit_config"])
+        iid, itype, spot = run_instance(name, runner_id, job_id, pool, jit["encoded_jit_config"])
     except Exception:
         gh.call("DELETE", f"/repos/{REPO}/actions/runners/{runner_id}", ok=(204, 404))
         raise
-    log("launched", instance=iid, type=itype, spot=spot, runner=name, job_id=job_id)
+    log("launched", instance=iid, pool=pool, type=itype, spot=spot, runner=name, job_id=job_id)
 
 
 def remove_runner(gh: GitHub, runner_id) -> bool:
@@ -322,9 +344,10 @@ def launcher(event, context):
             gh = GitHub(token)
             now = time.time()
             queued = queued_jobs(gh)
-            if source == "webhook" and event.get("job_id") and event["job_id"] not in {j["id"] for j in queued}:
+            if (source == "webhook" and event.get("job_id") and event.get("pool") in POOLS
+                    and event["job_id"] not in {j["id"] for j in queued}):
                 # The runs API can lag the webhook by a moment; the signed event says it's queued.
-                queued.append({"id": event["job_id"]})
+                queued.append({"id": event["job_id"], "pool": event["pool"]})
             runners = [r for r in gh.paged(f"/repos/{REPO}/actions/runners", "runners")
                        if r["name"].startswith(NAME_PREFIX)]
             instances = live_instances()
@@ -346,13 +369,15 @@ def launcher(event, context):
                 gone = {i["id"] for i in plan["terminate"] + idle}
                 instances = [i for i in instances if i["id"] not in gone]
 
-            n = launches_needed(queued, instances, runners, now)
+            plan = launches_needed(queued, instances, runners, now)
             covered = {i["job_id"] for i in instances}
-            todo = sorted(queued, key=lambda j: str(j["id"]) in covered)  # jobs without an instance first
             log("reconcile", source=source, queued=len(queued), live=len(instances),
-                unclaimed=len(unclaimed(instances, runners, now)), launching=n, cap=MAX_RUNNERS)
-            for job in todo[:n]:
-                launch(gh, job["id"])
+                unclaimed=len(unclaimed(instances, runners, now)), launching=plan, cap=MAX_RUNNERS)
+            for pool, n in plan.items():
+                # Name each runner after a job it's likely to take: ones without an instance first.
+                todo = sorted((j for j in queued if j["pool"] == pool), key=lambda j: str(j["id"]) in covered)
+                for job in todo[:n]:
+                    launch(gh, job["id"], pool)
         finally:
             ghapp.revoke(token)
     return {"ok": True}
