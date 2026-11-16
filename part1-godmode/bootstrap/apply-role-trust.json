@@ -13,8 +13,8 @@
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
           "token.actions.githubusercontent.com:ref": "refs/heads/main",
           "token.actions.githubusercontent.com:sub": [
-            "repo:stickleprojects/aws-build-runner:environment:aws",
-            "repo:stickleprojects/aws-build-runner:environment:aws-rollback"
+            "repo:stickleprojects@11067183/aws-build-runner@1459339065:environment:aws",
+            "repo:stickleprojects@11067183/aws-build-runner@1459339065:environment:aws-rollback"
           ]
         }
       }
