@@ -118,8 +118,12 @@ jobs:
 
       - name: shellcheck the scripts
         run: |
-          shellcheck -x part1-godmode/*.sh
-          find part2-runner -name '*.sh' -print0 | xargs -0 -r shellcheck -x
+          # -P SCRIPTDIR: resolve "source lib.sh" next to each script, not from the repo root.
+          shellcheck -x -P SCRIPTDIR part1-godmode/*.sh
+          find part2-runner -name '*.sh' ! -name job-started.sh -print0 | xargs -0 -r shellcheck -x -P SCRIPTDIR
+          # job-started.sh is the local runner's hook copied byte for byte, so it isn't edited here;
+          # its info-level notes are the original's. Warnings and errors still fail.
+          shellcheck -S warning part2-runner/ami/files/job-started.sh
 
       - name: Offline allow/deny checks
         run: |
