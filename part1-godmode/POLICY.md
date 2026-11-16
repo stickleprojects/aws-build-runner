@@ -2,12 +2,16 @@
 
 Generated from [policy.yaml](policy.yaml) by `build-policies.py`. Don't edit this file.
 
+> **DRAFT, not approved yet.** Pending:
+> - read-only listing
+> - change 2026-11-16: Read-only listing becomes Sydney only (was every region); IAM reads stay global, as IAM has no regions
+
 Claude's IAM user (`AWS_CLAUDE_USER`) in the account `AWS_ACCOUNT_ID` · home region Sydney (`ap-southeast-2`). The account id and user name aren't in the repo: see [config.py](config.py).
 
 ## In short
 
 - **Can build** with the 9 approved services below, **in Sydney only**.
-- **Can see** a short list of read-only things in every region, to find forgotten resources.
+- **Can list** (metadata only) in Sydney, plus IAM reads, which have no region.
 - **Everything else is denied**, because nothing grants it: other services, other regions, IAM users,
   access keys, budgets, quotas, billing changes, Organizations, account settings.
 - **Roles Claude creates** live under `/claude/` and can never do more than Claude can.
@@ -58,16 +62,20 @@ Claude's IAM user (`AWS_CLAUDE_USER`) in the account `AWS_ACCOUNT_ID` · home re
   | `s3:PutAccountPublicAccessBlock` | Turning off the account-wide public access block |
   | `s3:PutBucketObjectLockConfiguration` | Object lock (locked data can't be deleted, so it is billed until the lock ends) |
 
-## Outside the home region
+## Global services and read-only access
 
 Global services (no region):
 
 - **Who am I**: `sts:GetCallerIdentity`
 - **Costs and prices, read only**: `budgets:View*`, `budgets:Describe*`, `ce:Get*`, `ce:Describe*`, `ce:List*`, `pricing:*`
 
-Read-only in every region (lists and metadata, no data, no changes):
+Read-only, Sydney only (lists and metadata, no data, no changes):
 
-`ec2:Describe*`, `lambda:List*`, `lambda:GetFunction*`, `cloudformation:Describe*`, `cloudformation:List*`, `s3:ListAllMyBuckets`, `s3:GetBucketLocation`, `s3:GetBucketTagging`, `tag:GetResources`, `tag:GetTagKeys`, `tag:GetTagValues`, `logs:DescribeLogGroups`, `cloudtrail:LookupEvents`, `servicequotas:Get*`, `servicequotas:List*`, `iam:Get*`, `iam:List*`, `iam:GenerateServiceLastAccessedDetails`, `iam:SimulatePrincipalPolicy`, `iam:SimulateCustomPolicy`, `access-analyzer:ValidatePolicy`, `access-analyzer:CheckNoNewAccess`, `access-analyzer:CheckAccessNotGranted`, `access-analyzer:CheckNoPublicAccess`
+`ec2:Describe*`, `lambda:List*`, `lambda:GetFunction*`, `cloudformation:Describe*`, `cloudformation:List*`, `s3:ListAllMyBuckets`, `s3:GetBucketLocation`, `s3:GetBucketTagging`, `tag:GetResources`, `tag:GetTagKeys`, `tag:GetTagValues`, `logs:DescribeLogGroups`, `cloudtrail:LookupEvents`, `servicequotas:Get*`, `servicequotas:List*`, `access-analyzer:ValidatePolicy`, `access-analyzer:CheckNoNewAccess`, `access-analyzer:CheckAccessNotGranted`, `access-analyzer:CheckNoPublicAccess`
+
+Read-only IAM (IAM has no regions; AWS evaluates every IAM request as us-east-1):
+
+`iam:Get*`, `iam:List*`, `iam:GenerateServiceLastAccessedDetails`, `iam:SimulatePrincipalPolicy`, `iam:SimulateCustomPolicy`
 
 ## IAM: permissions for what Claude builds
 
@@ -111,9 +119,10 @@ Each group also has an AWS Resource Group of the same name (a saved tag search) 
 |---|---|---|
 | 2026-11-16 | First allow-list, for building the runner; replaces the old claude-assistant-policy v1 | 2026-11-16 Kieron |
 | 2026-11-16 | Every resource Claude creates must carry an approved resource-group tag (first group build-runner); adds AWS Resource Groups | 2026-11-16 Kieron |
+| 2026-11-16 | Read-only listing becomes Sydney only (was every region); IAM reads stay global, as IAM has no regions | pending |
 
 ## Policy sizes
 
-- `claude-assistant-policy.json`: 5009 of 6144 characters
+- `claude-assistant-policy.json`: 5152 of 6144 characters
 - `claude-assistant-iam.json`: 1814 of 6144 characters
 - `claude-boundary.json`: 4566 of 6144 characters

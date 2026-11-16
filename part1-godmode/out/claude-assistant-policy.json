@@ -63,7 +63,7 @@
       "Resource": "*"
     },
     {
-      "Sid": "ReadOnlyEverywhere",
+      "Sid": "ReadOnlyInHomeRegion",
       "Effect": "Allow",
       "Action": [
         "access-analyzer:CheckAccessNotGranted",
@@ -74,11 +74,6 @@
         "cloudformation:List*",
         "cloudtrail:LookupEvents",
         "ec2:Describe*",
-        "iam:GenerateServiceLastAccessedDetails",
-        "iam:Get*",
-        "iam:List*",
-        "iam:SimulateCustomPolicy",
-        "iam:SimulatePrincipalPolicy",
         "lambda:GetFunction*",
         "lambda:List*",
         "logs:DescribeLogGroups",
@@ -90,6 +85,23 @@
         "tag:GetResources",
         "tag:GetTagKeys",
         "tag:GetTagValues"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-southeast-2"
+        }
+      }
+    },
+    {
+      "Sid": "ReadOnlyGlobalIam",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GenerateServiceLastAccessedDetails",
+        "iam:Get*",
+        "iam:List*",
+        "iam:SimulateCustomPolicy",
+        "iam:SimulatePrincipalPolicy"
       ],
       "Resource": "*"
     },

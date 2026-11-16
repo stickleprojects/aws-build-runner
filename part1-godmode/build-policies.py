@@ -36,7 +36,7 @@ def is_approved(value) -> bool:
 def pending_items(p: dict) -> list:
     items = [f"service: {s['title']}" for s in p["services"] if not is_approved(s.get("approved"))]
     items += [f"global: {g['title']}" for g in p["global"] if not is_approved(g.get("approved"))]
-    for key, label in (("see_everywhere", "read-only everywhere"), ("iam", "IAM for what Claude builds"),
+    for key, label in (("read_only", "read-only listing"), ("iam", "IAM for what Claude builds"),
                        ("resource_groups", "resource-group tag on everything Claude creates")):
         if key not in p:
             continue
@@ -114,12 +114,12 @@ def statements(p: dict) -> dict:
         "Action": sorted({a for g in identity for a in g["actions"]}),
         "Resource": "*",
     }
-    see = {
-        "Sid": "ReadOnlyEverywhere",
-        "Effect": "Allow",
-        "Action": sorted(p["see_everywhere"]["actions"]),
-        "Resource": "*",
-    }
+    see = [
+        {"Sid": "ReadOnlyInHomeRegion", "Effect": "Allow", "Action": sorted(p["read_only"]["home_region"]),
+         "Resource": "*", "Condition": {"StringEquals": {"aws:RequestedRegion": region}}},
+        {"Sid": "ReadOnlyGlobalIam", "Effect": "Allow", "Action": sorted(p["read_only"]["global"]),
+         "Resource": "*"},
+    ]
 
     denies = []
     blocked = sorted({a for s in services for a in (s.get("blocked") or {})})
@@ -207,7 +207,7 @@ def statements(p: dict) -> dict:
         return {"Version": "2012-10-17", "Statement": stmts}
 
     return {
-        "claude-assistant-policy.json": doc([allow_sydney, *allow_kms, allow_global, see, *denies]),
+        "claude-assistant-policy.json": doc([allow_sydney, *allow_kms, allow_global, *see, *denies]),
         "claude-assistant-iam.json": doc(iam),
         "claude-boundary.json": doc([allow_sydney, *allow_kms, allow_identity_only, pass_roles, *denies]),
     }
@@ -240,7 +240,7 @@ def summary(p: dict, pending: list, sizes: dict) -> str:
     w("## In short")
     w("")
     w(f"- **Can build** with the {len(p['services'])} approved services below, **in {name} only**.")
-    w("- **Can see** a short list of read-only things in every region, to find forgotten resources.")
+    w(f"- **Can list** (metadata only) in {name}, plus IAM reads, which have no region.")
     w("- **Everything else is denied**, because nothing grants it: other services, other regions, IAM users,")
     w("  access keys, budgets, quotas, billing changes, Organizations, account settings.")
     w(f"- **Roles Claude creates** live under `{path}` and can never do more than Claude can.")
@@ -282,16 +282,20 @@ def summary(p: dict, pending: list, sizes: dict) -> str:
         for action, why in (s.get("blocked") or {}).items():
             w(f"  | `{action}` | {why} |")
     w("")
-    w("## Outside the home region")
+    w("## Global services and read-only access")
     w("")
     w("Global services (no region):")
     w("")
     for g in p["global"]:
         w(f"- **{g['title']}**: {', '.join(f'`{a}`' for a in g['actions'])}")
     w("")
-    w("Read-only in every region (lists and metadata, no data, no changes):")
+    w(f"Read-only, {name} only (lists and metadata, no data, no changes):")
     w("")
-    w(", ".join(f"`{a}`" for a in p["see_everywhere"]["actions"]))
+    w(", ".join(f"`{a}`" for a in p["read_only"]["home_region"]))
+    w("")
+    w("Read-only IAM (IAM has no regions; AWS evaluates every IAM request as us-east-1):")
+    w("")
+    w(", ".join(f"`{a}`" for a in p["read_only"]["global"]))
     w("")
     w("## IAM: permissions for what Claude builds")
     w("")

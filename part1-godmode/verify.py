@@ -147,9 +147,12 @@ def build_cases(p, cfg):
         add(Case(action, "denied", region=home))
         add(Case(action, "denied", region=GLOBAL_REGION))
 
-    # Read-only everywhere: the user only (roles get nothing outside the home region).
-    add(Case("ec2:DescribeInstances", {"user": "allowed", "role": "denied"}, region=OTHER_REGION))
+    # Read-only: Sydney only (both principals); IAM reads are global, for the user only.
+    add(Case("ec2:DescribeInstances", "denied", region=OTHER_REGION))
     add(Case("ec2:DescribeInstances", "allowed", region=home))
+    add(Case("tag:GetResources", "denied", region=OTHER_REGION))
+    add(Case("tag:GetResources", {"user": "allowed", "role": "denied"}, region=home))
+    add(Case("iam:GetRole", {"user": "allowed", "role": "denied"}, region=GLOBAL_REGION))
     add(Case("ce:GetCostAndUsage", {"user": "allowed", "role": "denied"}, region=GLOBAL_REGION))
     add(Case("sts:GetCallerIdentity", "allowed", region=GLOBAL_REGION))
 
