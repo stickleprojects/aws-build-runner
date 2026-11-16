@@ -89,6 +89,13 @@ check "hook refuses an unknown repo" "cd /tmp && GITHUB_REPOSITORY=someone/else 
 # Tools work, as the job user (not just report a version).
 check "godot runs a script"     "as_job 'printf \"extends SceneTree\nfunc _init():\n\tprint(\\\"smoke-ok\\\")\n\tquit()\n\" > /tmp/smoke.gd && godot --headless -s /tmp/smoke.gd' | grep -m1 smoke-ok"
 check "godot where install-godot.sh looks" "as_job 'test -x \$HOME/.local/opt/godot-*/godot && test -s \$HOME/.cache/godot/*.zip && echo present'"
+# spellbound3d's own Godot smoke test (their change 0034), offline, as ghrunner. Fails the image on a
+# non-zero exit or a last line not starting PASS:. Skipped (with a note) until it's on their main.
+if [[ "$(jq -r '.runner_smoke // "absent"' $M)" == present ]]; then
+  check "spellbound3d godot-smoke" "as_job '/opt/build-runner/runner-smoke/godot-smoke.sh \"$(jq -r .godot_pinned $M)\" godot' > /tmp/gs 2>&1; rc=\$?; tail -1 /tmp/gs; test \$rc -eq 0 && tail -1 /tmp/gs | grep -q '^PASS:'"
+else
+  echo "skip  spellbound3d godot-smoke: tools/runner-smoke/ isn't on spellbound3d main yet"
+fi
 check "claude from npm cache, offline" "as_job \"rm -rf /tmp/c && npm install --prefix /tmp/c --offline --no-fund --no-audit --loglevel=error @anthropic-ai/claude-code@$CLAUDE_VER >/dev/null && /tmp/c/node_modules/.bin/claude --version\""
 check "claude global"           "as_job 'claude --version'"
 check "uv runs python"          "as_job 'uv run --no-project python3 -c \"print(42)\"' | grep -x 42"
