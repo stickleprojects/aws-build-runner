@@ -205,6 +205,23 @@ def bake_reporter_survives_the_cleanup():
     return [f"the clean-up ({hits[0]}) deletes the reporter {m.group(1)}"] if hits else []
 
 
+@rule("2026-11-16: the first good bake stopped at 'aws ec2 wait image-available', which gives up after 10 min, "
+      "while the 30 GB AMI took longer; the AMI id wasn't recorded.")
+def no_short_aws_waiters_for_images():
+    return [f"use a polling loop with a long deadline, not the 10-minute CLI waiter: {p}"
+            for p in lines_matching(SHELL_SCRIPTS, r"aws ec2 wait image-available")]
+
+
+@rule("2026-11-16: the one-job service had After=cloud-final.service and WantedBy=multi-user.target; on Ubuntu "
+      "cloud-final runs after multi-user, so systemd dropped the service to break the cycle and it never started.")
+def runner_service_has_no_ordering_cycle():
+    unit = (P2 / "ami" / "files" / "github-runner-jit.service").read_text()
+    after = " ".join(re.findall(r"^After=(.*)$", unit, re.M))
+    if "multi-user.target" in unit and "cloud-final" in after:
+        return ["github-runner-jit.service orders After=cloud-final.service but is WantedBy=multi-user.target (cycle)"]
+    return []
+
+
 def main():
     failed = 0
     for name, incident, fn in RULES:

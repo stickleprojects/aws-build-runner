@@ -89,8 +89,13 @@ ami="$(aws ec2 create-image --instance-id "$instance" --name "build-runner-${STA
   --tag-specifications "ResourceType=image,Tags=[{Key=resource-group,Value=${GROUP}},{Key=Name,Value=build-runner-${STAMP}}]" \
     "ResourceType=snapshot,Tags=[{Key=resource-group,Value=${GROUP}},{Key=Name,Value=build-runner-${STAMP}}]" \
   --query ImageId --output text)"
-echo "making AMI ${ami}"
-aws ec2 wait image-available --image-ids "$ami"
+echo "making AMI ${ami} (a 30 GB image takes 10-20 min)"
+# Not 'aws ec2 wait image-available': it gives up after 10 minutes, before a 30 GB image is ready.
+deadline=$(( $(date +%s) + 45 * 60 ))
+until [[ "$(aws ec2 describe-images --image-ids "$ami" --query 'Images[0].State' --output text)" == available ]]; do
+  (( $(date +%s) < deadline )) || { echo "AMI ${ami} not available after 45 min" >&2; exit 1; }
+  sleep 20
+done
 
 aws ssm put-parameter --name /build/runner/ami-id --type String --value "$ami" --overwrite \
   --description "Current build-runner AMI (part2-runner/ami/bake.sh)" >/dev/null

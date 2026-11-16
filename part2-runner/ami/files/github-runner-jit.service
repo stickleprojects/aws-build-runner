@@ -1,6 +1,8 @@
 [Unit]
 Description=GitHub Actions just-in-time runner (one job, then power off)
-After=network-online.target cloud-final.service
+# Not After=cloud-final.service: on Ubuntu, cloud-final runs after multi-user.target, so with our
+# WantedBy=multi-user.target that's an ordering cycle and systemd silently drops this unit (2026-11-16).
+After=network-online.target
 Wants=network-online.target
 
 [Service]
