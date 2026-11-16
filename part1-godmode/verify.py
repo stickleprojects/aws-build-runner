@@ -30,7 +30,9 @@ import config  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 PARALLEL = 8                # simulator calls at once
-OTHER_REGION = "eu-west-2"
+# A region other than home that the organization's SCPs allow, so "denied elsewhere" tests our
+# own home-region rule (the organization blocks e.g. eu-west-2 and ap-southeast-4 by itself).
+OTHER_REGION = "us-east-1"
 GLOBAL_REGION = "us-east-1"  # where IAM, STS and billing requests are evaluated
 ADMIN = json.dumps({"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Action": "*", "Resource": "*"}]})
 
@@ -289,7 +291,11 @@ def simulate(who, source, cases):
         else:
             extra = ["--permissions-boundary-policy-input-list", source[2]] if source[2] else []
             out = aws("iam", "simulate-custom-policy", "--policy-input-list", *source[1], *extra, *common)
-        decisions = {r["EvalActionName"]: r["EvalDecision"] for r in out["EvaluationResults"]}
+        # (decision, blocked by the organization's SCPs?) per action. Custom-policy simulations
+        # have no organization detail.
+        decisions = {r["EvalActionName"]: (r["EvalDecision"],
+                                           (r.get("OrganizationsDecisionDetail") or {}).get("AllowedByOrganizations") is False)
+                     for r in out["EvaluationResults"]}
         nonlocal done
         with lock:
             for c in group:
@@ -406,21 +412,28 @@ def main():
                    "role": ("custom", [ADMIN], live_policy(boundary_arn))}
 
     failures = 0
+    org_notes = 0
     for who, source in sources.items():
         if source[0] == "offline":
-            results = {id(c): offline_decision(*offline[who], c) for c in cases}
+            results = {id(c): (offline_decision(*offline[who], c), False) for c in cases}
         else:
             results = simulate(who, source, cases)
         for c in cases:
-            got = results[id(c)]
+            got, org_blocked = results[id(c)]
             want = c.expected_for(who)
             ok = (got == "allowed") == (want == "allowed")
+            note = ""
+            if not ok and want == "allowed" and org_blocked:
+                # policy.yaml allows it; the organization's SCPs block it. Not ours to test.
+                ok, note = True, "  (blocked by the organization's SCPs, not by policy.yaml)"
+                org_notes += 1
             failures += not ok
             ctx = " ".join(f"{k}={v}" for k, v in sorted(c.ctx.items()))
             print(f"{'ok  ' if ok else 'FAIL'} {who:4} {want:7} {c.action} [{c.region}] {ctx}"
-                  + ("" if ok else f"  <- got {got}"))
+                  + ("" if ok else f"  <- got {got}") + note)
     where = "offline evaluator, drafts" if args.offline else "simulator, local drafts" if args.local else "simulator, live policies"
-    print(f"\n{len(cases) * len(sources)} checks ({where}), {failures} failed")
+    print(f"\n{len(cases) * len(sources)} checks ({where}), {failures} failed"
+          + (f", {org_notes} blocked by the organization instead" if org_notes else ""))
     return 1 if failures else 0
 
 

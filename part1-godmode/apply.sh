@@ -101,6 +101,12 @@ trap 'deployment_status failure "apply.sh failed; AWS may be partly updated. Re-
 upsert_policy() {
   local name="$1" path="$2" file="$3" arn="arn:aws:iam::${ACCOUNT_ID}:policy${2}${1}"
   if aws iam get-policy --policy-arn "$arn" >/dev/null 2>&1; then
+    # Already identical? Then don't add a version (reruns would fill IAM's 5-version history).
+    local current
+    current="$(aws iam get-policy-version --policy-arn "$arn" \
+      --version-id "$(aws iam get-policy --policy-arn "$arn" --query Policy.DefaultVersionId --output text)" \
+      --query PolicyVersion.Document --output json | jq -S -c .)"
+    if [[ "$current" == "$(jq -S -c . "$file")" ]]; then echo "unchanged ${arn}"; return; fi
     local old
     read -r -a old <<<"$(aws iam list-policy-versions --policy-arn "$arn" \
       --query 'Versions[?!IsDefaultVersion] | sort_by(@, &CreateDate)[].VersionId' --output text)"
