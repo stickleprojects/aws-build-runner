@@ -9,18 +9,25 @@ One-off. Afterwards Claude works as its IAM user with exactly what
 - [ ] Approve: tell Claude, which sets every `approved: pending` to `approved: 2026-MM-DD Kieron` in a PR.
       Once the `policy` and `approved` checks are green, merge it.
 
-## 1. Work out how you sign in (the "log in as root" confusion)
+## 1. Sign in (godmode)
 
-The account has AWS-managed roles under `/managed/` (`AccountFullAccessRole` with
-AdministratorAccess, trusted by `account-access.amazonaws.com`; account-management roles trusted by
-an AWS-owned account) and `AWSServiceRoleForBudgetsSpendLimitMember`, all created 2026-10-25. The
-console probably signs you in through that managed access, not as root or an IAM user. That would
-explain why it shows a team identity while root-only pages ask for root.
+There is no root-user sign-in for this account. It's in an AWS organization (**kieron-wray-team**),
+and you sign in with **GitHub**:
 
-- [ ] Console, account menu (top right): note what it says you are. A role session such as
-      `AccountFullAccessRole/...` is already admin. That session is godmode; root isn't needed.
-- [ ] If root sign-in works ("Root user" + the registration email), add MFA to root, then stop using it.
+1. Go to `signin.aws.amazon.com` and choose **GitHub**, the identity the account was created with.
+   AWS Builder ID is a different thing, for Amazon Q and similar tools; it doesn't open the account.
+2. The "AWS sign-ins" screen lists three accounts: *identity delegated admin*, *management account*
+   and *building momentum*. Choose **kieron-wray-team identity delegated admin**: that's where Claude's
+   IAM user lives. Check its 12-digit ID against `python3 -I part1-godmode/config.py`.
+3. The session is full admin (through the account's AWS-managed `AccountFullAccessRole`): that is godmode.
+
+- [ ] Your **GitHub account has two-factor authentication on**. It is the key to every AWS account in the organization.
 - [ ] Billing: is a **spend limit** set? If so, note it. It's the hard cap; the budget only emails.
+
+Note: the identity delegated admin account manages sign-in for the whole organization. AWS advises
+running workloads in a separate member account. Part 1 is applied here (decided 2026-11-16).
+Where the build machine lives is decided at the start of part 2: see
+[../part2-runner/PLAN.md](../part2-runner/PLAN.md#open-questions).
 
 ## 2. Admin credentials for the session (no long-lived keys)
 
