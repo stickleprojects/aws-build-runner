@@ -49,6 +49,11 @@ Read [readme.md](readme.md) first; costs in [PRICING.md](PRICING.md).
   on the drafts). New kinds of rule need cases in `verify.py`. Unblocking a costly action also means
   removing it from `MUST_STAY_DENIED`, on purpose.
 - POLICY.md must stay concise and complete: a reader should spot anything risky without opening the JSON.
+- **Every fix for a mistake gets a regression rule** in `part1-godmode/tests/regressions.py` (what went wrong, when),
+  and the rule must be shown to fail on the old mistake. CI runs the rules and `shellcheck` on every PR.
+- Shared shell helpers live in `part1-godmode/lib.sh` (tagging, deployment statuses); use them, don't inline.
+- Before pushing to an existing PR branch, check the PR is still open (`gh api repos/{owner}/{repo}/pulls/N --jq .state`):
+  a push after merge never reaches `main` (2026-11-16, #13).
 
 ## The runner (part 2)
 

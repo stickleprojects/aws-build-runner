@@ -16,6 +16,8 @@
 #                            them, then a GitHub deployment "success" saying who applied it and when
 set -Eeuo pipefail   # -E: the ERR trap also fires inside functions
 cd "$(dirname "$0")"
+# shellcheck source=lib.sh
+. ./lib.sh
 
 ALERT_EMAIL="${1:-$(python3 -I config.py AWS_ALERT_EMAIL)}"
 yaml_get() { python3 -I -c "import yaml; print(yaml.safe_load(open('policy.yaml'))$1)"; }
@@ -63,8 +65,9 @@ echo "== 3a. check the artifact"
 (cd "$art" && sha256sum --quiet -c SHA256SUMS) || { echo "Refusing: artifact checksums don't match." >&2; exit 1; }
 [[ "$(jq -r .commit "$art/manifest.json")" == "$commit" ]] || { echo "Refusing: artifact is for another commit." >&2; exit 1; }
 [[ "$(jq -r .pending_approval "$art/manifest.json")" == "false" ]] || { echo "Refusing: artifact has items pending approval." >&2; exit 1; }
-diff -r "$art/out" out >/dev/null && cmp -s "$art/POLICY.md" POLICY.md && cmp -s "$art/policy.yaml" policy.yaml \
-  || { echo "Refusing: artifact differs from this checkout." >&2; exit 1; }
+if ! { diff -r "$art/out" out >/dev/null && cmp -s "$art/POLICY.md" POLICY.md && cmp -s "$art/policy.yaml" policy.yaml; }; then
+  echo "Refusing: artifact differs from this checkout." >&2; exit 1
+fi
 python3 -I build-policies.py >/dev/null       # strict: fails on anything pending
 git diff --quiet -- out POLICY.md || { echo "Refusing: rebuilding here gives different files from the artifact." >&2; exit 1; }
 echo "artifact from run ${run_id}: checksums ok, same commit, nothing pending, identical to checkout"
@@ -111,9 +114,7 @@ if [[ "$IN_ACTIONS" != true ]]; then
 fi
 deployment_status() {
   [[ -n "$deployment_id" ]] || return 0   # GitHub Actions: the environment records it
-  # GitHub rejects descriptions over 140 characters (HTTP 422).
-  gh api "repos/${REPO}/deployments/${deployment_id}/statuses" -f state="$1" -f description="${2:0:140}" \
-    -f environment="$ENVIRONMENT" >/dev/null || echo "WARNING: couldn't record deployment status $1"
+  gh_deployment_status "$REPO" "$deployment_id" "$1" "$ENVIRONMENT" "$2" || echo "WARNING: couldn't record deployment status $1"
 }
 caller_short="$(sed -E 's#^arn:aws:(sts|iam)::[0-9]+:(assumed-role|user|role)/##; s#/.*##' <<<"$caller_arn")"  # role or user name
 deployment_status in_progress "Applying, by ${gh_user} (${caller_short})"
@@ -193,14 +194,13 @@ tail -1 "$work/verify-live.txt"
 # ---------- 5. record ----------
 applied_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 if [[ "$IN_ACTIONS" == true ]]; then
-  applied_by="${gh_user} via GitHub Actions run ${GITHUB_RUN_ID} (approved in environment ${ENVIRONMENT})"
+  applied_by="${gh_user} via GitHub Actions run ${GITHUB_RUN_ID}, approved in environment ${ENVIRONMENT}"
 else
   applied_by="${gh_user} as ${caller_arn}"
 fi
-applied_by="${applied_by:0:256}"
+applied_by="$(iam_tag_value "$applied_by")"   # also what's printed below
 for arn in "${want[@]}" "arn:aws:iam::${ACCOUNT_ID}:policy/${BOUNDARY_PATH_NAME}"; do
-  aws iam tag-policy --policy-arn "$arn" --tags \
-    Key=applied-commit,Value="$commit" Key=applied-at,Value="$applied_at" Key=applied-by,Value="$applied_by"
+  tag_applied "$arn" "$commit" "$applied_at" "$applied_by"
 done
 
 echo "== 5a. drift check"
