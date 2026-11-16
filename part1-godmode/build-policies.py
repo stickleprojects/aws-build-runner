@@ -37,7 +37,8 @@ def pending_items(p: dict) -> list:
     items = [f"service: {s['title']}" for s in p["services"] if not is_approved(s.get("approved"))]
     items += [f"global: {g['title']}" for g in p["global"] if not is_approved(g.get("approved"))]
     for key, label in (("read_only", "read-only listing"), ("iam", "IAM for what Claude builds"),
-                       ("resource_groups", "resource-group tag on everything Claude creates")):
+                       ("resource_groups", "resource-group tag on everything Claude creates"),
+                       ("protected", "protected resources (the budget kill switch)")):
         if key not in p:
             continue
         if not is_approved(p[key].get("approved")):
@@ -161,6 +162,9 @@ def statements(p: dict) -> dict:
         })
 
     denies += resource_group_statements(p)
+    for i, item in enumerate((p.get("protected") or {}).get("resources", [])):
+        denies.append({"Sid": f"Protected{i}", "Effect": "Deny", "Action": item["actions"],
+                       "Resource": item["arn"]})
 
     role_arn = f"arn:aws:iam::{acct}:role{path}*"
     pass_roles = {
@@ -334,7 +338,32 @@ def summary(p: dict, pending: list, sizes: dict) -> str:
     w("## Set by godmode, outside the policy")
     w("")
     if "budget_usd" in settings:
-        w(f"- Monthly budget **US${settings['budget_usd']}**, email alerts at 50 %, 80 % and 100 % actual, and 100 % forecast.")
+        scope = (" It counts **everything in the account**, every service (instances, logs, snapshots, data transfer…), "
+                 "as **what you'd be billed**: credits (applied automatically on the invoice) reduce it, refunds "
+                 "(paid back later, if ever) don't, and tax counts.") if settings.get("budget_counts_billed") else ""
+        w(f"- Monthly budget **US${settings['budget_usd']}**, email alerts at 50 %, 80 % and 100 % actual, and 100 % forecast.{scope}")
+    stop = settings.get("budget_stop")
+    if stop:
+        roles = ", ".join(f"`{r}`" for r in stop["roles"]) or "none yet"
+        ks = stop.get("kill_switch") or {}
+        w(f"- **Automatic stop at {stop['at_percent']} % of actual spend** (US${settings.get('budget_usd')}):")
+        w(f"  - **Nothing new:** AWS Budgets attaches `guardrails/budget-stop` to Claude's user and roles ({roles}): "
+          "no instances, spot/fleet, volumes, snapshots, images, IPs, NAT, endpoints, functions, buckets, stacks or "
+          "passing roles.")
+        stops = []
+        if ks.get("terminate_instances"):
+            stops.append("terminates **every instance** in the account and cancels open spot requests")
+        if ks.get("delete_runner_amis"):
+            stops.append("deletes the runner AMIs and their snapshots (the weekly pipeline rebuilds them)")
+        if stops:
+            w(f"  - **Stop what's spending:** the kill switch (Lambda `guardrail-kill-switch`, Sydney) {' and '.join(stops)}.")
+        w("  - Billing data lags by up to about a day, so the stop fires at US$25 to keep the bill under the £30 ceiling. "
+          "Only Kieron can lift it (Billing → Budgets → Actions); Claude can't detach it or touch the kill switch.")
+    protected = (p.get("protected") or {}).get("resources", [])
+    if protected:
+        w("- **Protected resources** Claude and its roles can't touch, whatever the approved services allow: "
+          + "; ".join(f"{r['name']} (`{r['arn'].replace('{{ACCOUNT_ID}}', 'ACCOUNT')}`, {', '.join(r['actions'])})"
+                      for r in protected) + ".")
     if settings.get("block_public_access"):
         w(f"- Public access blocked for: {', '.join(settings['block_public_access'])}. Claude can't turn it off.")
     if settings.get("ebs_encryption_by_default"):

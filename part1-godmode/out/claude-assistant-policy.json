@@ -327,6 +327,14 @@
           ]
         }
       }
+    },
+    {
+      "Sid": "Protected0",
+      "Effect": "Deny",
+      "Action": [
+        "lambda:*"
+      ],
+      "Resource": "arn:aws:lambda:*:{{ACCOUNT_ID}}:function:guardrail-*"
     }
   ]
 }
