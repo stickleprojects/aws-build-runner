@@ -28,6 +28,7 @@ import random
 import secrets
 import time
 
+import curfew
 import ghapp
 
 REPO = os.environ.get("REPO", "stickleprojects/spellbound3d")
@@ -51,6 +52,8 @@ BOOT_GRACE = 5 * 60   # an instance whose runner isn't listed yet counts as boot
 SUBNETS = [s for s in os.environ.get("SUBNETS", "").split(",") if s]
 LAUNCH_TEMPLATE = os.environ.get("LAUNCH_TEMPLATE_ID", "")
 LAUNCHER = os.environ.get("LAUNCHER_FUNCTION", "build-runner-launcher")
+# Quiet hours (curfew.py): no runners overnight unless Kieron extends. {"start", "end", "tz"}.
+CURFEW = {**curfew.DEFAULT, **json.loads(os.environ.get("CURFEW") or "{}")}
 LOCK = "/build/runner/launcher-lock"
 LOCK_STALE = 150      # longer than the launcher's 120 s timeout
 TOKEN_PERMISSIONS = {"administration": "write", "actions": "read"}
@@ -73,6 +76,17 @@ def error_code(e: Exception) -> str:
 @functools.cache
 def parameter(name: str) -> str:
     return aws("ssm").get_parameter(Name=name, WithDecryption=True)["Parameter"]["Value"]
+
+
+def curfew_override() -> dict:
+    """/build/runner/curfew, or {} when it doesn't exist (no extension, no manual stop). Read fresh on every run:
+    parameter() is cached for the life of a warm Lambda, which kept a resumed curfew "extended" (2026-11-17)."""
+    try:
+        return curfew.parse(aws("ssm").get_parameter(Name=curfew.PARAMETER)["Parameter"]["Value"])
+    except Exception as e:  # ParameterNotFound
+        if error_code(e) == "ParameterNotFound":
+            return {}
+        raise
 
 
 def log(msg: str, **fields) -> None:
@@ -403,6 +417,22 @@ def launcher(event, context):
                     remove_runner(gh, r["id"])
                 gone = {i["id"] for i in plan["terminate"] + idle}
                 instances = [i for i in instances if i["id"] not in gone]
+
+            if source == "curfew-status":
+                return {"curfew": curfew.state(now, curfew_override(), CURFEW), "live": len(instances)}
+            night = curfew.state(now, curfew_override(), CURFEW)
+            if night["active"]:
+                # Curfew: nothing runs. Running jobs are killed (Kieron's choice, 2026-11-17); queued ones wait
+                # (GitHub keeps them up to 24 h) and launch on the first run after it ends.
+                by_name = {r["name"]: r for r in runners}
+                for i in instances:
+                    log("curfew: terminating", instance=i["id"], runner=i["name"], reason=night["reason"])
+                    if i["name"] in by_name:
+                        remove_runner(gh, by_name[i["name"]]["id"])  # a busy one goes offline, then stale
+                terminate([i["id"] for i in instances])
+                log("curfew: not launching", reason=night["reason"], queued=len(queued),
+                    until=curfew.local(night["until"], CURFEW))
+                return {"ok": True, "curfew": night}
 
             plan = launches_needed(queued, instances, runners, now)
             covered = {i["job_id"] for i in instances}

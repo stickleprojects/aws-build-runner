@@ -22,6 +22,9 @@ Parameters:
   MaxAgeMinutes: {Type: Number, Description: "The reaper terminates runner instances older than this"}
   IdleMinutes: {Type: Number, Description: "...and runners idle this long with nothing queued"}
   Repo: {Type: String}
+  Curfew:
+    Type: String
+    Description: 'Nightly quiet hours, JSON {"start": "22:00", "end": "07:00", "tz": "Australia/Sydney"} (lambda/curfew.py)'
 
 Resources:
   # ------------------------------------------------------------------ runner instances
@@ -218,6 +221,8 @@ Resources:
                   - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/build/runner/ami-id"
                   - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/build/github/app-id"
                   - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/build/github/app-private-key"
+                  # Kieron's curfew overrides (extend / stop), written by the curfew workflow or the skill.
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/build/runner/curfew"
               - Sid: DecryptItThroughSsmOnly
                 Effect: Allow
                 Action: kms:Decrypt
@@ -253,6 +258,7 @@ Resources:
           MAX_RUNNERS: !Ref MaxRunners
           MAX_AGE_MINUTES: !Ref MaxAgeMinutes
           IDLE_MINUTES: !Ref IdleMinutes
+          CURFEW: !Ref Curfew
           SUBNETS: !Join [",", !Ref Subnets]
           LAUNCH_TEMPLATE_ID: !Ref LaunchTemplate
       Tags: [{Key: resource-group, Value: build-runner}]

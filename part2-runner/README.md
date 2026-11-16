@@ -28,7 +28,7 @@ every 5 min ──> launcher: catches missed webhooks; reaps runners > 90 min, o
 - [x] **Smoke test** (`ami/smoke-test.sh`): 23 checks (tools work, security, boot step), plus spellbound3d's Godot smoke test once it's on their main. A new AMI is only a
       *candidate* until it passes; then it becomes current (SSM `/build/runner/ami-id`). Current: `ami-0d1c0c1e4fbf2a0dd`.
 - [x] **Image contract**: [ami/IMAGE.md](ami/IMAGE.md) (and `/etc/build-runner/manifest.json` on every instance).
-- [x] **Weekly rebuild** (`.github/workflows/ami.yml`): Monday 03:00 Sydney, or by hand. Bake → smoke test → promote →
+- [x] **Weekly rebuild** (`.github/workflows/ami.yml`): Monday 08:30 Sydney (07:30 in winter: after the curfew), or by hand. Bake → smoke test → promote →
       prune (keep 3) → GitHub Release with IMAGE.md and manifest.json. Role `/claude/build-runner-ami-ci` via OIDC (`ci/ami-ci-role.sh`).
       **The latest image's contract is always the latest [release](https://github.com/stickleprojects/aws-build-runner/releases/latest).**
 - [x] **The runner** (`stack/deploy.sh`): webhook and launcher Lambdas, launch template, 5-minute reconcile and reaper,
@@ -37,6 +37,11 @@ every 5 min ──> launcher: catches missed webhooks; reaps runners > 90 min, o
       cost for light and heavy runners, a weekly summary on the *Runner usage* issue, and an issue assigned to Kieron when
       runners are projected over US$15 with heavy over half the hours ("spellbound3d is shredding your budget"), or
       projected over the US$25 stop. Read-only role `/claude/build-runner-usage` (`ci/usage-role.sh`).
+- [x] **Nightly curfew** (`stack/lambda/curfew.py`, `.github/workflows/curfew.yml`, skill `runner-curfew`): no
+      runners 22:00-07:00 Sydney. At 21:00 a notice on the *AWS runner curfew* issue mentions Kieron. He replies
+      `/extend 1h` or `/extend 2h` (or `/stop`, `/resume`, `/status`), or uses Actions → curfew. No answer: the
+      launcher terminates every runner at 22:00 and launches none until 07:00; queued jobs wait. Role
+      `/claude/build-runner-curfew` (`ci/curfew-role.sh`) can only read and write `/build/runner/curfew`.
 - [ ] **Job fit** (we own the runners, so sizing is ours to watch and suggest): each runner sends one line per job
       (`ami/files/job-usage.py`: CPU, memory, CPU/memory wait) and the webhook records each finished job's wait for a
       runner. The daily report adds a *Job fit* table with notes: too small, CPU-starved, could be light, near the
@@ -65,4 +70,6 @@ every 5 min ──> launcher: catches missed webhooks; reaps runners > 90 min, o
 | `usage/report.py`, `usage/test_report.py` | Daily usage report (cost per class, job fit) and its offline tests |
 | `ami/test_job_usage.py` | Offline tests for the per-job usage record and hook |
 | `ci/usage-role.sh` | The usage workflow's read-only AWS role |
+| `stack/lambda/curfew.py`, `stack/test_curfew.py` | The nightly curfew's rules (shared by the launcher, the workflow and the skill) and their tests |
+| `curfew/curfew.py`, `ci/curfew-role.sh` | The curfew by hand (status, extend, stop, resume), and the curfew workflow's AWS role |
 | `stack/test_lambda.py` | Offline tests: signatures, filtering, planning, fallback, the lock (CI runs them) |

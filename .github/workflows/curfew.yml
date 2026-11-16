@@ -1,0 +1,120 @@
+# The nightly runner curfew (part2-runner/stack/lambda/curfew.py): AWS runners stop at 22:00 Sydney and
+# start again at 07:00, unless Kieron extends. An hour before each stop this posts a notice on the
+# "AWS runner curfew" issue, mentioning him. He answers there:
+#   /extend 1h   /extend 2h   push the stop back (again an hour before the new time, another notice)
+#   /stop                     everything off now, until 07:00
+#   /resume                   clear any stop or extension
+#   /status                   say what's planned
+# ...or runs this workflow by hand (GitHub app: Actions → curfew → Run workflow). No answer: at the stop the
+# launcher terminates every runner and launches none; queued jobs wait and start at 07:00.
+#
+# Only Kieron's own comments count (the repo owner; anyone can comment on a public repo's issues). AWS: OIDC
+# as /claude/build-runner-curfew (part2-runner/ci/curfew-role.sh), which can only read and write the one
+# parameter /build/runner/curfew. The launcher reads it every 5 minutes and does the stopping.
+name: curfew
+run-name: "curfew: ${{ github.event_name == 'issue_comment' && 'command' || github.event_name == 'schedule' && 'notice check' || inputs.action }}"
+
+on:
+  schedule:
+    - cron: "*/30 9-20 * * *"   # every half hour, 20:00-07:30 Sydney in AEDT (19:00-06:30 AEST)
+  issue_comment:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "What to do"
+        type: choice
+        options: [status, extend 1h, extend 2h, stop, resume]
+        default: status
+
+permissions:
+  contents: read
+
+concurrency:
+  group: curfew
+  cancel-in-progress: false
+
+env:
+  OWNER: stickleprojects
+  LABEL: runner-curfew
+
+jobs:
+  curfew:
+    # Comments: only on the curfew issue (not a PR), only by the owner, only our commands. Nothing else
+    # even starts a runner here.
+    if: >-
+      github.ref == 'refs/heads/main' && (
+        github.event_name != 'issue_comment' || (
+          !github.event.issue.pull_request &&
+          contains(github.event.issue.labels.*.name, 'runner-curfew') &&
+          github.event.comment.user.login == 'stickleprojects' &&
+          github.event.comment.author_association == 'OWNER' &&
+          startsWith(github.event.comment.body, '/')))
+    runs-on: ubuntu-latest
+    environment: curfew
+    timeout-minutes: 5
+    permissions:
+      issues: write     # the notice and the replies
+      id-token: write   # OIDC: sign in to AWS without keys
+    env:
+      AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}   # only so GitHub masks it in the logs
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Sign in to AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_CURFEW_ROLE_ARN }}
+          role-session-name: github-curfew-${{ github.run_id }}
+          aws-region: ap-southeast-2
+
+      - name: Notice, an hour before the stop
+        if: github.event_name == 'schedule'
+        run: |
+          set -euo pipefail
+          due="$(python3 -I part2-runner/curfew/curfew.py notice)"
+          echo "$due"
+          [[ "$(jq -r .due <<<"$due")" == true ]] || exit 0
+          stop_at="$(jq -r .stop_at <<<"$due")"
+          gh label create "$LABEL" --color b60205 --description "Nightly AWS runner curfew notices" 2>/dev/null || true
+          n="$(gh issue list --label "$LABEL" --state open --json number --jq '.[0].number // empty')"
+          if [[ -z "$n" ]]; then
+            n="$(gh issue create --title "AWS runner curfew (nightly)" --label "$LABEL" --assignee "$OWNER" \
+              --body "Nightly notices that the AWS runners are about to stop (22:00-07:00 Sydney). Reply with \`/extend 1h\`, \`/extend 2h\`, \`/stop\`, \`/resume\` or \`/status\`. Only @${OWNER}'s comments count." | sed 's#.*/##')"
+          fi
+          marker="<!-- curfew-notice:${stop_at} -->"
+          if gh api "repos/${GITHUB_REPOSITORY}/issues/${n}/comments?per_page=100" --paginate --jq '.[].body' | grep -qF "$marker"; then
+            echo "notice for ${stop_at} already posted"; exit 0
+          fi
+          gh issue comment "$n" --body "${marker}
+          @${OWNER} **AWS runners stop at $(jq -r .stop_local <<<"$due") Sydney** (in $(jq -r .minutes <<<"$due") min): running jobs are killed, queued ones wait until 07:00.
+          To keep them on, reply \`/extend 1h\` or \`/extend 2h\`. Do nothing and they stop."
+
+      - name: Command (a comment, or by hand)
+        if: github.event_name != 'schedule'
+        env:
+          BODY: ${{ github.event.comment.body }}
+          ACTION: ${{ inputs.action }}
+          ISSUE: ${{ github.event.issue.number }}
+        run: |
+          set -euo pipefail
+          # The comment is data: only these exact commands are understood (first line, case-insensitive).
+          if [[ "$GITHUB_EVENT_NAME" == issue_comment ]]; then
+            cmd="$(head -1 <<<"$BODY" | tr -d '\r' | tr '[:upper:]' '[:lower:]' | sed 's/[[:space:]]*$//')"
+          else
+            cmd="/${ACTION}"
+          fi
+          case "$cmd" in
+            "/extend 1h"|"/extend 1") args=(extend 1) ;;
+            "/extend 2h"|"/extend 2") args=(extend 2) ;;
+            "/stop")   args=(stop) ;;
+            "/resume") args=(resume) ;;
+            "/status") args=(status) ;;
+            *) echo "not a curfew command: ignored"; exit 0 ;;
+          esac
+          out="$(python3 -I part2-runner/curfew/curfew.py "${args[@]}" 2>&1)" || { echo "$out"; out="Couldn't do that: ${out}"; }
+          echo "$out" | tee -a "$GITHUB_STEP_SUMMARY"
+          if [[ -n "$ISSUE" ]]; then gh issue comment "$ISSUE" --body "${cmd} → ${out}"; fi

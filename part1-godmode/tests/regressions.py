@@ -243,6 +243,22 @@ def jobs_run_unprivileged_and_without_imds():
     return problems
 
 
+@rule("2026-11-17: the launcher read Kieron's curfew override through parameter(), which is cached for the life of a "
+      "warm Lambda: after /resume it still said 'extended'. An extend or stop could be ignored for hours.")
+def curfew_override_is_read_fresh():
+    src = (P2 / "stack" / "lambda" / "runner.py").read_text()
+    m = re.search(r"def curfew_override\(\).*?(?=\ndef )", src, re.S)
+    if not m:
+        return ["runner.py has no curfew_override()"]
+    body = re.sub(r'"""(.|\n)*?"""|#.*', "", m.group(0))  # the code, not its docstring or comments
+    problems = []
+    if re.search(r"(?<![\w.])parameter\(", body):
+        problems.append("curfew_override() reads through the cached parameter()")
+    if "get_parameter(" not in body:
+        problems.append("curfew_override() doesn't read the parameter itself")
+    return problems
+
+
 @rule("2026-11-16: the bake gets spellbound3d with a short-lived GitHub token. It must never be in user data "
       "(readable via DescribeInstanceAttribute) and must be deleted from SSM and revoked when the bake ends.")
 def bake_token_stays_out_of_user_data_and_is_revoked():
