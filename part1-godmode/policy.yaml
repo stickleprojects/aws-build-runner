@@ -218,7 +218,7 @@ account_settings:
   #  - the kill switch (Lambda guardrail-kill-switch, Sydney) stops what's already spending
   budget_stop:
     at_percent: 100
-    roles: [build-runner-bake, build-runner-ami-ci]
+    roles: [build-runner-bake, build-runner-ami-ci, build-runner-launcher]
     kill_switch:
       terminate_instances: true      # every instance in the account, and open spot requests
       delete_runner_amis: true       # resource-group=build-runner AMIs and snapshots (the pipeline rebuilds them)
@@ -241,3 +241,6 @@ changes:
   - date: 2026-11-16
     what: The budget stop also covers the weekly AMI pipeline role (build-runner-ami-ci), so at the limit it can't launch bake instances either
     approved: 2026-11-16 Kieron
+  - date: 2026-11-16
+    what: The budget stop also covers the runner launcher's role (build-runner-launcher), so at the limit it can't launch runner instances either (the org-wide stop already did)
+    approved: pending
