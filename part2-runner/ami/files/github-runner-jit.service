@@ -1,0 +1,25 @@
+[Unit]
+Description=GitHub Actions just-in-time runner (one job, then power off)
+After=network-online.target cloud-final.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ghrunner
+WorkingDirectory=/opt/github-runners/spellbound3d
+Environment=HOME=/opt/github-runners/spellbound3d/home
+# /run/build-runner/job exists once start-jit.sh has a job to run.
+RuntimeDirectory=build-runner
+RuntimeDirectoryPreserve=yes
+# Backstop: whatever happens, this instance powers off (and is terminated) within 2 hours.
+ExecStartPre=+/usr/sbin/shutdown -h +120 "build-runner: 2-hour limit"
+ExecStart=/opt/github-runners/start-jit.sh
+# After the job (or any failure while running one), power off now. "+" runs it as root.
+ExecStopPost=+/bin/sh -c 'if [ -e /run/build-runner/job ]; then /usr/sbin/shutdown -h now "build-runner: job done"; fi'
+TimeoutStartSec=infinity
+NoNewPrivileges=yes
+ProtectSystem=full
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
