@@ -84,6 +84,8 @@ check "ghrunner has no sudo"    "! sudo -u ghrunner sudo -n true 2>/dev/null && 
 check "IMDS blocked for jobs"   "! as_job 'curl -sf -m 3 -X PUT http://169.254.169.254/latest/api/token -H X-aws-ec2-metadata-token-ttl-seconds:60' && echo blocked"
 check "IMDS open for root"      "curl -sf -m 3 -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' >/dev/null && echo ok"
 check "hook"                    "bash -n /etc/github-runner/job-started.sh && test -x /etc/github-runner/job-started.sh && echo syntax ok"
+check "job-completed hook"      "bash -n /etc/github-runner/job-completed.sh && grep -qx ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/etc/github-runner/job-completed.sh $R/.env && echo installed"
+check "job usage record"        "/opt/github-runners/job-usage.py --dry-run | jq -e '.msg == \"job\" and .nproc == 2 and .memory_mb > 0 and (.box_mem_peak_mb | type) == \"number\" and (.box_cpu_s | type) == \"number\"'"
 check "hook refuses an unknown repo" "cd /tmp && GITHUB_REPOSITORY=someone/else GITHUB_ACTOR=stickleprojects GITHUB_EVENT_NAME=push GITHUB_EVENT_PATH=/dev/null /etc/github-runner/job-started.sh; test \$? -ne 0 && echo refused"
 
 # Tools work, as the job user (not just report a version).

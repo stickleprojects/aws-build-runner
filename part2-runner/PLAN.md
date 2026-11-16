@@ -72,7 +72,11 @@ spellbound3d's heavy jobs get their own label (being agreed with spellbound3d: t
 
 Which class a job uses is spellbound3d's choice, and its responsibility. A daily report
 (`usage/`) tracks hours and estimated cost per class, and opens an issue for Kieron if heavy takes over the
-budget. The launcher plans each label separately (an idle 2-vCPU runner never counts as covering a check job), with
+budget. We own the runners, so whether they're the right size is ours to watch: each runner also records
+every job's CPU, memory and CPU/memory wait (`/build/runner/jobs`), the webhook records each job's wait for a runner,
+and the report's *Job fit* section suggests changes (too small, CPU-starved, could be light, waiting for runners).
+Size changes still go to Kieron with prices. spellbound3d measured light on 2026-11-16 (2 CPUs, 4 GiB): `evals` 33 s,
+a review-sized Claude run 67 s at ≈ 280 MB; plenty of headroom. The launcher plans each label separately (an idle 2-vCPU runner never counts as covering a check job), with
 one cap for both. Until spellbound3d has the second label, nothing cuts over. The labels and types are the
 stack parameter `Pools`.
 

@@ -72,6 +72,14 @@ Resources:
       # 30 is too short for a 31-day month, and CloudWatch allows only fixed values).
       RetentionInDays: 60
       Tags: [{Key: resource-group, Value: build-runner}]
+  JobLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      # One line per job from each runner (ami/files/job-usage.py): CPU, memory and pressure, for the
+      # usage report's "is this the right size" notes. A few KB a month. The instance role can only write here.
+      LogGroupName: /build/runner/jobs
+      RetentionInDays: 60
+      Tags: [{Key: resource-group, Value: build-runner}]
 
   # ------------------------------------------------------------------ webhook
   WebhookRole:

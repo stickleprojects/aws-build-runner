@@ -83,6 +83,7 @@ LANG=en_US.UTF-8
 HOME=$H
 NPM_CONFIG_PREFIX=$H/.local
 ACTIONS_RUNNER_HOOK_JOB_STARTED=/etc/github-runner/job-started.sh
+ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/etc/github-runner/job-completed.sh
 EOF
 echo "$H/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" > "$R/.path"
 chown -R ghrunner:ghrunner "$R"
@@ -125,12 +126,16 @@ fi
 say "job-started hook and allowlists (copied from the local runner)"
 install -d -m 755 /etc/github-runner
 install -m 755 "$FILES/job-started.sh" /etc/github-runner/job-started.sh
+# Ours, not the local runner's: notes which job ran, for job-usage.py's per-job record.
+install -m 755 "$FILES/job-completed.sh" /etc/github-runner/job-completed.sh
 install -m 644 "$FILES/allowed-actors.txt" /etc/github-runner/allowed-actors.txt
 install -m 644 "$FILES/allowed-repos.txt" /etc/github-runner/allowed-repos.txt
 
 say "boot step and one-job service"
 install -m 755 "$FILES/build-runner-boot.sh" /opt/github-runners/build-runner-boot.sh
 install -m 755 "$FILES/start-jit.sh" /opt/github-runners/start-jit.sh
+install -m 755 "$FILES/job-usage.py" /opt/github-runners/job-usage.py
+install -m 644 "$FILES/report.py" /opt/github-runners/report.py   # job-usage.py signs its request with it
 install -m 644 "$FILES/build-runner-boot.service" /etc/systemd/system/build-runner-boot.service
 install -m 644 "$FILES/github-runner-jit.service" /etc/systemd/system/github-runner-jit.service
 [[ -n "$IN_CONTAINER" ]] || systemctl enable build-runner-boot.service github-runner-jit.service

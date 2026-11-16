@@ -16,7 +16,10 @@ Environment=HOME=/opt/github-runners/spellbound3d/home
 # Backstop: whatever happens, this instance powers off (and is terminated) within 2 hours.
 ExecStartPre=+/usr/sbin/shutdown -h +120 "build-runner: 2-hour limit"
 ExecStart=/opt/github-runners/start-jit.sh
-# After the job (or any failure while running one), power off now. "+" runs it as root.
+# After the job: one usage record (CPU, memory, pressure) to CloudWatch Logs, as root, at most 20 s;
+# "-" so a failure never blocks the power-off. Only when there was a job.
+ExecStopPost=-+/bin/sh -c 'if [ -e /run/build-runner/job ]; then /usr/bin/timeout 20 /opt/github-runners/job-usage.py; fi'
+# Then (or after any failure while running one), power off now. "+" runs it as root.
 ExecStopPost=+/bin/sh -c 'if [ -e /run/build-runner/job ]; then /usr/sbin/shutdown -h now "build-runner: job done"; fi'
 TimeoutStartSec=infinity
 NoNewPrivileges=yes

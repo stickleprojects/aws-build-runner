@@ -5,7 +5,8 @@
 #   part2-runner/ci/usage-role.sh
 #
 # Only a GitHub Actions job in this repo's "usage" environment, on main, can assume it (OIDC, immutable
-# subject). Read-only: query the launcher's logs and read Sydney spot prices. Nothing else.
+# subject). Read-only: query the runner's logs (launcher, webhook, per-job usage) and read Sydney spot
+# prices. Nothing else.
 set -euo pipefail
 
 NAME=build-runner-usage
@@ -25,8 +26,10 @@ trust="$(jq -n --arg acct "$ACCOUNT_ID" --arg sub "$SUB" '{Version: "2012-10-17"
                              "token.actions.githubusercontent.com:ref": "refs/heads/main"}}}]}')"
 
 policy="$(jq -n --arg acct "$ACCOUNT_ID" --arg r "$REGION" '{Version: "2012-10-17", Statement: [
-  {Sid: "QueryTheLauncherLogsOnly", Effect: "Allow", Action: "logs:StartQuery",
-   Resource: "arn:aws:logs:\($r):\($acct):log-group:/aws/lambda/build-runner-launcher:*"},
+  {Sid: "QueryTheRunnerLogsOnly", Effect: "Allow", Action: "logs:StartQuery",
+   Resource: ["arn:aws:logs:\($r):\($acct):log-group:/aws/lambda/build-runner-launcher:*",
+              "arn:aws:logs:\($r):\($acct):log-group:/aws/lambda/build-runner-webhook:*",
+              "arn:aws:logs:\($r):\($acct):log-group:/build/runner/jobs:*"]},
   {Sid: "ReadQueryResults", Effect: "Allow", Action: ["logs:GetQueryResults", "logs:StopQuery"], Resource: "*"},
   {Sid: "SpotPricesInSydney", Effect: "Allow", Action: "ec2:DescribeSpotPriceHistory", Resource: "*",
    Condition: {StringEquals: {"aws:RequestedRegion": $r}}},
@@ -38,7 +41,7 @@ if aws iam get-role --role-name "$NAME" >/dev/null 2>&1; then
 else
   aws iam create-role --role-name "$NAME" --path /claude/ --permissions-boundary "$BOUNDARY" \
     --assume-role-policy-document "$trust" \
-    --description "Daily runner usage report (GitHub Actions, environment usage, main): read launcher logs, spot prices" \
+    --description "Daily runner usage report (GitHub Actions, environment usage, main): read runner logs, spot prices" \
     --tags "Key=resource-group,Value=${GROUP}" --query Role.Arn --output text | sed 's/[0-9]\{12\}/<account>/; s/^/created /'
 fi
 aws iam put-role-policy --role-name "$NAME" --policy-name usage-report --policy-document "$policy"

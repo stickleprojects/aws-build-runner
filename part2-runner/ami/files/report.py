@@ -38,20 +38,25 @@ def sign(key, msg):
 
 
 def ssm_call(region, creds, target, payload):
-    host = f"ssm.{region}.amazonaws.com"
+    return aws_call(region, creds, "ssm", f"AmazonSSM.{target}", payload)
+
+
+def aws_call(region, creds, service, target, payload):
+    """One AWS JSON 1.1 request (SSM, CloudWatch Logs…), SigV4-signed. Also used by job-usage.py on runners."""
+    host = f"{service}.{region}.amazonaws.com"
     body = json.dumps(payload)
     now = datetime.datetime.now(datetime.timezone.utc)
     amz_date, day = now.strftime("%Y%m%dT%H%M%SZ"), now.strftime("%Y%m%d")
     headers = {"content-type": "application/x-amz-json-1.1", "host": host, "x-amz-date": amz_date,
-               "x-amz-target": f"AmazonSSM.{target}"}
+               "x-amz-target": target}
     if creds.get("Token"):  # instance-role credentials always have one
         headers["x-amz-security-token"] = creds["Token"]
     signed = ";".join(sorted(headers))
     canonical = "\n".join(["POST", "/", "", "".join(f"{k}:{headers[k]}\n" for k in sorted(headers)), signed,
                            hashlib.sha256(body.encode()).hexdigest()])
-    scope = f"{day}/{region}/ssm/aws4_request"
+    scope = f"{day}/{region}/{service}/aws4_request"
     to_sign = "\n".join(["AWS4-HMAC-SHA256", amz_date, scope, hashlib.sha256(canonical.encode()).hexdigest()])
-    key = sign(sign(sign(sign(("AWS4" + creds["SecretAccessKey"]).encode(), day), region), "ssm"), "aws4_request")
+    key = sign(sign(sign(sign(("AWS4" + creds["SecretAccessKey"]).encode(), day), region), service), "aws4_request")
     signature = hmac.new(key, to_sign.encode(), hashlib.sha256).hexdigest()
     headers["authorization"] = (f"AWS4-HMAC-SHA256 Credential={creds['AccessKeyId']}/{scope}, "
                                 f"SignedHeaders={signed}, Signature={signature}")
