@@ -19,44 +19,62 @@ needs godmode: roles go under `/claude/` with the `guardrails/claude-boundary` b
   `self-hosted, Linux, X64, spellbound3d`) runs a `job-started.sh` hook that fails a job
   unless its repo and actors are allowlisted and its PR head is not a fork. Port this.
 
-## Design
+## Design (as built, 2026-11-16: [stack/](stack/))
 
 ```
-GitHub workflow_job "queued" webhook
-  └─> Lambda function URL  (build-runner-webhook; checks the HMAC signature and the job's labels)
-        ├─ asks GitHub for a just-in-time (JIT) runner config  (single job, then it unregisters)
-        └─ RunInstances from launch template build-runner  (spot, on-demand fallback)
-              └─ EC2 boots the baked AMI, runs ./run.sh --jitconfig …, one job, then powers off
-                 (instance-initiated shutdown = terminate)
-EventBridge Scheduler, every 15 min ─> reaper Lambda: terminates build-runner instances
-  older than 90 min, so nothing can run on unnoticed
+GitHub workflow_job webhook ─> build-runner-webhook  (Lambda, public function URL)
+                                 checks the HMAC signature, keeps spellbound3d "queued" jobs labelled
+                                 aws-spellbound3d, starts the launcher asynchronously (answers in < 1 s)
+                                     │
+EventBridge Scheduler, every 5 min ──┤
+                                     v
+                               build-runner-launcher (Lambda, one run at a time: an SSM-parameter lock)
+                                 reconcile: queued jobs − runners not yet on a job = launches, up to MaxRunners
+                                 per launch: JIT runner registration (GitHub App) → RunInstances from the
+                                 launch template (current AMI via resolve:ssm), spot through each type and
+                                 subnet, then on-demand; sized per label
+                                 on the schedule, also reaps: instances > 90 min, runners idle 20 min with
+                                 nothing queued, registrations whose instance is gone
+                                     │
+                                     v
+                               EC2 boots the baked AMI, runs ./run.sh --jitconfig …, one job, powers off
+                               (shutdown = terminate; the image also powers off at 2 h whatever happens)
 ```
 
-- Label: `aws-spellbound3d` (unique, so the local runner and AWS never compete).
-  Cut-over = set `SDLC_RUNNER` to `aws-spellbound3d`; rollback = set it back to `self-hosted`.
-- One instance per job; ephemeral, clean every time. Costs ≈ 1–2 min of boot per job;
-  if that hurts, add a warm instance later (see [PRICING.md](../PRICING.md), option A5).
-- Instance: t3.large, Ubuntu 24.04 x86-64, 30 GiB gp3, IMDSv2 required, no SSH and no
-  inbound rules (shell via Session Manager), public IPv4 in a default-VPC public subnet
-  (no NAT gateway: the guardrails deny it, and it would cost ≈ US$45/month).
-- GitHub credential: a fine-grained PAT, or better a GitHub App, with repository
-  *Administration: read & write* on spellbound3d only (that is what JIT runner configs need),
-  stored as an SSM SecureString under `/build/github/`. The webhook secret is stored there too.
-- Tags: everything `resource-group=build-runner` (required by the policy), so the Resource Group, cost reports and
-  the reaper can find it. The stack carries the tag, so resources that can't be tagged at creation get it too.
-- IaC: one CloudFormation stack `build-runner` (Lambda code packaged to an S3 bucket).
+- **Idempotent**: the launcher never trusts a single event. Duplicate or missed webhooks don't matter: the
+  next run counts again. It can't reserve Lambda concurrency (this account's limit is the minimum 10), so
+  an SSM parameter created with "fail if it exists" is the lock.
+- Labels: `aws-spellbound3d` and `aws-spellbound3d-check`, one per runner and nothing else: a JIT runner
+  has exactly the labels it's registered with, so it can never take a `self-hosted` job meant for the local
+  runner. Cut-over = set `SDLC_RUNNER` (and `SDLC_RUNNER_CHECK`) to them; rollback = back to `self-hosted`.
+- One instance per job; ephemeral, clean every time. Registered on GitHub ≈ 40 s after launch (measured).
+- Instance: no SSH, no inbound rules (shell via Session Manager), IMDSv2 only, public IPv4 in a default-VPC
+  subnet (no NAT gateway), 30 GiB gp3 encrypted. Its role (`build-runner-instance`) only runs the SSM agent.
+- GitHub credential: the App `stickleprojects-aws-runner` (key in SSM); each launcher run gets a token for
+  spellbound3d only, with only *administration: write* and *actions: read*, and revokes it at the end.
+  The webhook secret is SSM `/build/github/webhook-secret` (SecureString), made by `deploy.sh`.
+- Tags: everything `resource-group=build-runner`; runner instances also `build-runner-role=runner`, which
+  is all the launcher may terminate.
 
-## Instance types per job (decided 2026-11-16)
+## Instance types per label (decided 2026-11-16, Kieron)
 
-The webhook Lambda picks the instance type from the `workflow_job` payload (workflow and job name);
-no workflow changes are needed. Measured with spellbound3d's session: a cold `make check` (`FULL=1`, no
-`game/.godot`) **fails on 2 CPUs** (438 s; a 5 s timing test took 7.6 s) and **passes on 4** (354 s, on
-laptop hyperthreads; real c7i vCPUs should be faster).
+Measured with spellbound3d's session: a cold `make check` (`FULL=1`, no `game/.godot`) **fails on 2 CPUs**
+(438 s; a 5 s timing test took 7.6 s) and **passes on 4** (354 s, on laptop hyperthreads).
 
-| Jobs | Instance | Fallback when spot is short | Why |
+GitHub gives a queued job to *any* idle runner with matching labels, so a runner can't be kept for the job
+it was launched for (with one local runner this never mattered). So sizes go **per label**, and
+spellbound3d's heavy jobs get their own label (being agreed with spellbound3d: their workflows, their change):
+
+| Label (repo variable) | Jobs | Instance, tried in order | Why |
 |---|---|---|---|
-| `check` (CI), `Check after review` | **c7i.xlarge** spot (4 fixed vCPU, 8 GB, ~US$0.092/h) | c6i.xlarge / m7i.xlarge spot → c7i.xlarge on-demand. **Never 2 vCPU or t3** | Timing tests fail on 2 vCPU; t3 throttles when CPU credits run out |
-| Claude jobs (review, mention, spec, descopes, PR title, evals) | c7i.large spot (2 fixed vCPU) | c7i-flex.large / t3.large | Mostly waiting on the API |
+| `aws-spellbound3d-check` (`SDLC_RUNNER_CHECK`, proposed) | CI `check`, `make check (after review)` | c7i.xlarge → c6i.xlarge → m7i.xlarge spot → c7i.xlarge on-demand. **Never 2 vCPU or t3** | Timing tests fail on 2 vCPU; t3 throttles when CPU credits run out |
+| `aws-spellbound3d` (`SDLC_RUNNER`) | Everything else (Claude jobs: review, mention, spec, descopes, PR title, evals) | c7i.large → t3.large spot → c7i.large on-demand | Mostly waiting on the API |
+
+Which class a job uses is spellbound3d's choice, and its responsibility. A daily report
+(`usage/`) tracks hours and estimated cost per class, and opens an issue for Kieron if heavy takes over the
+budget. The launcher plans each label separately (an idle 2-vCPU runner never counts as covering a check job), with
+one cap for both. Until spellbound3d has the second label, nothing cuts over. The labels and types are the
+stack parameter `Pools`.
 
 - **No pre-baked Godot import cache** (`game/.godot`): stale caches have hidden failures in spellbound3d.
   Every job imports cold. An exact-match `actions/cache` is spellbound3d's proposal, and up to Kieron.
@@ -66,15 +84,13 @@ laptop hyperthreads; real c7i vCPUs should be faster).
 
 ## Steps
 
-1. AMI bake script (`part2-runner/ami/`): Ubuntu 24.04 + base packages + Actions runner +
-   Godot 4.7.2 pre-placed where `install-godot.sh` looks + the `job-started.sh` guard;
-   bake on a t3.large, `CreateImage`, terminate. Check it against the local runner
-   first (needs sudo: `/opt/github-runners/spellbound3d`, `/etc/github-runner/`).
-2. Store the GitHub credential and webhook secret in SSM.
-3. CloudFormation stack: roles (`/claude/`, with the boundary), launch template, security
-   group, webhook Lambda + function URL, reaper Lambda + schedule, log groups with 14-day retention.
-4. Add the repo webhook (*Workflow jobs* events only) pointing at the function URL.
-5. Test with a throwaway workflow on a branch that targets `aws-spellbound3d`, then switch
+1. [x] AMI bake, smoke test, weekly pipeline (`ami/`, `.github/workflows/ami.yml`).
+2. [x] GitHub App key and id in SSM; webhook secret (`stack/deploy.sh`).
+3. [x] Stack `build-runner` (`stack/`): webhook and launcher Lambdas, launch template, security group,
+   5-minute schedule, log groups (14 days). Tested live: signatures, a spot launch, the runner online.
+4. [ ] Add the spellbound3d webhook (*Workflow jobs* only) to the URL `deploy.sh` prints, with the secret.
+5. [ ] spellbound3d: a second label for its check jobs (proposed: `SDLC_RUNNER_CHECK`, falling back to `SDLC_RUNNER`).
+6. [ ] Test with a throwaway workflow on a branch that targets `aws-spellbound3d`, then switch
    `SDLC_RUNNER`. Keep the local runner as the fallback until a week of green runs.
 
 ## Open questions

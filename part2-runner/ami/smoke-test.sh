@@ -89,6 +89,13 @@ check "hook refuses an unknown repo" "cd /tmp && GITHUB_REPOSITORY=someone/else 
 # Tools work, as the job user (not just report a version).
 check "godot runs a script"     "as_job 'printf \"extends SceneTree\nfunc _init():\n\tprint(\\\"smoke-ok\\\")\n\tquit()\n\" > /tmp/smoke.gd && godot --headless -s /tmp/smoke.gd' | grep -m1 smoke-ok"
 check "godot where install-godot.sh looks" "as_job 'test -x \$HOME/.local/opt/godot-*/godot && test -s \$HOME/.cache/godot/*.zip && echo present'"
+# spellbound3d's own Godot smoke test (their change 0034), offline, as ghrunner. Fails the image on a
+# non-zero exit or a last line not starting PASS:. Skipped (with a note) until it's on their main.
+if [[ "$(jq -r '.runner_smoke // "absent"' $M)" == present ]]; then
+  check "spellbound3d godot-smoke" "as_job '/opt/build-runner/runner-smoke/godot-smoke.sh \"$(jq -r .godot_pinned $M)\" godot' > /tmp/gs 2>&1; rc=\$?; tail -1 /tmp/gs; test \$rc -eq 0 && tail -1 /tmp/gs | grep -q '^PASS:'"
+else
+  echo "skip  spellbound3d godot-smoke: tools/runner-smoke/ isn't on spellbound3d main yet"
+fi
 check "claude from npm cache, offline" "as_job \"rm -rf /tmp/c && npm install --prefix /tmp/c --offline --no-fund --no-audit --loglevel=error @anthropic-ai/claude-code@$CLAUDE_VER >/dev/null && /tmp/c/node_modules/.bin/claude --version\""
 check "claude global"           "as_job 'claude --version'"
 check "uv runs python"          "as_job 'uv run --no-project python3 -c \"print(42)\"' | grep -x 42"
@@ -113,7 +120,8 @@ aws ssm get-command-invocation --command-id "$cmd" --instance-id "$instance" --q
 [[ "$status" == Success ]] || { echo "Smoke test FAILED (${status})" >&2; exit 1; }
 echo "Smoke test passed: ${ami}"
 if [[ "$ami" == "$candidate" ]]; then
-  aws ssm put-parameter --name /build/runner/ami-id --type String --value "$ami" --overwrite \
+  # aws:ec2:image: the runner launch template resolves it at each launch (resolve:ssm), and only takes that type.
+  aws ssm put-parameter --name /build/runner/ami-id --type String --data-type aws:ec2:image --value "$ami" --overwrite \
     --description "Current build-runner AMI: baked by bake.sh, passed smoke-test.sh" >/dev/null
   aws ssm put-parameter --name /build/runner/manifest --type String --overwrite \
     --value "$(aws ssm get-parameter --name /build/runner/candidate-manifest --query Parameter.Value --output text)" \

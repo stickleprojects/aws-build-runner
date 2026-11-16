@@ -392,6 +392,47 @@ def text_lists_are_space_separated_before_membership_tests():
     return problems
 
 
+@rule("2026-11-16: the runner launch template couldn't use /build/runner/ami-id (resolve:ssm): it was saved as plain "
+      "text, and launch templates only resolve parameters of data type aws:ec2:image.")
+def current_ami_parameter_is_an_image_type():
+    problems = []
+    for path in SHELL_SCRIPTS:
+        text = path.read_text().replace("\\\n", " ")
+        for line in text.splitlines():
+            if re.search(r"put-parameter --name /build/runner/ami-id\b", line) and "--data-type aws:ec2:image" not in line:
+                problems.append(f"{path.relative_to(ROOT)}: sets /build/runner/ami-id without --data-type aws:ec2:image")
+    return problems
+
+
+@rule("2026-11-16: 'aws cloudformation deploy' keeps a parameter's previous value unless it's passed, so changing "
+      "the Pools default in template.yaml never reached the stack (c7i-flex stayed, runner classes were missing).")
+def stack_parameters_are_always_passed():
+    stack = P2 / "stack"
+    template, deploy = (stack / "template.yaml").read_text(), (stack / "deploy.sh").read_text()
+    settings = json.loads((stack / "config.json").read_text())
+    block = template.split("\nParameters:\n", 1)[1].split("\nResources:\n", 1)[0]
+    params = re.findall(r"^  (\w+):", block, re.M)
+    problems = [f"part2-runner/stack/template.yaml: parameter {p} has a Default (pass it from config.json instead)"
+                for p in params if re.search(rf"^  {p}:.*Default:|^  {p}:\n(    .*\n)*?    Default:", block, re.M)]
+    if "config.json" not in deploy or '"${settings[@]}"' not in deploy:
+        problems.append("part2-runner/stack/deploy.sh doesn't pass the settings from config.json")
+    for p in params:
+        if p not in settings and not re.search(rf'"{p}=', deploy):
+            problems.append(f"template parameter {p} is in neither config.json nor deploy.sh's --parameter-overrides")
+    return problems
+
+
+@rule("2026-11-16: the usage report's Logs Insights query summed 'minutes' AS 'minutes'; an alias with the summed "
+      "field's own name comes back missing, so every report said 0 hours.")
+def logs_insights_aliases_dont_shadow_their_field():
+    problems = []
+    for path in sorted(P2.rglob("*.py")) + SHELL_SCRIPTS + WORKFLOWS:
+        for m in re.finditer(r"\b(?:sum|avg|count|min|max)\((\w+)\)\s+as\s+(\w+)", path.read_text()):
+            if m.group(1) == m.group(2):
+                problems.append(f"{path.relative_to(ROOT)}: '{m.group(0)}' (alias it to another name)")
+    return problems
+
+
 def main():
     failed = 0
     for name, incident, fn in RULES:

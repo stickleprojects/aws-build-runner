@@ -116,6 +116,12 @@ jobs:
       - name: Regression rules (one per past mistake)
         run: python3 -I part1-godmode/tests/regressions.py
 
+      - name: Runner Lambda tests (offline)
+        run: python3 -I part2-runner/stack/test_lambda.py
+
+      - name: Usage report tests (offline)
+        run: python3 -I part2-runner/usage/test_report.py
+
       - name: shellcheck the scripts
         run: |
           # -P SCRIPTDIR: resolve "source lib.sh" next to each script, not from the repo root.
