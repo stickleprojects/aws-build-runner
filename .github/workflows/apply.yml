@@ -6,6 +6,7 @@
 # The account id, user name, alert email and role ARN are environment secrets, so they're masked
 # in this public repo's logs.
 name: apply
+run-name: "${{ inputs.action }}: ${{ inputs.note || 'main' }}"
 
 on:
   workflow_dispatch:
@@ -15,6 +16,10 @@ on:
         type: choice
         options: [apply, rollback]
         default: apply
+      note:
+        description: "What this release is for (shown as the run title and in the summary)"
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -24,8 +29,77 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Runs before the approval wait, so the run page shows what you're approving.
+  describe:
+    name: what this ${{ inputs.action }} contains
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Summary of the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          ACTION: ${{ inputs.action }}
+          NOTE: ${{ inputs.note }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          # The last successful apply = the latest "aws" deployment whose latest status is success.
+          last=""
+          for id in $(gh api "repos/${REPO}/deployments?environment=aws&per_page=30" --jq '.[].id'); do
+            state="$(gh api "repos/${REPO}/deployments/${id}/statuses?per_page=1" --jq '.[0].state')"
+            if [[ "$state" == success ]]; then last="$(gh api "repos/${REPO}/deployments/${id}" --jq .sha)"; break; fi
+          done
+          head="$(git rev-parse HEAD)"
+          {
+            echo "## ${ACTION} of \`main\` @ \`${head:0:12}\`, started by ${ACTOR}"
+            echo
+            if [[ -n "$NOTE" ]]; then echo "> ${NOTE}"; echo; fi
+            if [[ "$ACTION" == rollback ]]; then
+              echo "**Rollback:** each of Claude's policies goes back to its previous IAM version (a policy that was new is"
+              echo "detached). AWS will then differ from \`main\` until the change is reverted in git; an issue will say so."
+              echo
+            fi
+            if [[ -z "$last" ]] || ! git cat-file -e "${last}^{commit}" 2>/dev/null; then
+              echo "No earlier apply found to compare with."
+            elif [[ "$last" == "$head" ]]; then
+              echo "\`main\` is what AWS already has (applied at \`${last:0:12}\`)."
+            else
+              echo "Since the last apply (\`${last:0:12}\`):"
+              echo
+              # A PR merge commit's body starts with the PR's title.
+              for c in $(git rev-list --first-parent "${last}..${head}"); do
+                subject="$(git log -1 --format=%s "$c")"
+                if [[ "$subject" =~ ^Merge\ pull\ request\ \#([0-9]+) ]]; then
+                  echo "- #${BASH_REMATCH[1]} $(git log -1 --format=%b "$c" | head -1)"
+                else
+                  echo "- ${subject}"
+                fi
+              done
+              echo
+              if git diff --quiet "$last" "$head" -- part1-godmode/out; then
+                echo "**Claude's permissions: no change.** Tooling or docs only; the policies in AWS stay the same."
+              else
+                echo "**Claude's permissions change.** POLICY.md, before → after:"
+                echo
+                echo '```diff'
+                git --no-pager diff "$last" "$head" -- part1-godmode/POLICY.md | grep -E '^[-+][^-+]' || true
+                echo '```'
+              fi
+            fi
+            echo
+            echo "Approve on this page (**Review deployments**) only if this is what you expect."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   run:
     name: ${{ inputs.action }}
+    needs: describe
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     # Each environment requires Kieron's approval and accepts main only.
