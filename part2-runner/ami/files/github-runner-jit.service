@@ -2,17 +2,17 @@
 Description=GitHub Actions just-in-time runner (one job, then power off)
 # Not After=cloud-final.service: on Ubuntu, cloud-final runs after multi-user.target, so with our
 # WantedBy=multi-user.target that's an ordering cycle and systemd silently drops this unit (2026-11-16).
-After=network-online.target
+After=network-online.target build-runner-boot.service
 Wants=network-online.target
+Requires=build-runner-boot.service
 
 [Service]
 Type=oneshot
 User=ghrunner
 WorkingDirectory=/opt/github-runners/spellbound3d
 Environment=HOME=/opt/github-runners/spellbound3d/home
-# /run/build-runner/job exists once start-jit.sh has a job to run.
-RuntimeDirectory=build-runner
-RuntimeDirectoryPreserve=yes
+# /run/build-runner is made by build-runner-boot.service; /run/build-runner/job exists once
+# start-jit.sh has a job to run.
 # Backstop: whatever happens, this instance powers off (and is terminated) within 2 hours.
 ExecStartPre=+/usr/sbin/shutdown -h +120 "build-runner: 2-hour limit"
 ExecStart=/opt/github-runners/start-jit.sh

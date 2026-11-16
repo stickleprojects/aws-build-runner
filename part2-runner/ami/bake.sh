@@ -3,13 +3,16 @@
 #   1. launches a t3.large from the current Ubuntu 24.04 image, with setup.sh as cloud-init user data
 #   2. waits for it to power off, and reads setup.sh's result from SSM (/build/bake/result/<instance>)
 #   3. makes an AMI from it, then terminates the instance (also on any failure)
-#   4. records the AMI id in SSM: /build/runner/ami-id
+#   4. records the AMI as the CANDIDATE in SSM (/build/runner/ami-candidate); smoke-test.sh promotes it to
+#      /build/runner/ami-id only if every check passes, so an untested image is never used for jobs
 # Everything is tagged resource-group=build-runner. Takes ~10-15 min; costs ~US$0.05 plus the AMI's
 # snapshot (~US$0.60-0.80/month; older AMIs can be deregistered).
 #
 #   part2-runner/ami/bake.sh
 set -Eeuo pipefail
 cd "$(dirname "$0")"
+# shellcheck source=../lib/github-app.sh
+. ../lib/github-app.sh
 
 export AWS_REGION=ap-southeast-2
 GROUP=build-runner
@@ -20,10 +23,14 @@ TAGS="{Key=resource-group,Value=${GROUP}},{Key=Name,Value=build-runner-bake-${ST
 
 work="$(mktemp -d)"
 instance=""
+token=""
 cleanup() {
   if [[ -n "$instance" ]]; then
     aws ec2 terminate-instances --instance-ids "$instance" >/dev/null && echo "terminated bake instance ${instance}"
   fi
+  # The bake's GitHub token: out of SSM and revoked, whatever happened.
+  aws ssm delete-parameter --name /build/bake/github-token >/dev/null 2>&1 || true
+  if [[ -n "$token" ]]; then github_app_revoke "$token" && echo "revoked the bake's GitHub token"; fi
   rm -rf "$work"
 }
 trap cleanup EXIT
@@ -45,6 +52,12 @@ if [[ "$sg" == None || -z "$sg" ]]; then
     --query GroupId --output text)"
   echo "created security group ${sg}"
 fi
+
+# A 1-hour, read-only GitHub App token so the instance can check out spellbound3d for its pinned
+# versions. In SSM (encrypted), never in user data; deleted and revoked in cleanup.
+token="$(github_app_token)"
+aws ssm put-parameter --name /build/bake/github-token --type SecureString --value "$token" --overwrite \
+  --description "Short-lived token for the running AMI bake; deleted when it ends" >/dev/null
 
 python3 -I make-user-data.py > "$work/user-data"
 instance="$(aws ec2 run-instances --image-id "$base" --instance-type "$TYPE" --security-group-ids "$sg" \
@@ -97,8 +110,12 @@ until [[ "$(aws ec2 describe-images --image-ids "$ami" --query 'Images[0].State'
   sleep 20
 done
 
-aws ssm put-parameter --name /build/runner/ami-id --type String --value "$ami" --overwrite \
-  --description "Current build-runner AMI (part2-runner/ami/bake.sh)" >/dev/null
-aws ssm add-tags-to-resource --resource-type Parameter --resource-id /build/runner/ami-id \
-  --tags "Key=resource-group,Value=${GROUP}" >/dev/null
-echo "AMI ${ami} is ready; recorded in SSM /build/runner/ami-id"
+# The manifest (what's installed, from the instance itself) goes with the AMI.
+jq -r '.detail' <<<"$result" > "$work/manifest.json"
+jq -e .tools "$work/manifest.json" >/dev/null || { echo "The bake's manifest is missing or invalid" >&2; exit 1; }
+aws ssm put-parameter --name /build/runner/candidate-manifest --type String --value "$(jq -c . "$work/manifest.json")" \
+  --overwrite --description "Manifest of the build-runner AMI awaiting its smoke test" >/dev/null
+cp "$work/manifest.json" ./manifest.json && python3 -I make-image-md.py ./manifest.json ./IMAGE.md
+aws ssm put-parameter --name /build/runner/ami-candidate --type String --value "$ami" --overwrite \
+  --description "build-runner AMI awaiting its smoke test (bake.sh); smoke-test.sh promotes it" >/dev/null
+echo "AMI ${ami} is ready; it's the candidate (SSM /build/runner/ami-candidate) until smoke-test.sh passes it"
