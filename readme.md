@@ -15,11 +15,11 @@ was a team identity.
 What we found since (2026-11-16):
 - The CLI already works as Claude's IAM user, default region ap-southeast-2. The account id and
   user name are kept out of this public repo: see [part1-godmode/config.py](part1-godmode/config.py).
-- The account carries AWS-managed roles under `/managed/` (`AccountFullAccessRole` with
-  AdministratorAccess, account-management roles trusted by AWS) and a budgets spend-limit role.
-  The console most likely signs you in through that managed access, which is why it
-  shows a team identity rather than root or an IAM user. See
-  [part1-godmode/CHECKLIST.md](part1-godmode/CHECKLIST.md), step 1.
+- The account is a member of the **kieron-wray-team** organization. It carries AWS-managed roles under
+  `/managed/` (`AccountFullAccessRole` with AdministratorAccess, account-management roles trusted by the
+  organization's **management account**) and a budgets spend-limit role. You sign in with GitHub and
+  pick the account, which is why the console showed a team identity rather than root or an IAM user. See
+  [part1-godmode/CHECKLIST.md](part1-godmode/CHECKLIST.md), "Sign in to AWS".
 - The old `claude-assistant-policy` (v1) allowed EC2 only in us-east-1 (wrong region), couldn't make
   AMIs or use SSM, and let Claude create a `github-runner-*` role with any policy and pass it
   to EC2: a way round every limit. Part 1 replaces it.

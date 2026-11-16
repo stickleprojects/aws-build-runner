@@ -53,6 +53,17 @@ The bill is the organization's consolidated bill, paid by the **kieron-wray-team
 The steps above protect the identity account. These protect the **whole bill**: every account in
 the organization. Claude has no access to the management account; do this in the console.
 
+**The easy way: a script.** Sign in, choose the **kieron-wray-team management account**, open CloudShell, and
+(first time only: set up `gh` and the repo exactly as in "Manual: from CloudShell" step 2, in this account):
+```bash
+export PATH=$HOME/bin:$PATH; cd ~/aws-build-runner/part1-godmode && git pull && ./bootstrap-org-budget-stop.sh
+```
+It refuses to run anywhere but the management account. It creates or corrects everything below (the SCP,
+the `spend-capped` OU, a dedicated role, the budget and its four alerts, and the action), lists any member
+account outside the OU, and ends with a check. Safe to rerun.
+
+The same steps by hand, for reference:
+
 1. Sign in (https://signin.aws.amazon.com → GitHub) and choose **kieron-wray-team management account**.
 2. **Organizations → Policies → Service control policies.** If they're disabled, **Enable**. Then **Create policy**:
    - Name: `org-budget-stop`
