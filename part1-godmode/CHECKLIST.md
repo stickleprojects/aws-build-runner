@@ -62,8 +62,11 @@ the organization. Claude has no access to the management account; do this in the
    - **Create policy**. Don't attach it to anything: the budget action does that.
 3. **Billing and Cost Management → Budgets → Create budget → Customize (advanced) → Cost budget**:
    - Name `org-guardrail-monthly`; period **Monthly**; recurring; fixed amount **25** (USD, ≈£20).
-   - Scope: **All AWS services** (in the management account that covers every account in the organization).
-   - Advanced options: **Unblended**; uncheck **Refunds**. Leave **Credits**, **Tax** and the rest checked.
+   - Budget scope: **Filter specific AWS cost dimensions** → **Add filter** → dimension **Charge type** →
+     **Exclude** → select **Refund** only. Leave Credit, Tax and Usage in. (The console no longer has
+     refund/credit/tax checkboxes under Advanced options; this filter does the same. In the management
+     account the budget still covers every account in the organization.)
+   - Advanced options: aggregate by **Unblended**.
 4. Alerts: **Actual 50 %**, **Actual 80 %**, **Actual 100 %**, **Forecasted 100 %**, each emailing you.
 5. On the **Actual 100 %** alert, **Attach action**:
    - Action type **Apply service control policy**; policy `org-budget-stop`.
