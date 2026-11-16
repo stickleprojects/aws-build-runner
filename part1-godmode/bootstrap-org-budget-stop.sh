@@ -32,11 +32,14 @@ echo "Management account ${ACCOUNT}, organization ${ORG_ID}"
 # (so no email has to be typed or kept in this public repo); else config.py (env, .env.local, gh variable).
 EMAIL="${AWS_ALERT_EMAIL:-}"
 if [[ -z "$EMAIL" ]]; then
-  EMAIL="$(aws budgets describe-notifications-for-budget --account-id "$ACCOUNT" --budget-name "$BUDGET" \
-    --query 'Notifications[0]' --output json 2>/dev/null \
-    | { read -r n; [[ -n "$n" && "$n" != null ]] && aws budgets describe-subscribers-for-notification \
-        --account-id "$ACCOUNT" --budget-name "$BUDGET" --notification "$n" \
-        --query "Subscribers[?SubscriptionType=='EMAIL'].Address | [0]" --output text; } || true)"
+  # One line of JSON (jq -c): the CLI's JSON is multi-line, and reading just its first line ("{") broke
+  # this on 2026-11-16.
+  note="$(aws budgets describe-notifications-for-budget --account-id "$ACCOUNT" --budget-name "$BUDGET" \
+    --query 'Notifications[0]' --output json 2>/dev/null | jq -c . 2>/dev/null || true)"
+  if [[ -n "$note" && "$note" != null ]]; then
+    EMAIL="$(aws budgets describe-subscribers-for-notification --account-id "$ACCOUNT" --budget-name "$BUDGET" \
+      --notification "$note" --query "Subscribers[?SubscriptionType=='EMAIL'].Address | [0]" --output text 2>/dev/null || true)"
+  fi
   [[ "$EMAIL" == None ]] && EMAIL=""
 fi
 [[ -n "$EMAIL" ]] || EMAIL="$(python3 -I config.py AWS_ALERT_EMAIL 2>/dev/null || true)"
