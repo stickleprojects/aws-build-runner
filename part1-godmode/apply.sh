@@ -7,11 +7,11 @@
 # Lifecycle of a policy:
 #   1. generated + checked   CI on main: build, lint, offline checks -> artifact "policies-<commit>"
 #   2. not yet applied       a commit with that artifact but no successful GitHub deployment to "aws"
-#   3. checked again here    artifact integrity, artifact == this checkout, Access Analyzer,
-#                            IAM simulator on the drafts. Nothing in AWS changes before these pass.
-#   4. applied               policies + account settings -> simulator on the live result -> drift check
-#   5. recorded              IAM tags on each policy (applied-commit/-at/-by) and a GitHub deployment
-#                            "success" for the commit, saying who applied it and when
+#   3. checked again here    3a artifact integrity and artifact == this checkout, 3b Access Analyzer,
+#                            3c IAM simulator on the drafts. Nothing in AWS changes before these pass.
+#   4. applied               4a policies, 4b account settings, 4c simulator on the live result
+#   5. recorded              IAM tags on each policy (applied-commit/-at/-by), 5a drift check against
+#                            them, then a GitHub deployment "success" saying who applied it and when
 set -Eeuo pipefail   # -E: the ERR trap also fires inside functions
 cd "$(dirname "$0")"
 
@@ -51,7 +51,7 @@ gh run download "$run_id" --repo "$REPO" --name "policies-${commit}" --dir "$wor
   || { echo "Refusing: artifact policies-${commit} not found (expired after 90 days?). Re-run CI on main." >&2; exit 1; }
 art="$work/artifact"
 
-echo "== 3. check the artifact"
+echo "== 3a. check the artifact"
 (cd "$art" && sha256sum --quiet -c SHA256SUMS) || { echo "Refusing: artifact checksums don't match." >&2; exit 1; }
 [[ "$(jq -r .commit "$art/manifest.json")" == "$commit" ]] || { echo "Refusing: artifact is for another commit." >&2; exit 1; }
 [[ "$(jq -r .pending_approval "$art/manifest.json")" == "false" ]] || { echo "Refusing: artifact has items pending approval." >&2; exit 1; }
@@ -69,7 +69,7 @@ for f in "$art"/out/*.json; do
 done
 pol="$work/rendered"
 
-echo "== 3. validate with IAM Access Analyzer"
+echo "== 3b. validate with IAM Access Analyzer"
 blocking=0
 for f in "$pol"/*.json; do
   findings="$(aws accessanalyzer validate-policy --region "$REGION" --policy-type IDENTITY_POLICY \
@@ -81,7 +81,7 @@ for f in "$pol"/*.json; do
 done
 (( blocking )) && { echo "Blocking findings; nothing was changed." >&2; exit 1; }
 
-echo "== 3. simulate the artifact before applying"
+echo "== 3c. simulate the artifact before applying"
 python3 -I verify.py --local >"$work/verify-local.txt" || { tail -1 "$work/verify-local.txt"; grep '^FAIL' "$work/verify-local.txt"; echo "Nothing was changed." >&2; exit 1; }
 tail -1 "$work/verify-local.txt"
 
@@ -114,7 +114,7 @@ upsert_policy() {
   fi
 }
 
-echo "== 4. policies"
+echo "== 4a. policies"
 boundary_name="${BOUNDARY_PATH_NAME##*/}"
 boundary_dir="${BOUNDARY_PATH_NAME%/*}"
 upsert_policy "$boundary_name" "/${boundary_dir}/" "$pol/claude-boundary.json"
@@ -133,7 +133,7 @@ inline="$(aws iam list-user-policies --user-name "$USER_NAME" --query PolicyName
 groups="$(aws iam list-groups-for-user --user-name "$USER_NAME" --query 'Groups[].GroupName' --output text)"
 [[ -z "$groups" ]] || echo "WARNING: ${USER_NAME} is in groups that may grant more: ${groups}"
 
-echo "== 4. account settings"
+echo "== 4b. account settings"
 budget_json="$(jq -n --arg n "$BUDGET_NAME" --arg a "$BUDGET_USD" \
   '{BudgetName:$n, BudgetType:"COST", TimeUnit:"MONTHLY", BudgetLimit:{Amount:$a, Unit:"USD"}}')"
 if aws budgets describe-budget --account-id "$ACCOUNT_ID" --budget-name "$BUDGET_NAME" >/dev/null 2>&1; then
@@ -157,7 +157,7 @@ echo "EBS snapshot public sharing: blocked (${REGION})"
 aws ec2 enable-ebs-encryption-by-default --region "$REGION" >/dev/null
 echo "EBS encryption by default: on (${REGION})"
 
-echo "== 4. simulate the live policies"
+echo "== 4c. simulate the live policies"
 python3 -I verify.py >"$work/verify-live.txt" || { tail -1 "$work/verify-live.txt"; grep '^FAIL' "$work/verify-live.txt"; false; }
 tail -1 "$work/verify-live.txt"
 
@@ -170,7 +170,7 @@ for arn in "${want[@]}" "arn:aws:iam::${ACCOUNT_ID}:policy/${BOUNDARY_PATH_NAME}
     Key=applied-commit,Value="$commit" Key=applied-at,Value="$applied_at" Key=applied-by,Value="$applied_by"
 done
 
-echo "== 4. drift check"
+echo "== 5a. drift check"
 python3 -I check-live.py --expect-commit "$commit"
 
 trap 'rm -rf "$work"' ERR
