@@ -1,0 +1,70 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ManageClaudesThreePolicies",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetPolicy", "iam:GetPolicyVersion", "iam:ListPolicyVersions", "iam:CreatePolicy",
+        "iam:CreatePolicyVersion", "iam:DeletePolicyVersion", "iam:SetDefaultPolicyVersion",
+        "iam:TagPolicy", "iam:ListPolicyTags"
+      ],
+      "Resource": [
+        "arn:aws:iam::{{ACCOUNT_ID}}:policy/claude-assistant-policy",
+        "arn:aws:iam::{{ACCOUNT_ID}}:policy/claude-assistant-iam",
+        "arn:aws:iam::{{ACCOUNT_ID}}:policy/guardrails/claude-boundary"
+      ]
+    },
+    {
+      "Sid": "AttachOnlyThosePoliciesToClaudesUser",
+      "Effect": "Allow",
+      "Action": "iam:AttachUserPolicy",
+      "Resource": "arn:aws:iam::{{ACCOUNT_ID}}:user/{{CLAUDE_USER}}",
+      "Condition": {
+        "ArnEquals": {
+          "iam:PolicyARN": [
+            "arn:aws:iam::{{ACCOUNT_ID}}:policy/claude-assistant-policy",
+            "arn:aws:iam::{{ACCOUNT_ID}}:policy/claude-assistant-iam"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "InspectAndDetachOnClaudesUser",
+      "Effect": "Allow",
+      "Action": [
+        "iam:GetUser", "iam:DetachUserPolicy", "iam:ListAttachedUserPolicies",
+        "iam:ListUserPolicies", "iam:ListGroupsForUser"
+      ],
+      "Resource": "arn:aws:iam::{{ACCOUNT_ID}}:user/{{CLAUDE_USER}}"
+    },
+    {
+      "Sid": "CheckPolicies",
+      "Effect": "Allow",
+      "Action": ["iam:SimulatePrincipalPolicy", "iam:SimulateCustomPolicy", "access-analyzer:ValidatePolicy"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "TheGuardrailBudget",
+      "Effect": "Allow",
+      "Action": ["budgets:ViewBudget", "budgets:ModifyBudget"],
+      "Resource": "arn:aws:budgets::{{ACCOUNT_ID}}:budget/guardrail-monthly"
+    },
+    {
+      "Sid": "AccountWideS3PublicAccessBlock",
+      "Effect": "Allow",
+      "Action": ["s3:GetAccountPublicAccessBlock", "s3:PutAccountPublicAccessBlock"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "SydneyAmiSnapshotAndDiskSafetySettings",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:EnableImageBlockPublicAccess", "ec2:EnableSnapshotBlockPublicAccess",
+        "ec2:EnableEbsEncryptionByDefault"
+      ],
+      "Resource": "*",
+      "Condition": { "StringEquals": { "aws:RequestedRegion": "ap-southeast-2" } }
+    }
+  ]
+}
