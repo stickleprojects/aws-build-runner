@@ -1,0 +1,20 @@
+{
+  // Workspace colour so this window is recognisable at a glance (AWS orange and navy = aws-build-machine)
+  "workbench.colorCustomizations": {
+    "titleBar.activeBackground": "#C2620F",
+    "titleBar.activeForeground": "#FFFFFF",
+    "titleBar.inactiveBackground": "#8E470B",
+    "titleBar.inactiveForeground": "#FFFFFFAA",
+    "activityBar.background": "#232F3E",
+    "activityBar.foreground": "#F7A23B",
+    "activityBar.inactiveForeground": "#FFFFFF99",
+    "activityBarBadge.background": "#F7A23B",
+    "activityBarBadge.foreground": "#000000",
+    "statusBar.background": "#C2620F",
+    "statusBar.foreground": "#FFFFFF",
+    "statusBarItem.remoteBackground": "#232F3E",
+    "statusBarItem.remoteForeground": "#FFFFFF",
+    "tab.activeBorderTop": "#F7A23B"
+  },
+  "window.title": "☁️ aws-build-machine — ${activeEditorShort}"
+}
