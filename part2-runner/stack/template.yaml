@@ -6,23 +6,22 @@ Description: >-
   Deployed by part2-runner/stack/deploy.sh as Claude's IAM user.
 
 Parameters:
+  # No defaults: deploy.sh passes every one, from config.json (cloudformation deploy would otherwise keep
+  # the previous value, so a changed default never reached the stack: 2026-11-16).
   CodeBucket: {Type: String, Description: "Bucket holding the Lambda zip (stack build-runner-artifacts)"}
   CodeKey: {Type: String, Description: "Key of the Lambda zip (lambda/<sha256>.zip)"}
   VpcId: {Type: "AWS::EC2::VPC::Id"}
   Subnets: {Type: CommaDelimitedList, Description: "Public subnets (the default VPC's); no NAT gateway"}
-  MaxRunners: {Type: Number, Default: 4, MinValue: 1, MaxValue: 8,
+  MaxRunners: {Type: Number, MinValue: 1, MaxValue: 8,
                Description: "Most runner instances alive at once (4 x c7i.xlarge = 16 of the 32-vCPU quota)"}
   Pools:
     Type: String
     Description: >-
-      Runner label -> instance types (JSON), tried in order: every spot type, then on-demand. One size per
-      label, because GitHub gives a queued job to any idle runner with its labels.
-    Default: >-
-      {"aws-spellbound3d": {"spot": ["c7i.large", "c7i-flex.large", "t3.large"], "on_demand": ["c7i.large"]},
-      "aws-spellbound3d-check": {"spot": ["c7i.xlarge", "c6i.xlarge", "m7i.xlarge"], "on_demand": ["c7i.xlarge"]}}
-  MaxAgeMinutes: {Type: Number, Default: 90, Description: "The reaper terminates runner instances older than this"}
-  IdleMinutes: {Type: Number, Default: 20, Description: "...and runners idle this long with nothing queued"}
-  Repo: {Type: String, Default: stickleprojects/spellbound3d}
+      Runner label -> class (light/heavy) and instance types (JSON), tried in order: every spot type, then
+      on-demand. One size per label, because GitHub gives a queued job to any idle runner with its labels.
+  MaxAgeMinutes: {Type: Number, Description: "The reaper terminates runner instances older than this"}
+  IdleMinutes: {Type: Number, Description: "...and runners idle this long with nothing queued"}
+  Repo: {Type: String}
 
 Resources:
   # ------------------------------------------------------------------ runner instances
@@ -69,7 +68,9 @@ Resources:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: /aws/lambda/build-runner-launcher
-      RetentionInDays: 14
+      # 60 days, not 14: the daily usage report adds up the whole month from these logs (≈ 10 MB/month;
+      # 30 is too short for a 31-day month, and CloudWatch allows only fixed values).
+      RetentionInDays: 60
       Tags: [{Key: resource-group, Value: build-runner}]
 
   # ------------------------------------------------------------------ webhook

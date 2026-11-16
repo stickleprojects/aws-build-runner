@@ -68,9 +68,11 @@ spellbound3d's heavy jobs get their own label (being agreed with spellbound3d: t
 | Label (repo variable) | Jobs | Instance, tried in order | Why |
 |---|---|---|---|
 | `aws-spellbound3d-check` (`SDLC_RUNNER_CHECK`, proposed) | CI `check`, `make check (after review)` | c7i.xlarge → c6i.xlarge → m7i.xlarge spot → c7i.xlarge on-demand. **Never 2 vCPU or t3** | Timing tests fail on 2 vCPU; t3 throttles when CPU credits run out |
-| `aws-spellbound3d` (`SDLC_RUNNER`) | Everything else (Claude jobs: review, mention, spec, descopes, PR title, evals) | c7i.large → c7i-flex.large → t3.large spot → c7i.large on-demand | Mostly waiting on the API |
+| `aws-spellbound3d` (`SDLC_RUNNER`) | Everything else (Claude jobs: review, mention, spec, descopes, PR title, evals) | c7i.large → t3.large spot → c7i.large on-demand | Mostly waiting on the API |
 
-The launcher plans each label separately (an idle 2-vCPU runner never counts as covering a check job), with
+Which class a job uses is spellbound3d's choice, and its responsibility. A daily report
+(`usage/`) tracks hours and estimated cost per class, and opens an issue for Kieron if heavy takes over the
+budget. The launcher plans each label separately (an idle 2-vCPU runner never counts as covering a check job), with
 one cap for both. Until spellbound3d has the second label, nothing cuts over. The labels and types are the
 stack parameter `Pools`.
 

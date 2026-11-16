@@ -35,8 +35,9 @@ REPO = os.environ.get("REPO", "stickleprojects/spellbound3d")
 # on purpose: with "self-hosted" it could take jobs meant for the local runner (SDLC_RUNNER=self-hosted is
 # the rollback), and the two must never compete.
 DEFAULT_POOLS = {
-    "aws-spellbound3d": {"spot": ["c7i.large", "c7i-flex.large", "t3.large"], "on_demand": ["c7i.large"]},
-    "aws-spellbound3d-check": {"spot": ["c7i.xlarge", "c6i.xlarge", "m7i.xlarge"], "on_demand": ["c7i.xlarge"]},
+    "aws-spellbound3d": {"class": "light", "spot": ["c7i.large", "t3.large"], "on_demand": ["c7i.large"]},
+    "aws-spellbound3d-check": {"class": "heavy", "spot": ["c7i.xlarge", "c6i.xlarge", "m7i.xlarge"],
+                               "on_demand": ["c7i.xlarge"]},
 }
 POOLS = {k.lower(): v for k, v in json.loads(os.environ.get("POOLS") or json.dumps(DEFAULT_POOLS)).items()}
 NAME_PREFIX = "aws-"
@@ -238,6 +239,7 @@ def live_instances() -> list[dict]:
                 out.append({"id": i["InstanceId"], "name": tags.get("build-runner-name", ""),
                             "runner_id": tags.get("github-runner-id", ""), "job_id": tags.get("github-job-id", ""),
                             "pool": tags.get("build-runner-label", ""),
+                            "spot": i.get("InstanceLifecycle") == "spot",
                             "type": i["InstanceType"], "launched": i["LaunchTime"].timestamp()})
     return out
 
@@ -353,6 +355,10 @@ def launcher(event, context):
             instances = live_instances()
 
             if source == "schedule":
+                # Usage, for the daily report (part2-runner/usage/): one sample per live runner per 5-minute run.
+                for i in instances:
+                    log("usage", label=i["pool"], **{"class": POOLS.get(i["pool"], {}).get("class", "unknown")},
+                        type=i["type"], spot=i["spot"], minutes=5)
                 plan = reap_plan(queued, instances, runners, now)
                 by_name = {r["name"]: r for r in runners}
                 for i in plan["terminate"]:

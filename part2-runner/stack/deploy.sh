@@ -8,7 +8,7 @@
 #   1. stack build-runner-artifacts: a private bucket for the Lambda zip
 #   2. SSM /build/github/webhook-secret (SecureString), generated once; never printed
 #   3. the Lambda zip (lambda/*.py, deterministic, so an unchanged zip changes nothing), uploaded by its sha256
-#   4. stack build-runner: template.yaml, in the default VPC's public subnets
+#   4. stack build-runner: template.yaml with the settings in config.json, in the default VPC's public subnets
 #   5. prints the webhook URL, for the spellbound3d webhook (Workflow jobs events only)
 #
 # Runners aren't used until spellbound3d's SDLC_RUNNER says aws-spellbound3d; this only makes them possible.
@@ -72,13 +72,16 @@ rm -f "$zip"
 echo "s3://…/${key}"
 
 echo "== 4. stack build-runner"
+# Every other parameter, always, from config.json: cloudformation deploy keeps a parameter's previous
+# value when it isn't passed, so a setting changed only in the template never reached the stack (2026-11-16).
+mapfile -t settings < <(jq -r 'to_entries[] | "\(.key)=\(.value | if type == "string" then . else tojson end)"' config.json)
 vpc="$(aws ec2 describe-vpcs --filters Name=is-default,Values=true --query 'Vpcs[0].VpcId' --output text)"
 subnets="$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=${vpc}" Name=default-for-az,Values=true \
   --query 'Subnets[].SubnetId' --output text | tr '\t' ',')"
 [[ -n "$subnets" ]] || { echo "No default subnets in ${vpc}" >&2; exit 1; }
 aws cloudformation deploy --stack-name build-runner --template-file template.yaml \
   --capabilities CAPABILITY_NAMED_IAM --tags "resource-group=${GROUP}" --no-fail-on-empty-changeset \
-  --parameter-overrides "CodeBucket=${bucket}" "CodeKey=${key}" "VpcId=${vpc}" "Subnets=${subnets}"
+  --parameter-overrides "CodeBucket=${bucket}" "CodeKey=${key}" "VpcId=${vpc}" "Subnets=${subnets}" "${settings[@]}"
 
 echo "== 5. webhook URL"
 aws cloudformation describe-stacks --stack-name build-runner \

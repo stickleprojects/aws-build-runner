@@ -33,6 +33,10 @@ every 5 min ──> launcher: catches missed webhooks; reaps runners > 90 min, o
       **The latest image's contract is always the latest [release](https://github.com/stickleprojects/aws-build-runner/releases/latest).**
 - [x] **The runner** (`stack/deploy.sh`): webhook and launcher Lambdas, launch template, 5-minute reconcile and reaper,
       at most 4 runners at once. Deployed and tested live (spot launch → runner online on GitHub in ≈ 40 s).
+- [x] **Usage per class** (`usage/report.py`, `.github/workflows/usage.yml`, daily 08:00 Sydney): hours and estimated
+      cost for light and heavy runners, a weekly summary on the *Runner usage* issue, and an issue assigned to Kieron when
+      runners are projected over US$15 with heavy over half the hours ("spellbound3d is shredding your budget"), or
+      projected over the US$25 stop. Read-only role `/claude/build-runner-usage` (`ci/usage-role.sh`).
 - [ ] spellbound3d: a second label for check jobs (4 vCPU; everything else 2 vCPU), then the webhook, a test
       workflow and the cut-over (PLAN.md steps 4–6).
 
@@ -53,4 +57,7 @@ every 5 min ──> launcher: catches missed webhooks; reaps runners > 90 min, o
 | `stack/lambda/runner.py` | The webhook and the launcher (reconcile, launch with spot fallback, reap) |
 | `stack/lambda/ghapp.py` | GitHub App sign-in with the standard library only (RS256 JWT) |
 | `stack/runner-role.sh` | The instances' role (SSM agent only); outside the stack, as CloudFormation can't tag instance profiles |
+| `stack/config.json` | The stack's settings (labels and their instance types, cap, ages); deploy.sh passes every one |
+| `usage/report.py`, `usage/test_report.py` | Daily usage report and its offline tests |
+| `ci/usage-role.sh` | The usage workflow's read-only AWS role |
 | `stack/test_lambda.py` | Offline tests: signatures, filtering, planning, fallback, the lock (CI runs them) |

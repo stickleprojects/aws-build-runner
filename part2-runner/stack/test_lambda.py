@@ -172,7 +172,11 @@ xl = runner.attempts(C)
 check("defaults: check runners never 2 vCPU or t3 (spellbound3d's timing tests fail on 2 vCPU)",
       bool(xl) and all(t.split(".")[1] == "xlarge" and not t.startswith("t") for t, _ in xl), str(xl))
 check("defaults: Claude-job runners are the agreed 2-vCPU chain",
-      runner.attempts(L) == [("c7i.large", True), ("c7i-flex.large", True), ("t3.large", True), ("c7i.large", False)])
+      runner.attempts(L) == [("c7i.large", True), ("t3.large", True), ("c7i.large", False)])
+check("defaults: the Lambda's built-in pools are the deployed ones (config.json)",
+      runner.DEFAULT_POOLS == json.loads((Path(__file__).resolve().parent / "config.json").read_text())["Pools"])
+check("defaults: every label has a class (light or heavy), for the usage report",
+      all(p.get("class") in ("light", "heavy") for p in runner.POOLS.values()))
 runner.SUBNETS = ["subnet-a", "subnet-b"]
 runner.POOLS = {C: {"spot": ["c7i.xlarge", "c6i.xlarge"], "on_demand": ["c7i.xlarge"]}}
 check("attempts: spot types first, then on-demand",
