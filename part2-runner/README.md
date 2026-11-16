@@ -24,11 +24,17 @@ reaper every 15 min ──> terminates anything older than 90 min
 
 ## Status
 
-Planned, nothing built yet. Planned contents of this folder:
+- [x] **AMI bake** (`ami/bake.sh`): a t3.large runs `ami/setup.sh` from Ubuntu 24.04 and reports through SSM; the AMI is
+      recorded in SSM `/build/runner/ami-id`. First good image: `ami-01d8f1eb7885ab15a` (2026-11-16).
+- [x] **Smoke test** (`ami/smoke-test.sh`): boots the AMI without a job and runs 13 checks through Systems Manager. All pass.
+- [ ] Image manifest (`IMAGE.md`, `/etc/build-runner/manifest.json`), versions from spellbound3d's pins.
+- [ ] Weekly rebuild pipeline (bake, smoke test, keep the last 3 AMIs).
+- [ ] Webhook and launcher Lambda, per-job instance types, reaper: the runner itself.
 
 | Path | Purpose |
 |---|---|
-| [PLAN.md](PLAN.md) | Design and build steps |
-| `ami/` | Script to bake the runner AMI |
-| `stack/` | CloudFormation stack `build-runner`: launch template, security group, webhook and reaper Lambdas, roles under `/claude/` |
-| `lambda/` | Webhook and reaper code |
+| [PLAN.md](PLAN.md) | Design, instance types per job, steps |
+| `ami/setup.sh` | What the image contains, and how it's installed (runs on the bake instance) |
+| `ami/files/` | The local runner's hook and allowlists, the one-job service, the bake reporter |
+| `ami/bake.sh`, `ami/bake-role.sh` | Bake an AMI as Claude's user (the instance's role can only report and talk to Systems Manager) |
+| `ami/smoke-test.sh` | Check a baked AMI |

@@ -46,6 +46,24 @@ EventBridge Scheduler, every 15 min ─> reaper Lambda: terminates build-runner 
   the reaper can find it. The stack carries the tag, so resources that can't be tagged at creation get it too.
 - IaC: one CloudFormation stack `build-runner` (Lambda code packaged to an S3 bucket).
 
+## Instance types per job (decided 2026-11-16)
+
+The webhook Lambda picks the instance type from the `workflow_job` payload (workflow and job name);
+no workflow changes are needed. Measured with spellbound3d's session: a cold `make check` (`FULL=1`, no
+`game/.godot`) **fails on 2 CPUs** (438 s; a 5 s timing test took 7.6 s) and **passes on 4** (354 s, on
+laptop hyperthreads; real c7i vCPUs should be faster).
+
+| Jobs | Instance | Fallback when spot is short | Why |
+|---|---|---|---|
+| `check` (CI), `Check after review` | **c7i.xlarge** spot (4 fixed vCPU, 8 GB, ~US$0.092/h) | c6i.xlarge / m7i.xlarge spot → c7i.xlarge on-demand. **Never 2 vCPU or t3** | Timing tests fail on 2 vCPU; t3 throttles when CPU credits run out |
+| Claude jobs (review, mention, spec, descopes, PR title, evals) | c7i.large spot (2 fixed vCPU) | c7i-flex.large / t3.large | Mostly waiting on the API |
+
+- **No pre-baked Godot import cache** (`game/.godot`): stale caches have hidden failures in spellbound3d.
+  Every job imports cold. An exact-match `actions/cache` is spellbound3d's proposal, and up to Kieron.
+- **8 vCPU** (c7i.2xlarge, ~US$0.194/h spot) is parked until spellbound3d's parallel gdUnit (0022) exists.
+  It needs a policy change: xlarge is the current cap.
+- Instances write `/etc/build-runner/instance.json` at boot (type, `nproc`, memory) so jobs can size themselves.
+
 ## Steps
 
 1. AMI bake script (`part2-runner/ami/`): Ubuntu 24.04 + base packages + Actions runner +

@@ -1,0 +1,6 @@
+# Accounts allowed to run jobs on the self-hosted runners. One login per line.
+# Copied from the local runner (2026-11-16); change here, then rebake the AMI.
+stickleprojects
+spellbound3d-claude[bot]
+claude[bot]
+renovate[bot]
