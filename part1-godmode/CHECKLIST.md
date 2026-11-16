@@ -42,7 +42,7 @@ In CloudShell:
 ```bash
 export PATH=$HOME/bin:$PATH; cd ~/aws-build-runner/part1-godmode && git pull && ./bootstrap-budget-stop.sh
 ```
-Makes the budget count gross cost (credits and refunds don't offset it), and creates `guardrails/budget-stop` and the
+Makes the budget count what would be billed (credits reduce it, refunds don't, tax counts), and creates `guardrails/budget-stop` and the
 role AWS Budgets uses to attach it. Then sets the budget action: at 100 % of actual spend, attach it automatically to
 Claude's user and roles. Ends by listing the action. To lift a stop once you've decided: Billing → Budgets →
 `guardrail-monthly` → Actions → reverse.

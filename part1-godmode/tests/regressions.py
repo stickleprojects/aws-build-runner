@@ -223,7 +223,7 @@ def runner_service_has_no_ordering_cycle():
 
 
 @rule("2026-11-16 (Kieron): no AWS bill over £30, and at the limit everything stops spending: the budget counts "
-      "gross cost across the whole account, budget-stop blocks anything new, and the kill switch terminates instances "
+      "what would be billed across the whole account (credits reduce it, refunds don't), budget-stop blocks anything new, and the kill switch terminates instances "
       "and deletes the runner AMIs. Claude can't touch the kill switch.")
 def budget_stop_covers_everything():
     problems = []
@@ -234,10 +234,12 @@ def budget_stop_covers_everything():
         if must not in denied:
             problems.append(f"budget-stop no longer denies {must}")
     script = (P1 / "bootstrap-budget-stop.sh").read_text()
-    if "IncludeCredit = false" not in script or "IncludeRefund = false" not in script:
-        problems.append("bootstrap-budget-stop.sh doesn't make the budget count gross cost")
-    if "IncludeCredit:false" not in (P1 / "apply.sh").read_text().replace(" ", ""):
-        problems.append("apply.sh creates the budget without IncludeCredit false")
+    # Credits are applied on the invoice (never billed); refunds come back later, if at all (2026-11-16).
+    if "IncludeCredit = true" not in script or "IncludeRefund = false" not in script or "IncludeTax = true" not in script:
+        problems.append("bootstrap-budget-stop.sh doesn't make the budget count what would be billed")
+    apply = (P1 / "apply.sh").read_text().replace(" ", "")
+    if "IncludeCredit:true" not in apply or "IncludeRefund:false" not in apply:
+        problems.append("apply.sh creates the budget without credits on and refunds off")
     if "--approval-model AUTOMATIC" not in script:
         problems.append("the budget action isn't automatic")
     # Kieron (2026-11-16): at the limit, everything must stop spending, not just new things.

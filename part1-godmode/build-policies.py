@@ -339,7 +339,8 @@ def summary(p: dict, pending: list, sizes: dict) -> str:
     w("")
     if "budget_usd" in settings:
         scope = (" It counts **everything in the account**, every service (instances, logs, snapshots, data transfer…), "
-                 "**gross**: credits and refunds don't offset it.") if settings.get("budget_counts_gross") else ""
+                 "as **what you'd be billed**: credits (applied automatically on the invoice) reduce it, refunds "
+                 "(paid back later, if ever) don't, and tax counts.") if settings.get("budget_counts_billed") else ""
         w(f"- Monthly budget **US${settings['budget_usd']}**, email alerts at 50 %, 80 % and 100 % actual, and 100 % forecast.{scope}")
     stop = settings.get("budget_stop")
     if stop:

@@ -208,8 +208,10 @@ account_settings:
   # to about a day, so the stop fires at US$25 (≈£20), leaving room for the lag and anything still billing.
   budget_usd: 25
   # The budget counts everything in the account (every service: instances, logs, snapshots, data transfer…),
-  # gross: credits and refunds don't offset it. Set by apply.sh and bootstrap-budget-stop.sh.
-  budget_counts_gross: true
+  # as what would be BILLED: credits reduce it (AWS applies them on the invoice, so covered usage is never
+  # charged), refunds don't (they come back later, if at all), tax counts. Set by apply.sh and
+  # bootstrap-budget-stop.sh.
+  budget_counts_billed: true
   # Automatic stop at this % of ACTUAL spend (godmode: bootstrap-budget-stop.sh; rerun when roles change):
   #  - AWS Budgets attaches guardrails/budget-stop (nothing new and billable) to Claude's user and these
   #    /claude/ roles (ones that don't exist yet are skipped)
@@ -234,5 +236,5 @@ changes:
     what: Read-only listing becomes Sydney only (was every region); IAM reads stay global, as IAM has no regions
     approved: 2026-11-16 Kieron
   - date: 2026-11-16
-    what: "Budget US$25 (≈£20; the ceiling is a £30 bill), counted gross. At 100%: AWS Budgets blocks anything new for Claude's user and roles, and the kill switch terminates every instance and deletes the runner AMIs. Claude can't touch the kill switch"
+    what: "Budget US$25 (≈£20; the ceiling is a £30 bill), counted as what would be billed (credits reduce it, refunds don't). At 100%: AWS Budgets blocks anything new for Claude's user and roles, and the kill switch terminates every instance and deletes the runner AMIs. Claude can't touch the kill switch"
     approved: pending

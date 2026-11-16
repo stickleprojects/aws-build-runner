@@ -5,8 +5,8 @@
 #   export PATH=$HOME/bin:$PATH; cd ~/aws-build-runner/part1-godmode && git pull && ./bootstrap-budget-stop.sh
 #
 # Sets up, idempotently:
-#   - the guardrail-monthly budget counts GROSS cost: every service in the account, with credits and
-#     refunds NOT offsetting it (so free-plan credits can't hide real usage)
+#   - the guardrail-monthly budget counts what would be BILLED: every service in the account; credits
+#     reduce it (AWS applies them on the invoice), refunds don't (they come later, if at all), tax counts
 #   - policy guardrails/budget-stop (bootstrap/budget-stop-policy.json): denies starting or creating anything
 #     billable (instances, spot/fleet, volumes, snapshots, images, IPs, NAT, endpoints, functions, buckets,
 #     stacks, passing roles)
@@ -47,9 +47,9 @@ while read -r role; do
 done < <(yaml_get "['account_settings']['budget_stop']['roles']" | jq -r '.[]')
 echo "targets: user ${USER_NAME}; roles: ${roles[*]:-(none)}"
 
-echo "== budget ${BUDGET}: gross cost (credits and refunds don't offset it)"
+echo "== budget ${BUDGET}: what would be billed (credits reduce it, refunds don't, tax counts)"
 budget="$(aws budgets describe-budget --account-id "$ACCOUNT_ID" --budget-name "$BUDGET" --query Budget --output json)"
-budget="$(jq '.CostTypes.IncludeCredit = false | .CostTypes.IncludeRefund = false | del(.CalculatedSpend, .LastUpdatedTime)' <<<"$budget")"
+budget="$(jq '.CostTypes.IncludeCredit = true | .CostTypes.IncludeRefund = false | .CostTypes.IncludeTax = true | del(.CalculatedSpend, .LastUpdatedTime)' <<<"$budget")"
 aws budgets update-budget --account-id "$ACCOUNT_ID" --new-budget "$budget"
 aws budgets describe-budget --account-id "$ACCOUNT_ID" --budget-name "$BUDGET" \
   --query 'Budget.{limit: BudgetLimit.Amount, filters: CostFilters, credits: CostTypes.IncludeCredit, refunds: CostTypes.IncludeRefund}' --output json
