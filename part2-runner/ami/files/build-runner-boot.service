@@ -1,0 +1,13 @@
+[Unit]
+Description=build-runner boot: instance info, job registration, block IMDS for jobs
+After=network-online.target
+Wants=network-online.target
+Before=github-runner-jit.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/opt/github-runners/build-runner-boot.sh
+
+[Install]
+WantedBy=multi-user.target

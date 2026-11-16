@@ -222,6 +222,66 @@ def runner_service_has_no_ordering_cycle():
     return []
 
 
+@rule("2026-11-16 (Kieron): jobs must not run as root; like a Dockerfile USER, the runner service runs as ghrunner "
+      "with NoNewPrivileges, and the boot step blocks ghrunner from the instance metadata service.")
+def jobs_run_unprivileged_and_without_imds():
+    unit = (P2 / "ami" / "files" / "github-runner-jit.service").read_text()
+    boot = (P2 / "ami" / "files" / "build-runner-boot.sh").read_text()
+    start = (P2 / "ami" / "files" / "start-jit.sh").read_text()
+    problems = []
+    for line in ("User=ghrunner", "NoNewPrivileges=yes", "ProtectSystem=full", "PrivateTmp=yes"):
+        if not re.search(rf"^{re.escape(line)}$", unit, re.M):
+            problems.append(f"github-runner-jit.service lost {line}")
+    for addr in ("169.254.169.254", "fd00:ec2::254"):
+        if not re.search(rf"--uid-owner ghrunner.*{re.escape(addr)}|{re.escape(addr)}.*--uid-owner ghrunner", boot) \
+                and addr not in boot:
+            problems.append(f"build-runner-boot.sh doesn't block ghrunner from {addr}")
+    if "--uid-owner ghrunner" not in boot:
+        problems.append("build-runner-boot.sh has no owner-match rule for ghrunner")
+    if "169.254.169.254" in start:
+        problems.append("start-jit.sh (runs as ghrunner) talks to IMDS; the boot step should hand it the jitconfig")
+    return problems
+
+
+@rule("2026-11-16: the bake gets spellbound3d with a short-lived GitHub token. It must never be in user data "
+      "(readable via DescribeInstanceAttribute) and must be deleted from SSM and revoked when the bake ends.")
+def bake_token_stays_out_of_user_data_and_is_revoked():
+    problems = []
+    r = subprocess.run([sys.executable, "-I", str(P2 / "ami" / "make-user-data.py")], capture_output=True, text=True)
+    if r.returncode:
+        problems.append(f"make-user-data.py failed: {r.stderr.strip()[:200]}")
+    elif re.search(r"gh[sp]_[A-Za-z0-9]{20,}|github_pat_", r.stdout):
+        problems.append("the user data contains a GitHub token")
+    bake = (P2 / "ami" / "bake.sh").read_text()
+    cleanup = bake[bake.find("cleanup() {"):bake.find("trap cleanup EXIT")]
+    if "github_app_revoke" not in cleanup or "/build/bake/github-token" not in cleanup:
+        problems.append("bake.sh's cleanup doesn't both delete /build/bake/github-token and revoke the token")
+    setup = (P2 / "ami" / "setup.sh").read_text()
+    if "--get /build/bake/github-token" not in setup:
+        problems.append("setup.sh doesn't fetch the token from SSM")
+    return problems
+
+
+@rule("2026-11-16: bake.sh made a new AMI current before its smoke test, and that AMI then failed the test "
+      "(Claude's npm cache couldn't install offline). Only a smoke-tested image may become current.")
+def only_smoke_tested_images_become_current():
+    bake = (P2 / "ami" / "bake.sh").read_text()
+    smoke = (P2 / "ami" / "smoke-test.sh").read_text()
+    problems = []
+    if re.search(r"put-parameter --name /build/runner/ami-id\b", bake):
+        problems.append("bake.sh sets /build/runner/ami-id directly; it must only set the candidate")
+    if not re.search(r"put-parameter --name /build/runner/ami-id\b", smoke):
+        problems.append("smoke-test.sh doesn't promote the candidate after passing")
+    return problems
+
+
+@rule("2026-11-16: 'npm cache add' cached Claude Code without its platform-native binary, so the offline "
+      "install that the warm cache exists for failed.")
+def claude_cache_is_warmed_by_a_real_install():
+    return [f"warms Claude Code with 'npm cache add' (misses the native binary): {p}"
+            for p in lines_matching([P2 / "ami" / "setup.sh"], r"npm cache add")]
+
+
 @rule("2026-11-16 (Kieron): no AWS bill over £30, and at the limit everything stops spending: the budget counts "
       "what would be billed across the whole account (credits reduce it, refunds don't), budget-stop blocks anything new, and the kill switch terminates instances "
       "and deletes the runner AMIs. Claude can't touch the kill switch.")

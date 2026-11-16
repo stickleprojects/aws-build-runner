@@ -3,13 +3,18 @@
 # the tools and versions, the hook and allowlists, and that the one-job service started, found no job,
 # and didn't start a runner. Terminates the instance afterwards, also on failure. As Claude's IAM user.
 #
-#   part2-runner/ami/smoke-test.sh [AMI_ID]     (default: SSM /build/runner/ami-id)
+#   part2-runner/ami/smoke-test.sh [AMI_ID]     (default: the candidate, SSM /build/runner/ami-candidate)
+#
+# Testing the candidate and passing: it becomes current (/build/runner/ami-id, /build/runner/manifest),
+# which is what runners launch from. Failing: the current image stays as it is.
 set -Eeuo pipefail
 cd "$(dirname "$0")"
 
 export AWS_REGION=ap-southeast-2
 GROUP=build-runner
-ami="${1:-$(aws ssm get-parameter --name /build/runner/ami-id --query Parameter.Value --output text)}"
+candidate="$(aws ssm get-parameter --name /build/runner/ami-candidate --query Parameter.Value --output text 2>/dev/null || true)"
+ami="${1:-$candidate}"
+[[ -n "$ami" && "$ami" != None ]] || { echo "No AMI given and no candidate in SSM" >&2; exit 1; }
 sg="$(aws ec2 describe-security-groups --filters Name=group-name,Values=build-runner-bake \
   --query 'SecurityGroups[0].GroupId' --output text)"
 TAGS="{Key=resource-group,Value=${GROUP}},{Key=Name,Value=build-runner-smoke-test}"
@@ -56,23 +61,43 @@ echo "online in Systems Manager"
 read -r -d '' checks <<'EOF' || true
 set -u
 R=/opt/github-runners/spellbound3d
+H=$R/home
 fail=0
-check() { if eval "$2" >/tmp/out 2>&1; then echo "ok    $1: $(head -c 120 /tmp/out | tr '\n' ' ')"; else echo "FAIL  $1: $(head -c 300 /tmp/out | tr '\n' ' ')"; fail=1; fi; }
-check "godot"             "sudo -u ghrunner -H $R/home/.local/opt/godot-4.7.2/godot --headless --version 2>&1 | grep -E '^4\.7\.2'"
-check "godot cache zip"   "test -s $R/home/.cache/godot/Godot_v4.7.2-stable_linux.x86_64.zip && echo present"
-check "fontconfig"        "ldconfig -p | grep -m1 libfontconfig.so.1"
-check "runner version"    "sudo -u ghrunner -H bash -c 'cd $R && ./config.sh --version'"
-check "runner env"        "grep -E '^(HOME|NPM_CONFIG_PREFIX|ACTIONS_RUNNER_HOOK_JOB_STARTED)=' $R/.env | tr '\n' ' ' | grep -q ACTIONS_RUNNER_HOOK_JOB_STARTED && echo 3 settings"
-check "hook"              "bash -n /etc/github-runner/job-started.sh && test -x /etc/github-runner/job-started.sh && echo syntax ok"
-check "allowlists"        "grep -qx stickleprojects/spellbound3d /etc/github-runner/allowed-repos.txt && grep -qx stickleprojects /etc/github-runner/allowed-actors.txt && echo present"
-check "hook refuses a fork-less unknown repo" "cd /tmp && GITHUB_REPOSITORY=someone/else GITHUB_ACTOR=stickleprojects GITHUB_EVENT_NAME=push GITHUB_EVENT_PATH=/dev/null /etc/github-runner/job-started.sh; test \$? -ne 0 && echo refused"
-check "one-job service"   "systemctl is-enabled github-runner-jit.service"
-# The service starts after cloud-init's final stage, which can be after Systems Manager is online: wait for it.
+check() { if eval "$2" >/tmp/out 2>&1; then echo "ok    $1: $(head -c 120 /tmp/out | tr '\n' ' ')"; else echo "FAIL  $1: $(head -c 400 /tmp/out | tr '\n' ' ')"; fail=1; fi; }
+# As the job user, with the job's environment (not root).
+as_job() { sudo -u ghrunner -H env HOME=$H NPM_CONFIG_PREFIX=$H/.local PATH=$H/.local/bin:/usr/local/bin:/usr/bin:/bin bash -c "$1"; }
+M=/etc/build-runner/manifest.json
+CLAUDE_VER="$(jq -r '.tools.claude_code' $M | cut -d' ' -f1)"
+
+# The boot step and the services. They start after boot, possibly after Systems Manager is online.
 for _ in $(seq 1 36); do journalctl -u github-runner-jit.service --no-pager | grep -q 'No jitconfig in user data' && break; sleep 5; done
-check "no job, no runner" "journalctl -u github-runner-jit.service --no-pager | grep -m1 'No jitconfig in user data' || { systemctl status github-runner-jit.service --no-pager; false; }"
-check "no runner process" "! pgrep -f Runner.Listener && echo none"
-check "node/npm/python/jq" "echo node \$(node --version) npm \$(npm --version) \$(python3 --version) \$(jq --version)"
-check "owner"             "test \"\$(ls -ld $R/home | awk '{print \$3}')\" = ghrunner && echo ghrunner"
+check "boot step ran"           "systemctl is-active build-runner-boot.service"
+check "instance.json"           "jq -e '.instance_type == \"c7i.large\" and .nproc == 2' /etc/build-runner/instance.json"
+check "no job, no runner"       "journalctl -u github-runner-jit.service --no-pager | grep -m1 'No jitconfig in user data' || { systemctl status github-runner-jit.service --no-pager; false; }"
+check "no runner process"       "! pgrep -f Runner.Listener && echo none"
+check "manifest"                "jq -e '.tools.godot and .tools.claude_code and .spellbound3d_commit' $M"
+
+# Security: jobs run as ghrunner, can't escalate, can't reach the instance metadata service.
+check "service user ghrunner"   "systemctl show -p User --value github-runner-jit.service | grep -x ghrunner"
+check "NoNewPrivileges"         "systemctl show -p NoNewPrivileges --value github-runner-jit.service | grep -x yes"
+check "ghrunner has no sudo"    "! sudo -u ghrunner sudo -n true 2>/dev/null && echo refused"
+check "IMDS blocked for jobs"   "! as_job 'curl -sf -m 3 -X PUT http://169.254.169.254/latest/api/token -H X-aws-ec2-metadata-token-ttl-seconds:60' && echo blocked"
+check "IMDS open for root"      "curl -sf -m 3 -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' >/dev/null && echo ok"
+check "hook"                    "bash -n /etc/github-runner/job-started.sh && test -x /etc/github-runner/job-started.sh && echo syntax ok"
+check "hook refuses an unknown repo" "cd /tmp && GITHUB_REPOSITORY=someone/else GITHUB_ACTOR=stickleprojects GITHUB_EVENT_NAME=push GITHUB_EVENT_PATH=/dev/null /etc/github-runner/job-started.sh; test \$? -ne 0 && echo refused"
+
+# Tools work, as the job user (not just report a version).
+check "godot runs a script"     "as_job 'printf \"extends SceneTree\nfunc _init():\n\tprint(\\\"smoke-ok\\\")\n\tquit()\n\" > /tmp/smoke.gd && godot --headless -s /tmp/smoke.gd' | grep -m1 smoke-ok"
+check "godot where install-godot.sh looks" "as_job 'test -x \$HOME/.local/opt/godot-*/godot && test -s \$HOME/.cache/godot/*.zip && echo present'"
+check "claude from npm cache, offline" "as_job \"rm -rf /tmp/c && npm install --prefix /tmp/c --offline --no-fund --no-audit --loglevel=error @anthropic-ai/claude-code@$CLAUDE_VER >/dev/null && /tmp/c/node_modules/.bin/claude --version\""
+check "claude global"           "as_job 'claude --version'"
+check "uv runs python"          "as_job 'uv run --no-project python3 -c \"print(42)\"' | grep -x 42"
+check "python venv"             "as_job 'python3 -m venv /tmp/v && /tmp/v/bin/python -c \"import sys; print(sys.version.split()[0])\"'"
+check "git commit"              "as_job 'rm -rf /tmp/g && git init -q /tmp/g && git -C /tmp/g -c user.name=x -c user.email=x@x commit -q --allow-empty -m x && git -C /tmp/g log --oneline | wc -l'"
+check "gitleaks"                "as_job 'gitleaks version'"
+check "jq"                      "as_job 'echo {\\\"a\\\":1} | jq -e .a'"
+check "runner version"          "as_job 'cd $R && ./config.sh --version'"
+check "owner"                   "test \"\$(ls -ld $H | awk '{print \$3}')\" = ghrunner && echo ghrunner"
 exit $fail
 EOF
 
@@ -87,3 +112,12 @@ done
 aws ssm get-command-invocation --command-id "$cmd" --instance-id "$instance" --query StandardOutputContent --output text
 [[ "$status" == Success ]] || { echo "Smoke test FAILED (${status})" >&2; exit 1; }
 echo "Smoke test passed: ${ami}"
+if [[ "$ami" == "$candidate" ]]; then
+  aws ssm put-parameter --name /build/runner/ami-id --type String --value "$ami" --overwrite \
+    --description "Current build-runner AMI: baked by bake.sh, passed smoke-test.sh" >/dev/null
+  aws ssm put-parameter --name /build/runner/manifest --type String --overwrite \
+    --value "$(aws ssm get-parameter --name /build/runner/candidate-manifest --query Parameter.Value --output text)" \
+    --description "Manifest of the current build-runner AMI" >/dev/null
+  aws ssm delete-parameters --names /build/runner/ami-candidate /build/runner/candidate-manifest >/dev/null
+  echo "promoted ${ami} to current (SSM /build/runner/ami-id)"
+fi
