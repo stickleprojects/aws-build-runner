@@ -96,5 +96,7 @@ for qtext in (report.JOBS_QUERY, report.QUEUE_QUERY):
     shadow = [m for m in re.finditer(r"\b\w+\((\w+)(?:,[^)]*)?\) as (\w+)", qtext) if m.group(1) == m.group(2)]
     check("queries: no alias reuses its field's name (it'd drop the field)", not shadow, qtext)
 
+check("queries: runners that never got a job are left out of job fit", "ispresent(job)" in report.JOBS_QUERY)
+
 print(f"\n{failed} failed")
 sys.exit(1 if failed else 0)
