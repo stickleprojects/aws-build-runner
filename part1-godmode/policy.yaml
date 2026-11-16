@@ -123,10 +123,12 @@ global:
     approved: 2026-11-16 Kieron
     actions: ["budgets:View*", "budgets:Describe*", "ce:Get*", "ce:Describe*", "ce:List*", "pricing:*"]
 
-# Read-only everywhere (all regions), to find forgotten resources. Listing and metadata only.
-see_everywhere:
+# Read-only: listing and metadata, no data, no changes. Sydney only, like everything else.
+# IAM is the exception: it has no regions (AWS evaluates every IAM request as us-east-1), so a
+# Sydney condition would block IAM reads altogether.
+read_only:
   approved: 2026-11-16 Kieron
-  actions:
+  home_region:
     - "ec2:Describe*"
     - "lambda:List*"
     - "lambda:GetFunction*"
@@ -142,15 +144,16 @@ see_everywhere:
     - "cloudtrail:LookupEvents"
     - "servicequotas:Get*"
     - "servicequotas:List*"
+    - "access-analyzer:ValidatePolicy"
+    - "access-analyzer:CheckNoNewAccess"
+    - "access-analyzer:CheckAccessNotGranted"
+    - "access-analyzer:CheckNoPublicAccess"
+  global:
     - "iam:Get*"
     - "iam:List*"
     - "iam:GenerateServiceLastAccessedDetails"
     - "iam:SimulatePrincipalPolicy"
     - "iam:SimulateCustomPolicy"
-    - "access-analyzer:ValidatePolicy"
-    - "access-analyzer:CheckNoNewAccess"
-    - "access-analyzer:CheckAccessNotGranted"
-    - "access-analyzer:CheckNoPublicAccess"
 
 # Permissions for what Claude builds: roles, policies, instance profiles.
 iam:
@@ -201,4 +204,7 @@ changes:
     approved: 2026-11-16 Kieron
   - date: 2026-11-16
     what: Every resource Claude creates must carry an approved resource-group tag (first group build-runner); adds AWS Resource Groups
+    approved: 2026-11-16 Kieron
+  - date: 2026-11-16
+    what: Read-only listing becomes Sydney only (was every region); IAM reads stay global, as IAM has no regions
     approved: 2026-11-16 Kieron

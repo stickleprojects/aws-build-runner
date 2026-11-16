@@ -58,6 +58,7 @@ def main():
     print()
     problems = []
     applied = set()
+    all_same = True
     print(f"{'policy':28} {'live = checkout':15} {'applied commit':14} {'applied at':22} applied by")
     for name, arn in policies.items():
         meta, err = aws("iam", "get-policy", "--policy-arn", arn)
@@ -71,6 +72,7 @@ def main():
         tags = {t["Key"]: t["Value"] for t in (tags_resp or {}).get("Tags", [])}
         local = json.loads(config.render((HERE / "out" / name).read_text(), cfg))
         same = canonical(live["PolicyVersion"]["Document"]) == canonical(local)
+        all_same &= same
         commit = tags.get("applied-commit", "-")
         applied.add(commit)
         print(f"{name:28} {'yes' if same else 'NO (drift)':15} {commit[:12]:14} "
@@ -94,6 +96,9 @@ def main():
     print()
     if here and applied == {here}:
         print("AWS has this checkout's commit applied.")
+    elif here and all_same and not problems and len(applied) == 1:
+        print(f"AWS matches this checkout. The policies were applied at {next(iter(applied))[:12]}; "
+              f"later commits up to {here[:12]} didn't change them, so there's nothing to apply.")
     elif here:
         print(f"NOT YET APPLIED: this checkout is {here[:12]}; AWS has {', '.join(sorted(c[:12] for c in applied))}.")
     for problem in problems:
