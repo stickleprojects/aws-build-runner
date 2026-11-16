@@ -322,6 +322,50 @@ def budget_stop_covers_everything():
     return problems
 
 
+@rule("2026-11-16: the weekly AMI pipeline added a new role that can launch instances (build-runner-ami-ci); "
+      "unless it's in budget_stop.roles, the budget stop wouldn't block it.")
+def every_launching_role_is_covered_by_the_budget_stop():
+    import yaml
+    p = yaml.safe_load((P1 / "policy.yaml").read_text())
+    covered = set(((p.get("account_settings") or {}).get("budget_stop") or {}).get("roles", []))
+    problems = []
+    for script in SHELL_SCRIPTS:
+        text = script.read_text()
+        m = re.search(r"^NAME=([\w-]+)$", text, re.M)
+        if m and "--role-name" in text and "ec2:RunInstances" in text and m.group(1) not in covered:
+            problems.append(f"{script.relative_to(ROOT)} creates role {m.group(1)}, which can launch instances, "
+                            "but it isn't in policy.yaml budget_stop.roles")
+    return problems
+
+
+@rule("2026-11-16: only a smoke-tested image may be published or cause old images to be pruned.")
+def ami_pipeline_tests_before_pruning_or_publishing():
+    wf = (ROOT / ".github" / "workflows" / "ami.yml").read_text()
+    order = [wf.find(s) for s in ("ami/bake.sh", "ami/smoke-test.sh", "ami/prune-amis.sh", "ci/publish-release.sh")]
+    if -1 in order:
+        return ["ami.yml is missing one of: bake, smoke test, prune, publish"]
+    return [] if order == sorted(order) else ["ami.yml doesn't run bake → smoke test → prune → publish in that order"]
+
+
+@rule("2026-11-16: the org budget action was set up by hand with AWSManagedBudgetsSpendLimitManagementRole (AWS "
+      "controls its permissions, which are conditioned and include CloseAccount) and without the forecast alert.")
+def org_budget_stop_uses_its_own_role_and_all_alerts():
+    script = (P1 / "bootstrap-org-budget-stop.sh").read_text()
+    problems = []
+    if "AWSManagedBudgetsSpendLimitManagementRole" in script.replace("not AWS's managed spend-limit role", ""):
+        problems.append("bootstrap-org-budget-stop.sh uses AWS's managed spend-limit role")
+    if not re.search(r'ROLE="?org-budget-action-runner', script) or "--execution-role-arn \"$role_arn\"" not in script:
+        problems.append("the org budget action doesn't use the dedicated org-budget-action-runner role")
+    for spec in ("ACTUAL:50", "ACTUAL:80", "ACTUAL:100", "FORECASTED:100"):
+        if spec not in script:
+            problems.append(f"bootstrap-org-budget-stop.sh doesn't ensure the {spec}% alert")
+    if '"Refund"' not in script:
+        problems.append("the org budget doesn't exclude refunds")
+    if "MasterAccountId" not in script:
+        problems.append("bootstrap-org-budget-stop.sh doesn't check it runs in the management account")
+    return problems
+
+
 def main():
     failed = 0
     for name, incident, fn in RULES:

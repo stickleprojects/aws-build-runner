@@ -53,6 +53,22 @@ The bill is the organization's consolidated bill, paid by the **kieron-wray-team
 The steps above protect the identity account. These protect the **whole bill**: every account in
 the organization. Claude has no access to the management account; do this in the console.
 
+**The easy way: a script.** Sign in, choose the **kieron-wray-team management account**, open CloudShell.
+No `gh` or token needed here: the repo is public, and the alert email is taken from the org budget's
+existing alerts (set `AWS_ALERT_EMAIL` only if the budget doesn't exist yet). First time:
+```bash
+git clone https://github.com/stickleprojects/aws-build-runner.git ~/aws-build-runner
+```
+Then, every time:
+```bash
+cd ~/aws-build-runner/part1-godmode && git pull && ./bootstrap-org-budget-stop.sh
+```
+It refuses to run anywhere but the management account. It creates or corrects everything below (the SCP,
+the `spend-capped` OU, a dedicated role, the budget and its four alerts, and the action), lists any member
+account outside the OU, and ends with a check. Safe to rerun.
+
+The same steps by hand, for reference:
+
 1. Sign in (https://signin.aws.amazon.com → GitHub) and choose **kieron-wray-team management account**.
 2. **Organizations → Policies → Service control policies.** If they're disabled, **Enable**. Then **Create policy**:
    - Name: `org-budget-stop`
@@ -60,21 +76,32 @@ the organization. Claude has no access to the management account; do this in the
    - Policy: paste the contents of [bootstrap/budget-stop-policy.json](bootstrap/budget-stop-policy.json)
      (the same deny list as the identity account's stop).
    - **Create policy**. Don't attach it to anything: the budget action does that.
-3. **Billing and Cost Management → Budgets → Create budget → Customize (advanced) → Cost budget**:
+3. **An OU for the action to target** (the budget's action picker lists OUs, never Root itself):
+   Organizations → **AWS accounts** → tick **Root** → **Actions → Organizational unit → Create new**:
+   `spend-capped`. (Not *Add an AWS account*: that makes a new account and fails with
+   `EMAIL_ALREADY_EXISTS`.) Then tick every **member** account (identity delegated admin, building
+   momentum) → **Actions → AWS account → Move** → `spend-capped`. The management account stays at Root;
+   SCPs never apply to it. Accounts keep everything they inherited from Root (checked 2026-11-16: the
+   organization's region rules still apply after the move). **Put every new account into `spend-capped`.**
+4. **Billing and Cost Management → Budgets → Create budget → Customize (advanced) → Cost budget**:
    - Name `org-guardrail-monthly`; period **Monthly**; recurring; fixed amount **25** (USD, ≈£20).
-   - Scope: **All AWS services** (in the management account that covers every account in the organization).
-   - Advanced options: **Unblended**; uncheck **Refunds**. Leave **Credits**, **Tax** and the rest checked.
-4. Alerts: **Actual 50 %**, **Actual 80 %**, **Actual 100 %**, **Forecasted 100 %**, each emailing you.
-5. On the **Actual 100 %** alert, **Attach action**:
-   - Action type **Apply service control policy**; policy `org-budget-stop`.
-   - Target: the organization **root**, so every member account is covered.
-   - IAM role: **Create a new role** (the console offers one for budget actions).
-   - **Run automatically**. **Create**.
-6. Check: the budget lists 4 alerts and 1 action, status *Standby*.
+   - Budget scope: **Filter specific AWS cost dimensions** → **Add filter** → dimension **Charge type** →
+     **Exclude** → select **Refund** only. Leave Credit, Tax and Usage in. (The console no longer has
+     refund/credit/tax checkboxes under Advanced options; this filter does the same. In the management
+     account the budget still covers every account in the organization.)
+   - Advanced options: aggregate by **Unblended**.
+5. Alerts: **Actual 50 %**, **Actual 80 %**, **Actual 100 %**, **Forecasted 100 %**, each emailing you.
+   (No SNS or Chatbot.) **Next** → the **Attach actions** page.
+6. **Add action** on the **Actual 100 %** alert:
+   - IAM role: **Create new role**. Not `AWSManagedBudgetsSpendLimitManagementRole`: AWS manages that one
+     for its own feature, and its permissions can change under us.
+   - Action type **Apply service control policy**; policy `org-budget-stop`; organizational unit `spend-capped`.
+   - **Run automatically**. **Next** → **Create budget**.
+7. Check: the budget lists 4 alerts and 1 action, status *Standby*.
 
-What it does: at US$25 across the whole organization, every member account (identity, building
-momentum, any new one) can't start or create anything billable. Running instances in the identity
-account are terminated by its own kill switch (above).
+What it does: at US$25 across the whole organization, every account in `spend-capped` (identity,
+building momentum) can't start or create anything billable. Running instances in the identity account
+are terminated by its own kill switch (above).
 
 Limits:
 - **SCPs don't apply to the management account itself**, so keep nothing running there.

@@ -50,7 +50,32 @@ Running costs on top of A1–A5, all small:
 | Data out to GitHub (artifacts, logs) | first 100 GB/month free, then ≈ US$0.114/GB | ≈ US$0 |
 
 **Totals for the recommended path: A2 spot with on-demand fallback ≈ US$16–20/month;
-A1 on-demand only ≈ US$33/month.**
+A1 on-demand only ≈ US$33/month.** *(Superseded: see "What was decided" below.)*
+
+### What was decided (2026-11-16), and what it costs
+
+spellbound3d measured a cold `make check`: it **fails on 2 vCPU** (a timing test) and passes on 4, and
+t3's CPU credits made timings flaky. So jobs get fixed-performance c7i types, chosen per job
+([part2-runner/PLAN.md](part2-runner/PLAN.md)). Sydney spot prices, checked 2026-11-16:
+
+| Item | Price | Busiest observed load (≈280 instance-hours/month) | About half that |
+|---|---|---|---|
+| Check jobs: c7i.xlarge spot (4 vCPU), ≈ half the hours | ≈ US$0.092/h + US$0.005/h IPv4 | ≈ US$13.60 | ≈ US$6.80 |
+| Claude jobs: c7i.large spot (2 vCPU), ≈ half the hours | ≈ US$0.048/h + US$0.005/h IPv4 | ≈ US$7.40 | ≈ US$3.70 |
+| Root volumes (30 GiB gp3, only while instances exist) | US$0.096/GB-month | ≈ US$1 | ≈ US$0.50 |
+| 3 kept AMIs (≈10.5 GB of snapshot each) | US$0.055/GB-month | ≈ US$1.75 | ≈ US$1.75 |
+| Weekly AMI rebuild (bake + smoke test, ≈30 min) | ≈ US$0.05 each | ≈ US$0.20 | ≈ US$0.20 |
+| Lambdas, SSM, Logs, data out | mostly free tier | < US$1 | < US$1 |
+| **Total** | | **≈ US$24–25** | **≈ US$13** |
+
+**Watch out:** at the **busiest observed load all month**, this lands at the **US$25 budget**, so the
+automatic stop would fire near month end. The "busiest load" was a single day of 100 runs in 11.5
+hours; a typical month should be well under. If months really run that hot, the options are:
+- cap concurrent runners in the launcher (planned anyway),
+- keep light jobs on GitHub-hosted runners,
+- or raise the budget towards the £30 (≈ US$38) ceiling, keeping headroom for the billing lag.
+
+On-demand fallback (when spot is short) costs about 2.5× spot for those hours.
 
 ### GitHub's self-hosted runner fee (A, B and D)
 
@@ -70,8 +95,13 @@ GitHub-hosted prices already include it.
 
 ## Worst case under the guardrails
 
-Budget alerts email you; they don't stop anything. The hard ceilings are the guardrails
-(small instance types, no purchases, no quota increases) and the EC2 vCPU quota. Example:
-with a 32-vCPU quota, forgetting 8 × c5.xlarge for a whole month ≈ US$1,300; the 50 %
-budget alert (US$15 on a US$30 budget) would arrive on day 1. Turn on the optional budget action in
-[part1-godmode/CHECKLIST.md](part1-godmode/CHECKLIST.md) for an automatic stop.
+Since 2026-11-16 the budget **stops spending automatically** (part1-godmode/POLICY.md, "Set by godmode"):
+- at **US$25** (≈£20; the ceiling is a £30 bill), counting what would be billed,
+- **nothing new** can be started by Claude's user or roles,
+- the **kill switch terminates every instance** and deletes the runner AMIs,
+- and an **org-wide budget with an SCP** in the management account covers every account on the bill.
+
+Billing data lags by up to about a day, so the stop fires after spend crosses US$25. The guardrails
+(small instance types, no purchases, no quota increases) and the 32-vCPU quota cap how fast it can
+grow meanwhile: the realistic worst case is about £22–25. It isn't a legal guarantee; AWS offers no
+hard spend cap.
