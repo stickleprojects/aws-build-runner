@@ -1,0 +1,72 @@
+# Apply (or roll back) Claude's AWS policies from GitHub: Actions → apply → Run workflow on main.
+# The job waits for Kieron's approval (GitHub environment "aws" or "aws-rollback"), then signs in
+# to AWS through OIDC as godmode/aws-build-runner-apply: no stored AWS keys. That role exists only
+# after part1-godmode/bootstrap-github-apply.sh (godmode, once) and can do only what these scripts need.
+#
+# The account id, user name, alert email and role ARN are environment secrets, so they're masked
+# in this public repo's logs.
+name: apply
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "apply = make AWS match main; rollback = put back the previous policy versions"
+        type: choice
+        options: [apply, rollback]
+        default: apply
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aws-apply   # never two at once
+  cancel-in-progress: false
+
+jobs:
+  run:
+    name: ${{ inputs.action }}
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # Each environment requires Kieron's approval and accepts main only.
+    environment: ${{ inputs.action == 'rollback' && 'aws-rollback' || 'aws' }}
+    permissions:
+      contents: read
+      actions: read       # find the policy CI run and download its artifact
+      id-token: write     # OIDC: sign in to AWS without keys
+      deployments: write  # rollback: mark the last apply's deployment inactive
+      issues: write       # rollback: open a "revert it in git" issue
+    env:
+      AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+      AWS_CLAUDE_USER: ${{ secrets.AWS_CLAUDE_USER }}
+      AWS_ALERT_EMAIL: ${{ secrets.AWS_ALERT_EMAIL }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install PyYAML (pinned)
+        run: pip install --quiet "pyyaml==6.0.3"
+
+      - name: Sign in to AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_APPLY_ROLE_ARN }}
+          role-session-name: github-${{ inputs.action }}-${{ github.run_id }}
+          aws-region: ap-southeast-2
+
+      - name: Apply
+        if: inputs.action == 'apply'
+        working-directory: part1-godmode
+        run: ./apply.sh
+
+      - name: Roll back
+        if: inputs.action == 'rollback'
+        working-directory: part1-godmode
+        run: ./rollback.sh

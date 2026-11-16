@@ -21,8 +21,12 @@ Read [readme.md](readme.md) first; costs in [PRICING.md](PRICING.md).
 - **Never merge a policy PR, and never set `approved:` without Kieron's explicit word.** Claude's `gh`
   runs as Kieron's GitHub account, so GitHub can't enforce this; it's on Claude.
 - Repo: github.com/stickleprojects/aws-build-runner. `main` is protected: work on a branch, open a PR.
-- **Godmode** = temporary admin credentials (CloudShell), only to run `part1-godmode/apply.sh` or a
-  one-off account action that Kieron asked for. Never create admin access keys or IAM users on the laptop.
+- **Applying** an approved, merged change: the **apply** GitHub Actions workflow on `main` (Kieron approves the
+  run; it signs in by OIDC as `godmode/aws-build-runner-apply`), or `apply.sh` in CloudShell as the fallback.
+  Rollback is the same workflow with action `rollback`. Claude may *start* the workflow when Kieron asks, but
+  never approves it; approval is Kieron's click.
+- **Godmode** = Kieron's admin session (GitHub sign-in → CloudShell), only for applying, the one-time
+  bootstrap, or a one-off account action he asked for. Never create admin access keys or IAM users on the laptop.
 
 ## Conventions
 

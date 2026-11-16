@@ -49,7 +49,8 @@ part-way is recorded as a failed deployment.
 3. **CI generates and checks it**; the run summary shows the POLICY.md diff and what's pending.
 4. **You approve**: tell Claude (it sets `approved: YYYY-MM-DD Kieron`) or edit it yourself. Then
    **you merge**. Claude never merges policy PRs and never marks anything approved without your word.
-5. **Godmode applies it**: in CloudShell, `./apply.sh` (step by step: [CHECKLIST.md](CHECKLIST.md)). The deployment record shows it applied.
+5. **It gets applied**: Actions → **apply** → Run workflow on `main` → you approve the run. Or by hand in
+   CloudShell with `./apply.sh`. Step by step: [CHECKLIST.md](CHECKLIST.md). The deployment record shows it applied.
 
 Removing permissions works the same way and is always welcome.
 
@@ -68,9 +69,12 @@ Commands for drafting: `python3 -I build-policies.py --draft`, `./verify.py --of
 | [verify.py](verify.py) | ≈514 allow/deny checks, for the user and for the worst role Claude could create. `--offline`: local evaluator. `--local`: IAM simulator on the drafts. Default: IAM simulator on the live policies |
 | [config.py](config.py) | Account id and IAM user name, which are kept out of this public repo. Read from env vars, `.env.local` or GitHub repo variables. Committed JSON uses `{{ACCOUNT_ID}}`, filled in only when checking against AWS or applying |
 | [check-live.py](check-live.py) | Live AWS vs this checkout: drift, applied commit, date, who |
-| [apply.sh](apply.sh) | **Admin only.** Applies main's checked artifact and records it |
+| [apply.sh](apply.sh) | **Admin only.** Applies main's checked artifact and records it. Run by the **apply** workflow, or in CloudShell |
+| [rollback.sh](rollback.sh) | **Admin only.** Puts the previous policy versions back, marks the deployment inactive, opens a "revert in git" issue |
+| [bootstrap-github-apply.sh](bootstrap-github-apply.sh), [bootstrap/](bootstrap/) | **Godmode, once.** GitHub OIDC provider plus the role `godmode/aws-build-runner-apply` that the **apply** workflow uses, with only these scripts' permissions |
 | [CHECKLIST.md](CHECKLIST.md) | The first godmode session, step by step |
 | [../.github/workflows/policy.yml](../.github/workflows/policy.yml) | CI: generate, check, store the artifact, report the applied state. Never touches AWS |
+| [../.github/workflows/apply.yml](../.github/workflows/apply.yml) | Apply or roll back, run by hand on `main`, after your approval |
 
 ## Status
 
