@@ -185,6 +185,18 @@ def build_cases(p, cfg):
                    "iam:DeleteRolePolicy", "sts:AssumeRole"):
         add(Case(action, "denied", apply_role, g))
     add(Case("iam:PassRole", "denied", apply_role, g, **{"iam:PassedToService": "ec2.amazonaws.com"}))
+    # The budget stop (bootstrap-budget-stop.sh) is godmode: Claude can't detach it or touch its runner role.
+    stop_policy = f"arn:aws:iam::{acct}:policy/guardrails/budget-stop"
+    for action in ("iam:DetachUserPolicy", "iam:DeleteUserPolicy"):
+        add(Case(action, "denied", f"arn:aws:iam::{acct}:user/{cfg['AWS_CLAUDE_USER']}", g,
+                 **{"iam:PolicyARN": stop_policy}))
+    add(Case("iam:DetachRolePolicy", "denied", role, g, **{"iam:PolicyARN": stop_policy}))
+    add(Case("iam:CreatePolicyVersion", "denied", stop_policy, g))
+    runner = f"arn:aws:iam::{acct}:role/guardrails/budget-action-runner"
+    for action in ("iam:UpdateAssumeRolePolicy", "iam:PutRolePolicy", "sts:AssumeRole"):
+        add(Case(action, "denied", runner, g))
+    add(Case("budgets:ExecuteBudgetAction", "denied", f"arn:aws:budgets::{acct}:budget/guardrail-monthly/action/*", g))
+    add(Case("budgets:DeleteBudgetAction", "denied", f"arn:aws:budgets::{acct}:budget/guardrail-monthly/action/*", g))
     add(Case("iam:CreateOpenIDConnectProvider", "denied", f"arn:aws:iam::{acct}:oidc-provider/token.actions.githubusercontent.com", g))
 
     if rg:

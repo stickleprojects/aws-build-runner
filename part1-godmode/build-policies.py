@@ -334,7 +334,17 @@ def summary(p: dict, pending: list, sizes: dict) -> str:
     w("## Set by godmode, outside the policy")
     w("")
     if "budget_usd" in settings:
-        w(f"- Monthly budget **US${settings['budget_usd']}**, email alerts at 50 %, 80 % and 100 % actual, and 100 % forecast.")
+        scope = (" It counts **everything in the account**, every service (instances, logs, snapshots, data transfer…), "
+                 "**gross**: credits and refunds don't offset it.") if settings.get("budget_counts_gross") else ""
+        w(f"- Monthly budget **US${settings['budget_usd']}**, email alerts at 50 %, 80 % and 100 % actual, and 100 % forecast.{scope}")
+    stop = settings.get("budget_stop")
+    if stop:
+        roles = ", ".join(f"`{r}`" for r in stop["roles"]) or "none yet"
+        w(f"- **Automatic stop at {stop['at_percent']} % of actual spend:** AWS Budgets attaches `guardrails/budget-stop` to "
+          f"Claude's user and roles ({roles}). It denies starting or creating anything billable: instances, spot/fleet, "
+          "volumes, snapshots, images, IPs, NAT, endpoints, functions, buckets, stacks, passing roles. Billing data lags, "
+          "so it acts within about a day. Running instances aren't stopped (runners end within 2 hours). Only Kieron can "
+          "reverse it (Billing → Budgets → Actions); Claude can't detach it.")
     if settings.get("block_public_access"):
         w(f"- Public access blocked for: {', '.join(settings['block_public_access'])}. Claude can't turn it off.")
     if settings.get("ebs_encryption_by_default"):

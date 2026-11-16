@@ -36,6 +36,17 @@ the last apply's deployment inactive, and opens an issue to revert the change in
 
 The manual route below still works and is the fallback.
 
+### Automatic stop at the budget (godmode, once; again when budget_stop.roles changes)
+
+In CloudShell:
+```bash
+export PATH=$HOME/bin:$PATH; cd ~/aws-build-runner/part1-godmode && git pull && ./bootstrap-budget-stop.sh
+```
+Makes the budget count gross cost (credits and refunds don't offset it), and creates `guardrails/budget-stop` and the
+role AWS Budgets uses to attach it. Then sets the budget action: at 100 % of actual spend, attach it automatically to
+Claude's user and roles. Ends by listing the action. To lift a stop once you've decided: Billing → Budgets →
+`guardrail-monthly` → Actions → reverse.
+
 ## Manual: from CloudShell
 
 ### 1. Sign in to AWS

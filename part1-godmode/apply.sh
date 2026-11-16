@@ -165,7 +165,8 @@ groups="$(aws iam list-groups-for-user --user-name "$USER_NAME" --query 'Groups[
 
 echo "== 4b. account settings"
 budget_json="$(jq -n --arg n "$BUDGET_NAME" --arg a "$BUDGET_USD" \
-  '{BudgetName:$n, BudgetType:"COST", TimeUnit:"MONTHLY", BudgetLimit:{Amount:$a, Unit:"USD"}}')"
+  '{BudgetName:$n, BudgetType:"COST", TimeUnit:"MONTHLY", BudgetLimit:{Amount:$a, Unit:"USD"},
+    CostTypes:{IncludeCredit:false, IncludeRefund:false}}')"   # gross: credits/refunds don't hide spend
 if aws budgets describe-budget --account-id "$ACCOUNT_ID" --budget-name "$BUDGET_NAME" >/dev/null 2>&1; then
   aws budgets update-budget --account-id "$ACCOUNT_ID" --new-budget "$budget_json"
   echo "budget ${BUDGET_NAME}: limit US\$${BUDGET_USD} (existing alert recipients kept)"

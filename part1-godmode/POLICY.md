@@ -2,6 +2,9 @@
 
 Generated from [policy.yaml](policy.yaml) by `build-policies.py`. Don't edit this file.
 
+> **DRAFT, not approved yet.** Pending:
+> - change 2026-11-16: Automatic stop at 100% of the monthly budget (guardrails/budget-stop on Claude's user and roles); budget counts gross cost
+
 Claude's IAM user (`AWS_CLAUDE_USER`) in the account `AWS_ACCOUNT_ID` · home region Sydney (`ap-southeast-2`). The account id and user name aren't in the repo: see [config.py](config.py).
 
 ## In short
@@ -104,7 +107,8 @@ Each group also has an AWS Resource Group of the same name (a saved tag search) 
 
 ## Set by godmode, outside the policy
 
-- Monthly budget **US$30**, email alerts at 50 %, 80 % and 100 % actual, and 100 % forecast.
+- Monthly budget **US$30**, email alerts at 50 %, 80 % and 100 % actual, and 100 % forecast. It counts **everything in the account**, every service (instances, logs, snapshots, data transfer…), **gross**: credits and refunds don't offset it.
+- **Automatic stop at 100 % of actual spend:** AWS Budgets attaches `guardrails/budget-stop` to Claude's user and roles (`build-runner-bake`). It denies starting or creating anything billable: instances, spot/fleet, volumes, snapshots, images, IPs, NAT, endpoints, functions, buckets, stacks, passing roles. Billing data lags, so it acts within about a day. Running instances aren't stopped (runners end within 2 hours). Only Kieron can reverse it (Billing → Budgets → Actions); Claude can't detach it.
 - Public access blocked for: S3 (whole account), AMIs, EBS snapshots. Claude can't turn it off.
 - EBS disk encryption on by default. Claude can't turn it off.
 - Service quotas: read-only to Claude, so the EC2 vCPU quota caps how much can run at once.
@@ -116,6 +120,7 @@ Each group also has an AWS Resource Group of the same name (a saved tag search) 
 | 2026-11-16 | First allow-list, for building the runner; replaces the old claude-assistant-policy v1 | 2026-11-16 Kieron |
 | 2026-11-16 | Every resource Claude creates must carry an approved resource-group tag (first group build-runner); adds AWS Resource Groups | 2026-11-16 Kieron |
 | 2026-11-16 | Read-only listing becomes Sydney only (was every region); IAM reads stay global, as IAM has no regions | 2026-11-16 Kieron |
+| 2026-11-16 | Automatic stop at 100% of the monthly budget (guardrails/budget-stop on Claude's user and roles); budget counts gross cost | pending |
 
 ## Policy sizes
 

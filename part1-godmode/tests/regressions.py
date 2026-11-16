@@ -222,6 +222,26 @@ def runner_service_has_no_ordering_cycle():
     return []
 
 
+@rule("2026-11-16 (Kieron): the automatic stop must cover all costs: the budget counts gross cost across the "
+      "whole account, and budget-stop denies starting or creating anything billable.")
+def budget_stop_covers_everything():
+    problems = []
+    stop = json.loads((P1 / "bootstrap" / "budget-stop-policy.json").read_text())
+    denied = {a for st in stop["Statement"] if st["Effect"] == "Deny" for a in st["Action"]}
+    for must in ("ec2:RunInstances", "ec2:StartInstances", "ec2:RequestSpotInstances", "ec2:CreateFleet",
+                 "ec2:CreateVolume", "lambda:CreateFunction", "cloudformation:CreateStack", "iam:PassRole"):
+        if must not in denied:
+            problems.append(f"budget-stop no longer denies {must}")
+    script = (P1 / "bootstrap-budget-stop.sh").read_text()
+    if "IncludeCredit = false" not in script or "IncludeRefund = false" not in script:
+        problems.append("bootstrap-budget-stop.sh doesn't make the budget count gross cost")
+    if "IncludeCredit:false" not in (P1 / "apply.sh").read_text().replace(" ", ""):
+        problems.append("apply.sh creates the budget without IncludeCredit false")
+    if "--approval-model AUTOMATIC" not in script:
+        problems.append("the budget action isn't automatic")
+    return problems
+
+
 def main():
     failed = 0
     for name, incident, fn in RULES:
