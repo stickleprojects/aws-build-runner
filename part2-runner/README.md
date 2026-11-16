@@ -37,6 +37,10 @@ every 5 min ──> launcher: catches missed webhooks; reaps runners > 90 min, o
       cost for light and heavy runners, a weekly summary on the *Runner usage* issue, and an issue assigned to Kieron when
       runners are projected over US$15 with heavy over half the hours ("spellbound3d is shredding your budget"), or
       projected over the US$25 stop. Read-only role `/claude/build-runner-usage` (`ci/usage-role.sh`).
+- [ ] **Job fit** (we own the runners, so sizing is ours to watch and suggest): each runner sends one line per job
+      (`ami/files/job-usage.py`: CPU, memory, CPU/memory wait) and the webhook records each finished job's wait for a
+      runner. The daily report adds a *Job fit* table with notes: too small, CPU-starved, could be light, near the
+      90-minute limit, waiting for runners. Needs the next image and a redeploy.
 - [ ] spellbound3d: a second label for check jobs (4 vCPU; everything else 2 vCPU), then the webhook, a test
       workflow and the cut-over (PLAN.md steps 4–6).
 
@@ -45,7 +49,7 @@ every 5 min ──> launcher: catches missed webhooks; reaps runners > 90 min, o
 | [PLAN.md](PLAN.md) | Design, instance types per job, steps |
 | [ami/IMAGE.md](ami/IMAGE.md) | **What the image comes with** (generated from `ami/manifest.json`) |
 | `ami/setup.sh` | How the image is built (runs on the bake instance) |
-| `ami/files/` | The local runner's hook and allowlists; the boot step (instance info, job registration, IMDS block); the one-job service; the bake reporter |
+| `ami/files/` | The local runner's hook and allowlists; our job-completed hook and `job-usage.py` (one usage line per job); the boot step (instance info, job registration, IMDS block); the one-job service; the bake reporter |
 | `ami/bake.sh`, `ami/bake-role.sh` | Bake an AMI as Claude's user; the bake instance's role can only report, read its one GitHub token, and talk to Systems Manager |
 | `ami/smoke-test.sh` | Check a baked AMI; promote the candidate if it passes |
 | `lib/github-app.sh` | Short-lived GitHub App tokens (the key stays in SSM) |
@@ -56,8 +60,9 @@ every 5 min ──> launcher: catches missed webhooks; reaps runners > 90 min, o
 | `stack/template.yaml`, `stack/artifacts.yaml` | Stack `build-runner`; stack `build-runner-artifacts` (the Lambda zip bucket) |
 | `stack/lambda/runner.py` | The webhook and the launcher (reconcile, launch with spot fallback, reap) |
 | `stack/lambda/ghapp.py` | GitHub App sign-in with the standard library only (RS256 JWT) |
-| `stack/runner-role.sh` | The instances' role (SSM agent only); outside the stack, as CloudFormation can't tag instance profiles |
+| `stack/runner-role.sh` | The instances' role (SSM agent, and writing to `/build/runner/jobs` only); outside the stack, as CloudFormation can't tag instance profiles |
 | `stack/config.json` | The stack's settings (labels and their instance types, cap, ages); deploy.sh passes every one |
-| `usage/report.py`, `usage/test_report.py` | Daily usage report and its offline tests |
+| `usage/report.py`, `usage/test_report.py` | Daily usage report (cost per class, job fit) and its offline tests |
+| `ami/test_job_usage.py` | Offline tests for the per-job usage record and hook |
 | `ci/usage-role.sh` | The usage workflow's read-only AWS role |
 | `stack/test_lambda.py` | Offline tests: signatures, filtering, planning, fallback, the lock (CI runs them) |

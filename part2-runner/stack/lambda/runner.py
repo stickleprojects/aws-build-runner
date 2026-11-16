@@ -18,6 +18,7 @@ and aws-spellbound3d-check (4 vCPU, make check). See PLAN.md, "Instance types".
 """
 import base64
 import contextlib
+import datetime as dt
 import functools
 import hashlib
 import hmac
@@ -106,6 +107,25 @@ def wanted_event(kind: str, payload: dict) -> str | None:
     return None
 
 
+def completed_record(kind: str, payload: dict) -> dict | None:
+    """A finished job on one of our labels -> its queue wait and run time, for the usage report. Else None."""
+    job = payload.get("workflow_job") or {}
+    if kind != "workflow_job" or payload.get("action") != "completed" \
+            or (payload.get("repository") or {}).get("full_name") != REPO or not pool_for(job.get("labels")):
+        return None
+
+    def seconds(a, b):
+        try:
+            return round((dt.datetime.fromisoformat(job[b]) - dt.datetime.fromisoformat(job[a])).total_seconds())
+        except (KeyError, TypeError, ValueError):
+            return None
+    pool = pool_for(job.get("labels"))
+    return {"job_id": job.get("id"), "label": pool, "class": POOLS[pool].get("class", "unknown"),
+            "workflow": job.get("workflow_name"), "job": job.get("name"), "run_id": job.get("run_id"),
+            "conclusion": job.get("conclusion"), "runner": job.get("runner_name"),
+            "queue_s": seconds("created_at", "started_at"), "run_s": seconds("started_at", "completed_at")}
+
+
 def response(status: int, text: str) -> dict:
     return {"statusCode": status, "headers": {"Content-Type": "text/plain"}, "body": text + "\n"}
 
@@ -124,6 +144,10 @@ def webhook(event, context):
         payload = json.loads(raw)
     except ValueError:
         return response(400, "not JSON")
+    done = completed_record(kind, payload)
+    if done:
+        log("job-completed", **done)
+        return response(202, "recorded")
     why = wanted_event(kind, payload)
     if why:
         return response(202, f"ignored: {why}")
@@ -252,6 +276,11 @@ def tags(name: str, runner_id, job_id, pool: str) -> list[dict]:
     return [{"ResourceType": r, "Tags": t} for r in ("instance", "volume")]
 
 
+def user_data(jitconfig: str, pool: str) -> str:
+    """The job's registration, plus the label and class, which the runner puts in its per-job usage record."""
+    return json.dumps({"jitconfig": jitconfig, "label": pool, "class": POOLS[pool].get("class", "unknown")})
+
+
 def run_instance(name: str, runner_id, job_id, pool: str, jitconfig: str, run=None) -> tuple[str, str, bool]:
     """Launches one runner instance: spot first, through each type and subnet, then on-demand."""
     run = run or aws("ec2").run_instances
@@ -260,7 +289,7 @@ def run_instance(name: str, runner_id, job_id, pool: str, jitconfig: str, run=No
         for subnet in random.sample(SUBNETS, len(SUBNETS)) or [None]:
             args = dict(LaunchTemplate={"LaunchTemplateId": LAUNCH_TEMPLATE, "Version": "$Latest"},
                         InstanceType=itype, MinCount=1, MaxCount=1, TagSpecifications=tags(name, runner_id, job_id, pool),
-                        UserData=json.dumps({"jitconfig": jitconfig}))
+                        UserData=user_data(jitconfig, pool))
             if subnet:
                 args["SubnetId"] = subnet
             if spot:

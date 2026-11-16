@@ -113,6 +113,35 @@ r = runner.webhook({"body": b64, "isBase64Encoded": True,
                     "headers": {"x-github-event": "workflow_job", "x-hub-signature-256": sig}}, None)
 check("webhook: base64 body handled", r["statusCode"] == 202 and len(fake_lambda.calls) == 2, str(r))
 
+# completed jobs: recorded for the usage report (queue wait, run time), never launch anything
+done_event = {"action": "completed", "repository": {"full_name": "stickleprojects/spellbound3d"},
+              "workflow_job": {"id": 8, "labels": ["aws-spellbound3d-check"], "workflow_name": "CI", "name": "check",
+                               "run_id": 5, "conclusion": "success", "runner_name": "aws-x",
+                               "created_at": "2026-11-16T07:00:00Z", "started_at": "2026-11-16T07:01:30Z",
+                               "completed_at": "2026-11-16T07:21:30Z"}}
+rec = runner.completed_record("workflow_job", done_event)
+check("completed: queue wait and run time in seconds", rec and rec["queue_s"] == 90 and rec["run_s"] == 1200, str(rec))
+check("completed: label and class", rec and rec["label"] == "aws-spellbound3d-check" and rec["class"] == "heavy", str(rec))
+check("completed: another repo's job isn't ours",
+      runner.completed_record("workflow_job", {**done_event, "repository": {"full_name": "x/y"}}) is None)
+check("completed: a job on another label isn't ours",
+      runner.completed_record("workflow_job", {**done_event, "workflow_job": {**done_event["workflow_job"],
+                                                                               "labels": ["self-hosted"]}}) is None)
+check("completed: a queued job isn't a completed one", runner.completed_record("workflow_job", event()) is None)
+check("completed: missing times are None, not an error",
+      runner.completed_record("workflow_job", {**done_event, "workflow_job": {"id": 9, "labels": ["aws-spellbound3d"]}})
+      ["queue_s"] is None)
+raw_done = json.dumps(done_event).encode()
+sig_done = "sha256=" + hmac.new(secret.encode(), raw_done, hashlib.sha256).hexdigest()
+before = len(fake_lambda.calls)
+r = runner.webhook({"body": raw_done.decode(), "headers": {"X-GitHub-Event": "workflow_job",
+                                                           "X-Hub-Signature-256": sig_done}}, None)
+check("webhook: completed job → 202 recorded, nothing launched",
+      r["statusCode"] == 202 and "recorded" in r["body"] and len(fake_lambda.calls) == before, str(r))
+r = runner.webhook({"body": raw_done.decode(), "headers": {"X-GitHub-Event": "workflow_job",
+                                                           "X-Hub-Signature-256": "sha256=00"}}, None)
+check("webhook: a forged completed event → 401", r["statusCode"] == 401)
+
 # --- planning
 now = time.time()
 L, C = "aws-spellbound3d", "aws-spellbound3d-check"
@@ -178,7 +207,7 @@ check("defaults: the Lambda's built-in pools are the deployed ones (config.json)
 check("defaults: every label has a class (light or heavy), for the usage report",
       all(p.get("class") in ("light", "heavy") for p in runner.POOLS.values()))
 runner.SUBNETS = ["subnet-a", "subnet-b"]
-runner.POOLS = {C: {"spot": ["c7i.xlarge", "c6i.xlarge"], "on_demand": ["c7i.xlarge"]}}
+runner.POOLS = {C: {"class": "heavy", "spot": ["c7i.xlarge", "c6i.xlarge"], "on_demand": ["c7i.xlarge"]}}
 check("attempts: spot types first, then on-demand",
       runner.attempts(C) == [("c7i.xlarge", True), ("c6i.xlarge", True), ("c7i.xlarge", False)])
 tried = []
@@ -214,7 +243,8 @@ check("launch: tagged resource-group on instance and volume",
       and all({"Key": "resource-group", "Value": "build-runner"} in t["Tags"] for t in kw["TagSpecifications"]))
 check("launch: tagged with its label, so the planner knows its size",
       all({"Key": "build-runner-label", "Value": C} in t["Tags"] for t in kw["TagSpecifications"]))
-check("launch: user data is the image's {jitconfig} JSON", json.loads(kw["UserData"]) == {"jitconfig": "JIT"})
+check("launch: user data is the job's registration plus its label and class (for the usage record)",
+      json.loads(kw["UserData"]) == {"jitconfig": "JIT", "label": C, "class": "heavy"}, kw["UserData"])
 check("launch: from the launch template", "LaunchTemplate" in kw and "ImageId" not in kw)
 try:
     runner.run_instance("aws-1", 9, 1, C, "JIT", run=lambda **kw: (_ for _ in ()).throw(ClientError("UnauthorizedOperation")))

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Runs as root at every boot, before the runner (build-runner-boot.service):
-#   1. /etc/build-runner/instance.json: this instance's type, vCPUs and memory, so jobs can size themselves
+#   1. /etc/build-runner/instance.json: this instance's type, vCPUs and memory, so jobs can size themselves,
+#      and the label and class it was launched for (user data), for the per-job usage record
 #   2. the job's just-in-time registration, from user data, to /run/build-runner/jitconfig (ghrunner, 0600)
 #   3. blocks the ghrunner user from the instance metadata service (IMDS), so job code can't read the
 #      user data or any instance-role credentials. Root (e.g. the Systems Manager agent) keeps access.
@@ -16,15 +17,18 @@ imds() {
 }
 
 mkdir -p /etc/build-runner
-jq -n --arg type "$(imds meta-data/instance-type || echo unknown)" \
+userdata="$(imds user-data 2>/dev/null || true)"
+# Label and class: short, plain words only (the launcher sets them; anything else becomes "unknown").
+word() { local v; v="$(jq -r --arg k "$1" '.[$k] // empty' 2>/dev/null <<<"$userdata" || true)"; [[ "$v" =~ ^[A-Za-z0-9._-]{1,40}$ ]] && echo "$v" || echo unknown; }
+jq -n --arg label "$(word label)" --arg class "$(word class)" --arg type "$(imds meta-data/instance-type || echo unknown)" \
       --arg id "$(imds meta-data/instance-id || echo unknown)" \
       --argjson nproc "$(nproc)" \
       --argjson mem_mb "$(awk '/MemTotal/ {print int($2/1024)}' /proc/meminfo)" \
-  '{instance_type: $type, instance_id: $id, nproc: $nproc, memory_mb: $mem_mb}' > /etc/build-runner/instance.json
+  '{instance_type: $type, instance_id: $id, nproc: $nproc, memory_mb: $mem_mb, label: $label, class: $class}' > /etc/build-runner/instance.json
 chmod 644 /etc/build-runner/instance.json
 
 install -d -m 750 -o ghrunner -g ghrunner /run/build-runner
-jit="$(imds user-data 2>/dev/null | jq -r '.jitconfig // empty' 2>/dev/null || true)"
+jit="$(jq -r '.jitconfig // empty' 2>/dev/null <<<"$userdata" || true)"
 if [[ -n "$jit" ]]; then
   install -m 600 -o ghrunner -g ghrunner /dev/null /run/build-runner/jitconfig
   printf '%s' "$jit" > /run/build-runner/jitconfig

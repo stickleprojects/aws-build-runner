@@ -4,8 +4,9 @@
 # instance profile at creation, and the policy denies creating one untagged (same as ami/bake-role.sh).
 # Idempotent; deploy.sh runs it first.
 #
-# The role can only register with Systems Manager (Run Command, Session Manager, as root). Jobs run as
-# ghrunner, which the boot step blocks from the instance metadata service, so jobs can't use it at all.
+# The role can register with Systems Manager (Run Command, Session Manager, as root), and write the
+# per-job usage line to the one log group /build/runner/jobs (ami/files/job-usage.py, as root). Jobs run
+# as ghrunner, which the boot step blocks from the instance metadata service, so jobs can't use it at all.
 set -Eeuo pipefail
 
 NAME=build-runner-instance
@@ -18,13 +19,16 @@ policy='{"Version":"2012-10-17","Statement":[{"Sid":"SystemsManagerAgent","Effec
   "Action":["ssm:UpdateInstanceInformation","ssmmessages:CreateControlChannel","ssmmessages:CreateDataChannel",
             "ssmmessages:OpenControlChannel","ssmmessages:OpenDataChannel","ec2messages:AcknowledgeMessage",
             "ec2messages:DeleteMessage","ec2messages:FailMessage","ec2messages:GetEndpoint",
-            "ec2messages:GetMessages","ec2messages:SendReply"]}]}'
+            "ec2messages:GetMessages","ec2messages:SendReply"]},
+  {"Sid":"JobUsageLogOnly","Effect":"Allow","Action":["logs:CreateLogStream","logs:PutLogEvents"],
+   "Resource":"arn:aws:logs:ap-southeast-2:'"${ACCOUNT_ID}"':log-group:/build/runner/jobs:*"}]}'
 
 if ! aws iam get-role --role-name "$NAME" >/dev/null 2>&1; then
   aws iam create-role --role-name "$NAME" --path /claude/ --permissions-boundary "$BOUNDARY" \
-    --assume-role-policy-document "$trust" --description "build-runner instance: Systems Manager agent only" \
+    --assume-role-policy-document "$trust" --description "build-runner instance: Systems Manager agent, and the per-job usage log" \
     --tags "Key=resource-group,Value=${GROUP}" --query Role.Arn --output text | sed 's/^/created role /'
 fi
+# Inline policy name kept from before (ssm-agent), so an update replaces it rather than adding a second one.
 aws iam put-role-policy --role-name "$NAME" --policy-name ssm-agent --policy-document "$policy"
 
 if ! aws iam get-instance-profile --instance-profile-name "$NAME" >/dev/null 2>&1; then

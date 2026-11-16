@@ -250,8 +250,18 @@ def bake_token_stays_out_of_user_data_and_is_revoked():
     r = subprocess.run([sys.executable, "-I", str(P2 / "ami" / "make-user-data.py")], capture_output=True, text=True)
     if r.returncode:
         problems.append(f"make-user-data.py failed: {r.stderr.strip()[:200]}")
-    elif re.search(r"gh[sp]_[A-Za-z0-9]{20,}|github_pat_", r.stdout):
-        problems.append("the user data contains a GitHub token")
+    else:
+        # The files travel compressed (one xz tar since 2026-11-16), so look inside the bundle, not just the text.
+        import base64, io, lzma, tarfile
+        texts = [r.stdout]
+        m = re.search(r"^    content: (\S+)$", r.stdout, re.M)
+        if not m:
+            problems.append("can't find the bundle in the user data to check it")
+        else:
+            with tarfile.open(fileobj=io.BytesIO(lzma.decompress(base64.b64decode(m.group(1))))) as tar:
+                texts += [tar.extractfile(x).read().decode(errors="replace") for x in tar.getmembers() if x.isfile()]
+        if any(re.search(r"gh[sp]_[A-Za-z0-9]{20,}|github_pat_", x) for x in texts):
+            problems.append("the user data contains a GitHub token")
     bake = (P2 / "ami" / "bake.sh").read_text()
     cleanup = bake[bake.find("cleanup() {"):bake.find("trap cleanup EXIT")]
     if "github_app_revoke" not in cleanup or "/build/bake/github-token" not in cleanup:

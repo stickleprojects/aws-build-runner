@@ -63,5 +63,38 @@ s = report.summary(week, week, 12.34, now)
 check("summary: a table with both classes and the projection", "light (2 vCPU)" in s and "heavy (4 vCPU)" in s
       and "US$12.34" in s, s)
 
+# --- job fit: our suggestions about sizes
+def job(cls="light", **kw):
+    return {"class": cls, "workflow": "CI", "job": "check", "n": 10, "wall_s": 600, "wall_max_s": 900,
+            "avg_vcpu": 1.0, "mem_peak_mb": 1000, "memory_mb": 3800, "cpu_stall_pct": 2, **kw}
+
+
+check("fit: a job comfortably inside its machine gets no note", report.fit_notes([job()], []) == [])
+n = report.fit_notes([job(mem_peak_mb=3500)], [])
+check("fit: memory over 80% of the machine → too small?", len(n) == 1 and "Too small?" in n[0] and "3500 of 3800" in n[0], str(n))
+n = report.fit_notes([job(cpu_stall_pct=35)], [])
+check("fit: CPU wait over 20% → CPU-starved?", len(n) == 1 and "CPU-starved?" in n[0], str(n))
+n = report.fit_notes([job("heavy", avg_vcpu=0.6, memory_mb=7800)], [])
+check("fit: heavy job barely using its CPUs → could be light?", len(n) == 1 and "Could be light?" in n[0], str(n))
+check("fit: a light job using little CPU is fine", report.fit_notes([job(avg_vcpu=0.2)], []) == [])
+check("fit: a heavy job using its CPUs is fine", report.fit_notes([job("heavy", avg_vcpu=3.2, memory_mb=7800)], []) == [])
+n = report.fit_notes([job(wall_max_s=80 * 60)], [])
+check("fit: near the 90-minute limit", len(n) == 1 and "90-minute" in n[0], str(n))
+q = [{"label": "aws-spellbound3d", "n": 20, "wait_avg": 60, "wait_p95": 240, "wait_max": 300}]
+n = report.fit_notes([], q)
+check("fit: jobs waiting over 2 minutes for a runner", len(n) == 1 and "Waiting for runners" in n[0], str(n))
+check("fit: quick starts are fine", report.fit_notes([], [{**q[0], "wait_p95": 45}]) == [])
+check("fit: unknown numbers (None) never crash or warn",
+      report.fit_notes([job(avg_vcpu=None, mem_peak_mb=None, memory_mb=None, cpu_stall_pct=None, wall_max_s=None)],
+                       [{"label": "x", "n": 1, "wait_avg": None, "wait_p95": None, "wait_max": None}]) == [])
+s = report.summary(week, week, 1.0, now, [job("heavy", avg_vcpu=0.6, memory_mb=7800)], q)
+check("summary: a job fit table with the notes", "Job fit, last 7 days" in s and "CI / check" in s
+      and "Could be light?" in s and "Waiting for runners" in s, s)
+check("summary: before any per-job records, says so", "No per-job records yet." in report.summary(week, week, 1.0, now))
+for qtext in (report.JOBS_QUERY, report.QUEUE_QUERY):
+    import re
+    shadow = [m for m in re.finditer(r"\b\w+\((\w+)(?:,[^)]*)?\) as (\w+)", qtext) if m.group(1) == m.group(2)]
+    check("queries: no alias reuses its field's name (it'd drop the field)", not shadow, qtext)
+
 print(f"\n{failed} failed")
 sys.exit(1 if failed else 0)
