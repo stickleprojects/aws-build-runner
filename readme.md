@@ -68,9 +68,11 @@ date and who). See [part1-godmode/README.md](part1-godmode/README.md#lifecycle-o
 
 ## Status
 
-- [x] Part 1 drafted as an allow-list (2026-11-16). 514 of 514 checks pass on the offline evaluator,
-      and deliberately broken drafts were caught.
-- [ ] Part 1 approved: read [POLICY.md](part1-godmode/POLICY.md); everything is `approved: pending`.
-- [ ] Part 1 applied (godmode: [CHECKLIST](part1-godmode/CHECKLIST.md)). AWS's validator and the real
-      simulator run inside `apply.sh`; the current user can't call them yet.
+- [x] Part 1 drafted as an allow-list, with the resource-group tag rule (2026-11-16).
+- [x] Part 1 approved by Kieron (2026-11-16).
+- [x] Part 1 applied (2026-11-16, commit `ef42718`), from CloudShell. Access Analyzer: no findings. IAM
+      simulator: 442 of 442 checks pass on the live policies. Drift check clean; recorded as a GitHub
+      deployment.
+- [ ] Automated apply and rollback from GitHub Actions, with an approval step (planned).
+- [ ] Decide: the read-only "see everywhere" list stays every region, or becomes Sydney only.
 - [ ] Part 2 built.

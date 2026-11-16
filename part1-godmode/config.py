@@ -2,7 +2,7 @@
 """Account-specific settings, kept out of the (public) repo.
 
 Each setting comes from the first of these that has it:
-  1. environment variable            AWS_ACCOUNT_ID, AWS_CLAUDE_USER
+  1. environment variable            AWS_ACCOUNT_ID, AWS_CLAUDE_USER (and AWS_ALERT_EMAIL for apply.sh)
   2. .env.local at the repo root     KEY=value lines; git-ignored
   3. GitHub repo variable            gh variable list  (visible to collaborators only)
 
@@ -26,7 +26,8 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ENV_FILE = REPO_ROOT / ".env.local"
 PLACEHOLDERS = {"AWS_ACCOUNT_ID": "{{ACCOUNT_ID}}", "AWS_CLAUDE_USER": "{{CLAUDE_USER}}"}
-VALID = {"AWS_ACCOUNT_ID": re.compile(r"\d{12}"), "AWS_CLAUDE_USER": re.compile(r"[\w+=,.@-]{1,64}")}
+VALID = {"AWS_ACCOUNT_ID": re.compile(r"\d{12}"), "AWS_CLAUDE_USER": re.compile(r"[\w+=,.@-]{1,64}"),
+         "AWS_ALERT_EMAIL": re.compile(r"[^@\s]+@[^@\s]+\.[^@\s]+")}  # budget alerts; apply.sh only
 # Used where no real account is needed (offline checks, CI). Never a real account.
 DUMMY = {"AWS_ACCOUNT_ID": "000000000000", "AWS_CLAUDE_USER": "example-claude-user"}
 
@@ -79,7 +80,7 @@ def lookup(key):
                        ("GitHub repo variable", _from_gh)):
         value = fn(key)
         if value:
-            if not VALID[key].fullmatch(value):
+            if key in VALID and not VALID[key].fullmatch(value):
                 raise SystemExit(f"{key} from {source} is not valid: {value!r}")
             return value, source
     return None, None
