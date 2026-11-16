@@ -193,11 +193,12 @@ tail -1 "$work/verify-live.txt"
 # ---------- 5. record ----------
 applied_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 if [[ "$IN_ACTIONS" == true ]]; then
-  applied_by="${gh_user} via GitHub Actions run ${GITHUB_RUN_ID} (approved in environment ${ENVIRONMENT})"
+  applied_by="${gh_user} via GitHub Actions run ${GITHUB_RUN_ID}, approved in environment ${ENVIRONMENT}"
 else
   applied_by="${gh_user} as ${caller_arn}"
 fi
-applied_by="${applied_by:0:256}"
+# IAM tag values allow only letters, digits, spaces and _ . : / = + - @ (max 256): replace the rest.
+applied_by="$(LC_ALL=C sed 's#[^A-Za-z0-9 _.:/=+@-]# #g; s#  *# #g' <<<"${applied_by:0:256}")"
 for arn in "${want[@]}" "arn:aws:iam::${ACCOUNT_ID}:policy/${BOUNDARY_PATH_NAME}"; do
   aws iam tag-policy --policy-arn "$arn" --tags \
     Key=applied-commit,Value="$commit" Key=applied-at,Value="$applied_at" Key=applied-by,Value="$applied_by"

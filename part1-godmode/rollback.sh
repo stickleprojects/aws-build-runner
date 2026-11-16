@@ -52,8 +52,10 @@ for name in claude-assistant-policy claude-assistant-iam "$BOUNDARY"; do
     aws iam detach-user-policy --user-name "$USER_NAME" --policy-arn "$arn" 2>/dev/null || true
     summary+=("${name}: no previous version; detached from Claude's user")
   fi
+  # IAM tag values allow only letters, digits, spaces and _ . : / = + - @ (max 256).
+  tag_who="$(LC_ALL=C sed 's#[^A-Za-z0-9 _.:/=+@-]# #g; s#  *# #g' <<<"${who:0:256}")"
   aws iam tag-policy --policy-arn "$arn" --tags Key=applied-commit,Value="rolled-back-from-${from_commit}" \
-    Key=applied-at,Value="$(date -u +%Y-%m-%dT%H:%M:%SZ)" Key=applied-by,Value="${who:0:256}"
+    Key=applied-at,Value="$(date -u +%Y-%m-%dT%H:%M:%SZ)" Key=applied-by,Value="$tag_who"
 done
 printf '%s\n' "${summary[@]}"
 
