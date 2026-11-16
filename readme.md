@@ -73,6 +73,8 @@ date and who). See [part1-godmode/README.md](part1-godmode/README.md#lifecycle-o
 - [x] Part 1 applied (2026-11-16, commit `ef42718`), from CloudShell. Access Analyzer: no findings. IAM
       simulator: 442 of 442 checks pass on the live policies. Drift check clean; recorded as a GitHub
       deployment.
-- [ ] Automated apply and rollback from GitHub Actions, with an approval step (planned).
-- [ ] Decide: the read-only "see everywhere" list stays every region, or becomes Sydney only.
+- [x] Automated apply and rollback from GitHub Actions, with Kieron's approval (first run 2026-11-16, `cec3774`).
+- [x] Read-only listing is Sydney only (applied 2026-11-16).
+- [x] Part 2's account: the identity delegated admin account for now; moving it is tech debt
+      ([#17](https://github.com/stickleprojects/aws-build-runner/issues/17)).
 - [ ] Part 2 built.

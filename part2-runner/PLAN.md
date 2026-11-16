@@ -61,12 +61,9 @@ EventBridge Scheduler, every 15 min ─> reaper Lambda: terminates build-runner 
 
 ## Open questions
 
-- **Which AWS account hosts the build machine?** Claude's IAM user is in the organization's identity
-  delegated admin account, so by default resources land there, against AWS's advice to keep that
-  account for identity only. Alternatives: Claude's user assumes a role in a member account (e.g.
-  *building momentum*, which is on the free plan: check its limits) or a new account just for builds.
-  Decided 2026-11-16: apply part 1 in the identity account now, choose here before building.
-
+- ~~Which AWS account hosts the build machine?~~ **Decided 2026-11-16: the identity delegated admin account**,
+  where Claude's IAM user is. Moving it to its own member account is tech debt, deferred until there's a budget
+  line for another account: [#17](https://github.com/stickleprojects/aws-build-runner/issues/17).
 - Is `~/.cache/godot` + the install dir enough for `install-godot.sh` to skip the download,
   or does the AMI also need the export templates?
 - Does `claude-code-action` need Node/Bun preinstalled, or does it bring its own?
