@@ -39,7 +39,10 @@ Never create admin access keys or IAM users on the laptop.
 
 The account id and Claude's IAM user name aren't in the repo. The scripts take them from the
 environment, `.env.local` at the repo root (git-ignored), or the repo variables `AWS_ACCOUNT_ID` and
-`AWS_CLAUDE_USER` (`gh variable list`). Check with `python3 -I part1-godmode/config.py`.
+`AWS_CLAUDE_USER` (`gh variable list`). Check with `python3 -I part1-godmode/config.py`. Values in
+`.env.local` may refer to variables exported in `~/.bashrc` (see `.env.local.example`). If the file
+is lost (`git clean -xfd`), the repo variables still work. To rebuild it, run
+`python3 -I part1-godmode/config.py --init` with the laptop's normal profile.
 
 ## 3. Apply
 
