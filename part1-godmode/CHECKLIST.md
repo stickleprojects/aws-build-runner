@@ -47,6 +47,40 @@ role AWS Budgets uses to attach it. Then sets the budget action: at 100 % of act
 Claude's user and roles. Ends by listing the action. To lift a stop once you've decided: Billing → Budgets →
 `guardrail-monthly` → Actions → reverse.
 
+### The whole organization's bill (management account, once, by hand)
+
+The bill is the organization's consolidated bill, paid by the **kieron-wray-team management account**.
+The steps above protect the identity account. These protect the **whole bill**: every account in
+the organization. Claude has no access to the management account; do this in the console.
+
+1. Sign in (https://signin.aws.amazon.com → GitHub) and choose **kieron-wray-team management account**.
+2. **Organizations → Policies → Service control policies.** If they're disabled, **Enable**. Then **Create policy**:
+   - Name: `org-budget-stop`
+   - Description: `Attached automatically when the org budget is reached: nothing new and billable`
+   - Policy: paste the contents of [bootstrap/budget-stop-policy.json](bootstrap/budget-stop-policy.json)
+     (the same deny list as the identity account's stop).
+   - **Create policy**. Don't attach it to anything: the budget action does that.
+3. **Billing and Cost Management → Budgets → Create budget → Customize (advanced) → Cost budget**:
+   - Name `org-guardrail-monthly`; period **Monthly**; recurring; fixed amount **25** (USD, ≈£20).
+   - Scope: **All AWS services** (in the management account that covers every account in the organization).
+   - Advanced options: **Unblended**; uncheck **Refunds**. Leave **Credits**, **Tax** and the rest checked.
+4. Alerts: **Actual 50 %**, **Actual 80 %**, **Actual 100 %**, **Forecasted 100 %**, each emailing you.
+5. On the **Actual 100 %** alert, **Attach action**:
+   - Action type **Apply service control policy**; policy `org-budget-stop`.
+   - Target: the organization **root**, so every member account is covered.
+   - IAM role: **Create a new role** (the console offers one for budget actions).
+   - **Run automatically**. **Create**.
+6. Check: the budget lists 4 alerts and 1 action, status *Standby*.
+
+What it does: at US$25 across the whole organization, every member account (identity, building
+momentum, any new one) can't start or create anything billable. Running instances in the identity
+account are terminated by its own kill switch (above).
+
+Limits:
+- **SCPs don't apply to the management account itself**, so keep nothing running there.
+- Billing data lags up to about a day.
+- To lift the stop: the budget's Actions → **Reverse**.
+
 ## Manual: from CloudShell
 
 ### 1. Sign in to AWS
