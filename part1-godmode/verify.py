@@ -254,8 +254,8 @@ def aws(*args, retries=6):
             continue
         message = f"aws {' '.join(args[:2])} failed:\n{r.stderr}"
         if "expired" in r.stderr.lower() or "ExpiredToken" in r.stderr:
-            message += ("\nThe credentials have expired. Godmode credentials exported from CloudShell last about "
-                        "an hour: export fresh ones (aws configure export-credentials --format env) and run again.")
+            message += ("\nThe credentials have expired. Credentials exported from CloudShell last only about 15 "
+                        "minutes: run in CloudShell itself (see CHECKLIST.md), or export fresh ones and run again.")
         elif "AccessDenied" in r.stderr and "Simulate" in r.stderr:
             message += (f"\nRunning as: {_whoami()}\n"
                         "Before part 1 is applied only an admin can use the simulator: run this in the "

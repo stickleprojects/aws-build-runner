@@ -1,95 +1,139 @@
-# Part 1: first godmode session
+# Applying the policy (godmode), step by step
 
-One-off. Afterwards Claude works as its IAM user with exactly what
-[POLICY.md](POLICY.md) says. Later changes follow the [change process](README.md#change-process).
+How a merged, approved policy change gets into AWS: exactly what worked on 2026-11-16. Every
+command is complete; paste it as it is. First time through, do every step; after that, only
+**Each apply**.
 
-## 0. Approve the policy
+Before starting: the change is merged to `main` (see the [change process](README.md#change-process)),
+and the `policy` CI run on `main` has finished green. `apply.sh` refuses otherwise.
 
-- [ ] Read [POLICY.md](POLICY.md). Anything you don't want, say so; Claude removes it.
-- [ ] Approve: tell Claude, which sets every `approved: pending` to `approved: 2026-MM-DD Kieron` in a PR.
-      Once the `policy` and `approved` checks are green, merge it.
+## 1. Sign in to AWS
 
-## 1. Sign in (godmode)
+1. Go to https://signin.aws.amazon.com and choose **GitHub**. There is no root-user sign-in for this
+   account; it's in the **kieron-wray-team** organization, and GitHub is the identity. (AWS
+   Builder ID is a different thing and doesn't open the account.)
+2. On the **AWS sign-ins** screen, choose **kieron-wray-team identity delegated admin**. That's
+   where Claude's IAM user lives. The session is full admin, through the account's AWS-managed
+   `AccountFullAccessRole`; that is godmode.
+3. Top right, set the region to **Asia Pacific (Sydney)**.
+4. Open **CloudShell** (the `>_` icon, top bar).
 
-There is no root-user sign-in for this account. It's in an AWS organization (**kieron-wray-team**),
-and you sign in with **GitHub**:
+## 2. First time only: set up CloudShell
 
-1. Go to `signin.aws.amazon.com` and choose **GitHub**, the identity the account was created with.
-   AWS Builder ID is a different thing, for Amazon Q and similar tools; it doesn't open the account.
-2. The "AWS sign-ins" screen lists three accounts: *identity delegated admin*, *management account*
-   and *building momentum*. Choose **kieron-wray-team identity delegated admin**: that's where Claude's
-   IAM user lives. Check its 12-digit ID against `python3 -I part1-godmode/config.py`.
-3. The session is full admin (through the account's AWS-managed `AccountFullAccessRole`): that is godmode.
+CloudShell keeps your home folder between sessions, so this is once.
 
-- [ ] Your **GitHub account has two-factor authentication on**. It is the key to every AWS account in the organization.
-- [ ] Billing: is a **spend limit** set? If so, note it. It's the hard cap; the budget only emails.
-
-Note: the identity delegated admin account manages sign-in for the whole organization. AWS advises
-running workloads in a separate member account. Part 1 is applied here (decided 2026-11-16).
-Where the build machine lives is decided at the start of part 2: see
-[../part2-runner/PLAN.md](../part2-runner/PLAN.md#open-questions).
-
-## 2. Admin credentials for the session (no long-lived keys)
-
-`apply.sh` needs `aws`, `gh` (to fetch the CI artifact and record the deployment), `git`, `jq` and
-python3 with PyYAML. The laptop has them all, so run it there with temporary admin credentials:
-
-1. Open **AWS CloudShell** in ap-southeast-2 (the `>_` icon in the console). It runs as your console identity.
-2. In CloudShell: `aws configure export-credentials --format env`.
-3. Paste the `export` lines into a **new** laptop terminal. They expire by themselves (≈1 h).
-4. In that terminal, start Claude and ask it to run step 3, or run it yourself. Close the terminal afterwards.
-
-If `export-credentials` doesn't work in CloudShell, run everything in CloudShell instead. Install `gh`
-there (a single binary from its GitHub releases), then `gh auth login`, `git clone`, and `pip install --user pyyaml`.
-
-Never create admin access keys or IAM users on the laptop.
-
-The account id and Claude's IAM user name aren't in the repo. The scripts take them from the
-environment, `.env.local` at the repo root (git-ignored), or the repo variables `AWS_ACCOUNT_ID` and
-`AWS_CLAUDE_USER` (`gh variable list`). Check with `python3 -I part1-godmode/config.py`. Values in
-`.env.local` may refer to variables exported in `~/.bashrc` (see `.env.local.example`). If the file
-is lost (`git clean -xfd`), the repo variables still work. To rebuild it, run
-`python3 -I part1-godmode/config.py --init` with the laptop's normal profile.
-
-## 3. Apply
+**a. Install `gh`** (the GitHub CLI) and keep it on the PATH for future sessions:
 
 ```bash
-git checkout main && git pull
-cd part1-godmode
-./apply.sh you@example.com        # budget alert address; the amount comes from policy.yaml
+curl -sL https://github.com/cli/cli/releases/download/v2.63.2/gh_2.63.2_linux_amd64.tar.gz | tar xz && mkdir -p ~/bin && mv gh_2.63.2_linux_amd64/bin/gh ~/bin/ && rm -rf gh_2.63.2_linux_amd64 && (grep -q 'HOME/bin' ~/.bashrc || echo 'export PATH=$HOME/bin:$PATH' >> ~/.bashrc) && export PATH=$HOME/bin:$PATH && gh --version
 ```
 
-It applies only the artifact CI generated and checked for main's head commit. It refuses if:
-- there's no such artifact.
-- the artifact's checksums or contents don't match the checkout.
-- anything is pending approval.
-- Access Analyzer reports an ERROR or SECURITY_WARNING.
-- the IAM simulator disagrees.
+**b. Create a GitHub token for this repo only**, in your laptop's browser: open
+https://github.com/settings/personal-access-tokens/new and set
 
-Then it:
-- applies the three policies, replacing the old `claude-assistant-policy` v1.
-- detaches anything else from the user.
-- creates the budget.
-- blocks public S3, AMIs and snapshots, and turns on EBS encryption by default.
-- simulates the live result and checks for drift.
-- records the apply: IAM tags on the policies, and a GitHub deployment saying who applied it and when.
+| Field | Value |
+|---|---|
+| Token name | `cloudshell-apply` |
+| Expiration | 7 days (make a new one next time) |
+| Repository access | *Only select repositories* → `stickleprojects/aws-build-runner` |
+| Repository permissions → **Actions** | Read-only (find the CI run, download the artifact) |
+| Repository permissions → **Deployments** | Read and write (record the apply) |
+| Repository permissions → **Variables** | Read-only (account id, user name, alert email) |
+| Metadata | Read-only (added automatically) |
 
-- [ ] Ends with "Applied ⟨commit⟩ at ⟨time⟩ by ⟨you⟩".
+**Generate token**, copy it.
 
-## 4. Optional
+Don't use `gh auth login --web`: it asks for *full control of all your repositories*, and
+CloudShell can't open a browser anyway.
 
+**c. Log `gh` in with the token.** Paste this, press Enter, paste the token (nothing shows),
+press Enter, then **Ctrl-D**:
+
+```bash
+gh auth login --with-token
+```
+
+Check it: this should say "Logged in … stickleprojects", then `3`.
+
+```bash
+gh auth status && gh api repos/stickleprojects/aws-build-runner/actions/variables --jq '.total_count'
+```
+
+**d. Get the repo and check the tools.** PyYAML and `jq` are normally already there. Don't use
+`pip install --user`: CloudShell's Python runs in a virtualenv that refuses it.
+
+```bash
+(python3 -I -c 'import yaml' 2>/dev/null || pip3 install pyyaml) && (command -v jq || sudo dnf install -y jq) && git clone https://github.com/stickleprojects/aws-build-runner.git && cd aws-build-runner/part1-godmode && python3 -I config.py
+```
+
+It should end by listing `AWS_ACCOUNT_ID` and `AWS_CLAUDE_USER` "from GitHub repo variable". These
+values, and the budget alert email, are kept out of this public repo: see [config.py](config.py).
+
+## 3. Each apply
+
+In CloudShell:
+
+```bash
+export PATH=$HOME/bin:$PATH; cd ~/aws-build-runner/part1-godmode && git pull && ./apply.sh
+```
+
+- Start it soon after opening CloudShell. CloudShell ends a session after ~20–30 minutes **without
+  keyboard or mouse activity**. The apply itself takes about 5 minutes, so leave the tab open and
+  don't touch it.
+- If the token has expired (7 days), `gh` fails. Make a new one (step 2b) and log in again (2c).
+
+What it does, and what you should see:
+
+| Step | What happens | Good output |
+|---|---|---|
+| 3a | The CI artifact for `main`'s head commit: checksums, same commit, nothing pending, identical to the checkout | `checksums ok, same commit, nothing pending, identical to checkout` |
+| 3b | AWS's own validator (Access Analyzer) on the three policies | nothing printed |
+| 3c | IAM simulator on the artifact, ~1–2 min with a progress counter | `442 checks (simulator, local drafts), 0 failed` |
+| 4a | Policies created or updated; unchanged ones are left alone | `created …` / `updated … -> vN` / `unchanged …` |
+| 4b | Budget, public-access blocks, disk encryption | five lines |
+| 4c | IAM simulator on the live policies | `… (simulator, live policies), 0 failed` |
+| 5a | Drift check, with the applied commit, time and who in each policy's tags | `AWS has this checkout's commit applied.` |
+| end | GitHub deployment to `aws` marked success | `Applied <commit> at <time> by stickleprojects (AccountFullAccessRole).` |
+
+Nothing in AWS changes before 4a, so a stop in 3a–3c is harmless. If it stops at 4a or later,
+GitHub records a failed deployment. Rerunning is safe: it finishes the job, and policies that are
+already right show as `unchanged`.
+
+Checks that pass in your account but are **blocked by the organization**: the kieron-wray-team
+organization's SCPs block some regions entirely (seen: eu-west-2, ap-southeast-4). `verify.py`
+reports those as "blocked by the organization's SCPs", not as failures.
+
+## 4. Afterwards
+
+- Back on the laptop, as Claude's user: `python3 -I part1-godmode/check-live.py` reports
+  "AWS has this checkout's commit applied".
+- Optional: delete the token at https://github.com/settings/personal-access-tokens, or let it expire.
+
+## Things that didn't work (2026-11-16)
+
+- **Exporting CloudShell's credentials to a laptop terminal** (`aws configure export-credentials`):
+  they last only **~15 minutes** and expired mid-run twice. `apply.sh` now refuses to start
+  changing AWS if exported credentials have less than 10 minutes left. Run it in CloudShell.
+- `gh auth login --web`: asks for full control of all repos; no browser in CloudShell.
+- `pip3 install --user`: refused inside CloudShell's virtualenv.
+
+## Optional, once
+
+- [ ] **GitHub two-factor authentication is on.** GitHub is the key to every AWS account in the organization.
+- [ ] Billing: is a **spend limit** set? If so, note it. It's the hard cap; the budget only emails.
 - [ ] Cost Anomaly Detection (Billing): add an email subscription to the default monitor (e.g. ≥ US$5). Free.
-- [ ] Automatic stop: a budget action on `guardrail-monthly` that, at 100 %, attaches a policy to
-      Claude's IAM user denying `ec2:RunInstances` and `ec2:StartInstances`. Free for two budgets.
-- [ ] Note the EC2 vCPU quota (Service Quotas → EC2 → L-1216C47A). Claude can't raise it, so it's the
-      ceiling on how much can run at once.
+- [ ] Automatic stop: a budget action on `guardrail-monthly` that, at 100 %, attaches a policy to Claude's
+      IAM user denying `ec2:RunInstances` and `ec2:StartInstances`. Free for two budgets.
+- [ ] Note the EC2 vCPU quota (Service Quotas → EC2 → L-1216C47A). Claude can't raise it, so it caps
+      how much can run at once.
 
-## 5. Back to normal
+## Emergency: undo
 
-New terminal, laptop profile: `aws sts get-caller-identity` shows Claude's IAM user;
-`part1-godmode/verify.py` passes and `part1-godmode/check-live.py` reports no drift.
+As admin, in CloudShell:
 
-## Undo
-
-As admin, detach `claude-assistant-policy` and `claude-assistant-iam` from the user. That leaves
-the user with no rights. The account settings can stay.
+- **Kill switch** (Claude's user can then do nothing at all):
+  ```bash
+  cd ~/aws-build-runner/part1-godmode && ACCT=$(python3 -I config.py AWS_ACCOUNT_ID) && U=$(python3 -I config.py AWS_CLAUDE_USER) && for p in claude-assistant-policy claude-assistant-iam; do aws iam detach-user-policy --user-name "$U" --policy-arn "arn:aws:iam::$ACCT:policy/$p"; done; aws iam list-attached-user-policies --user-name "$U"
+  ```
+- **Back to the previous approved policy**: revert the change in a PR, merge, apply (the normal route).
+  A one-click rollback is planned with the automated apply.

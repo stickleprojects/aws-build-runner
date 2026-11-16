@@ -49,7 +49,7 @@ part-way is recorded as a failed deployment.
 3. **CI generates and checks it**; the run summary shows the POLICY.md diff and what's pending.
 4. **You approve**: tell Claude (it sets `approved: YYYY-MM-DD Kieron`) or edit it yourself. Then
    **you merge**. Claude never merges policy PRs and never marks anything approved without your word.
-5. **Godmode applies it**: on main, `./apply.sh you@example.com`. The deployment record shows it applied.
+5. **Godmode applies it**: in CloudShell, `./apply.sh` (step by step: [CHECKLIST.md](CHECKLIST.md)). The deployment record shows it applied.
 
 Removing permissions works the same way and is always welcome.
 
@@ -74,9 +74,9 @@ Commands for drafting: `python3 -I build-policies.py --draft`, `./verify.py --of
 
 ## Status
 
-Drafted 2026-11-16; everything is `approved: pending`, and nothing is applied: `check-live.py`
-shows the old v1 policy live. The checks pass on the offline evaluator (514 of 514). A deliberately
-broken draft was caught in all six ways tried. The real IAM simulator and Access Analyzer run inside
-`apply.sh`.
+**Applied** 2026-11-16 (commit `ef42718`), from CloudShell by Kieron. All 442 checks pass in AWS's
+real IAM simulator on the live policies, Access Analyzer has no findings, and `check-live.py` shows
+no drift. The kieron-wray-team organization's SCPs also block some regions (eu-west-2,
+ap-southeast-4) on top of this policy.
 
 Cost: free (CI is a minute or so per run). See [../PRICING.md](../PRICING.md).

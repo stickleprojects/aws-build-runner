@@ -2,7 +2,7 @@
 # Godmode: applies the CI-checked policy artifact for main's head commit to AWS, and records
 # that it was applied. Run as an ADMIN, never as Claude's IAM user. Needs aws, gh, git, jq, python3+pyyaml.
 #
-#   ./apply.sh ALERT_EMAIL
+#   ./apply.sh [ALERT_EMAIL]     (default: AWS_ALERT_EMAIL from config.py: env, .env.local or repo variable)
 #
 # Lifecycle of a policy:
 #   1. generated + checked   CI on main: build, lint, offline checks -> artifact "policies-<commit>"
@@ -15,7 +15,7 @@
 set -Eeuo pipefail   # -E: the ERR trap also fires inside functions
 cd "$(dirname "$0")"
 
-ALERT_EMAIL="${1:?usage: apply.sh ALERT_EMAIL}"
+ALERT_EMAIL="${1:-$(python3 -I config.py AWS_ALERT_EMAIL)}"
 yaml_get() { python3 -I -c "import yaml; print(yaml.safe_load(open('policy.yaml'))$1)"; }
 # Account id and user name live outside the repo (env, .env.local or gh variable): see config.py.
 ACCOUNT_ID="$(python3 -I config.py AWS_ACCOUNT_ID)"
@@ -86,14 +86,25 @@ python3 -I verify.py --local >"$work/verify-local.txt" || { tail -1 "$work/verif
 tail -1 "$work/verify-local.txt"
 
 # ---------- 4. apply (recorded as a GitHub deployment from here on) ----------
+# Exported credentials (laptop route) last ~15 minutes. Don't start changing AWS with less than
+# 10 left, or an expiry could leave it half-updated. CloudShell's own credentials renew themselves.
+if [[ -n "${AWS_CREDENTIAL_EXPIRATION:-}" ]]; then
+  left=$(( $(date -d "$AWS_CREDENTIAL_EXPIRATION" +%s) - $(date +%s) ))
+  if (( left < 600 )); then
+    echo "Refusing: the exported credentials expire in $(( left / 60 )) min. Export fresh ones, or run in CloudShell." >&2; exit 1
+  fi
+fi
+
 deployment_id="$(jq -n --arg ref "$commit" --arg env "$ENVIRONMENT" --arg by "$caller_arn" \
   '{ref:$ref, environment:$env, auto_merge:false, required_contexts:[], description:("IAM policies, applied by " + $by)}' \
   | gh api "repos/${REPO}/deployments" --input - --jq .id)"
 deployment_status() {
-  gh api "repos/${REPO}/deployments/${deployment_id}/statuses" -f state="$1" -f description="$2" \
+  # GitHub rejects descriptions over 140 characters (HTTP 422).
+  gh api "repos/${REPO}/deployments/${deployment_id}/statuses" -f state="$1" -f description="${2:0:140}" \
     -f environment="$ENVIRONMENT" >/dev/null || echo "WARNING: couldn't record deployment status $1"
 }
-deployment_status in_progress "Applying, by ${gh_user} (${caller_arn})"
+caller_short="$(sed -E 's#^arn:aws:(sts|iam)::[0-9]+:(assumed-role|user|role)/##; s#/.*##' <<<"$caller_arn")"  # role or user name
+deployment_status in_progress "Applying, by ${gh_user} (${caller_short})"
 trap 'deployment_status failure "apply.sh failed; AWS may be partly updated. Re-run apply.sh."; rm -rf "$work"' ERR
 
 # upsert_policy NAME PATH FILE: create, or add a version and make it the default
@@ -180,7 +191,7 @@ echo "== 5a. drift check"
 python3 -I check-live.py --expect-commit "$commit"
 
 trap 'rm -rf "$work"' ERR
-deployment_status success "Applied ${applied_at} by ${applied_by}"
+deployment_status success "Applied ${applied_at} by ${gh_user} (${caller_short})"
 echo
 echo "Applied ${commit:0:12} at ${applied_at} by ${applied_by}."
 echo "Recorded: IAM tags on the three policies, and GitHub deployment ${deployment_id} (${REPO}, environment '${ENVIRONMENT}')."
