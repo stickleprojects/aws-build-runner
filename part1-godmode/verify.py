@@ -60,6 +60,15 @@ MUST_REQUIRE_GROUP = [
     ("iam:CreateRole", None), ("iam:CreatePolicy", None), ("iam:CreateInstanceProfile", None),
 ]
 
+# The resource types each enforced EC2 create actually makes. Tests pair an action only with
+# these: the IAM simulator rejects an action on a type it doesn't apply to (CreateSnapshot on a
+# launch template), which says nothing about the policy.
+EC2_CREATES = {
+    "ec2:RunInstances": ["instance", "volume"], "ec2:CreateVolume": ["volume"],
+    "ec2:CreateSnapshot": ["snapshot"], "ec2:CreateImage": ["image", "snapshot"],
+    "ec2:CreateLaunchTemplate": ["launch-template"], "ec2:CreateSecurityGroup": ["security-group"],
+}
+
 # Must be denied unless the service gets approved (then the case is skipped).
 UNAPPROVED = [
     "rds:CreateDBInstance", "dynamodb:CreateTable", "ecs:CreateCluster", "eks:CreateCluster",
@@ -187,8 +196,13 @@ def build_cases(p, cfg):
             resource, region, extra, _ = target(action, rtype)
             add(Case(action, "denied", resource, region, **extra, **missing))
         for group in rg["enforced_on"]:
-            types = group["resources"] if group["resources"] != "*" else [None]
             for action in group["actions"]:
+                if group["resources"] == "*":
+                    types = [None]
+                else:
+                    if action not in EC2_CREATES:
+                        raise SystemExit(f"verify.py: add {action} to EC2_CREATES (the resource types it creates)")
+                    types = [t for t in EC2_CREATES[action] if t in group["resources"]]
                 for rtype in types:
                     resource, region, extra, ok = target(action, rtype)
                     add(Case(action, ok, resource, region, **extra, **good))
