@@ -206,7 +206,8 @@ def numbers(row: dict, keep: tuple) -> dict:
 
 
 # Aliases never reuse a field's own name (see usage_rows).
-JOBS_QUERY = ('filter msg = "job" | stats count(*) as n, avg(wall_s) as wall_avg_s, max(wall_s) as wall_max_s, '
+# ispresent(job): a runner that never got a job (reaped idle, or a test) has nothing to say about job sizes.
+JOBS_QUERY = ('filter msg = "job" and ispresent(job) | stats count(*) as n, avg(wall_s) as wall_avg_s, max(wall_s) as wall_max_s, '
               'avg(avg_vcpu) as vcpu_avg, max(box_mem_peak_mb) as mem_max_mb, max(memory_mb) as mem_total_mb, '
               'avg(cpu_stall_pct) as cpu_wait_pct by class, workflow, job | sort n desc')
 QUEUE_QUERY = ('filter msg = "job-completed" | stats count(*) as n, avg(queue_s) as wait_avg, '
