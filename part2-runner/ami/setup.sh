@@ -111,6 +111,17 @@ npm install -g --no-fund --no-audit --loglevel=error "@anthropic-ai/claude-code@
 # Claude Code pulls in, so install-claude.sh can install offline (the smoke test caught this).
 as_runner "npm install --prefix /tmp/claude-warm --no-fund --no-audit --loglevel=error '@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}' >/dev/null; rm -rf /tmp/claude-warm"
 
+say "spellbound3d's Godot smoke test (tools/runner-smoke/, if it's on main yet)"
+# Agreed with spellbound3d (their change 0034): smoke-test.sh runs godot-smoke.sh <godot_pinned> godot
+# as ghrunner on each new image. Copied from the same checkout, so it matches the baked commit.
+runner_smoke=absent
+if [[ -x "$SB3D/tools/runner-smoke/godot-smoke.sh" ]]; then
+  install -d -m 755 /opt/build-runner
+  cp -r "$SB3D/tools/runner-smoke" /opt/build-runner/runner-smoke
+  chmod -R a+rX /opt/build-runner/runner-smoke
+  runner_smoke=present
+fi
+
 say "job-started hook and allowlists (copied from the local runner)"
 install -d -m 755 /etc/github-runner
 install -m 755 "$FILES/job-started.sh" /etc/github-runner/job-started.sh
@@ -136,11 +147,13 @@ fi
 jq -n -c \
   --arg built "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg base "$base_ami" \
   --arg os "$(sed -n 's/^PRETTY_NAME="\{0,1\}\([^"]*\)"\{0,1\}$/\1/p' /etc/os-release)" --arg sb3d "$sb3d_commit" --arg runner "$RUNNER_VERSION" \
-  --arg godot "$(v 'godot --headless --version')" --arg claude "$(v 'claude --version')" \
+  --arg godot "$(v 'godot --headless --version')" --arg godot_pinned "$GODOT_VERSION" \
+  --arg runner_smoke "$runner_smoke" --arg claude "$(v 'claude --version')" \
   --arg uv "$(v 'uv --version')" --arg gitleaks "$(v 'gitleaks version')" \
   --arg node "$(v 'node --version')" --arg npm "$(v 'npm --version')" \
   --arg python "$(v 'python3 --version')" --arg git "$(v 'git --version')" --arg jq "$(v 'jq --version')" \
   '{built: $built, base_ami: $base, os: $os, spellbound3d_commit: $sb3d,
+    godot_pinned: $godot_pinned, runner_smoke: $runner_smoke,
     runner: {version: $runner, dir: "/opt/github-runners/spellbound3d", user: "ghrunner",
              home: "/opt/github-runners/spellbound3d/home"},
     tools: {godot: $godot, claude_code: $claude, uv: $uv, gitleaks: $gitleaks, node: $node, npm: $npm,

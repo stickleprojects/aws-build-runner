@@ -25,7 +25,7 @@ reaper every 15 min ──> terminates anything older than 90 min
 ## Status
 
 - [x] **AMI bake** (`ami/bake.sh`): versions from spellbound3d's own pins and install scripts; reports through SSM.
-- [x] **Smoke test** (`ami/smoke-test.sh`): 25 checks (tools work, security, boot step). A new AMI is only a
+- [x] **Smoke test** (`ami/smoke-test.sh`): 23 checks (tools work, security, boot step), plus spellbound3d's Godot smoke test once it's on their main. A new AMI is only a
       *candidate* until it passes; then it becomes current (SSM `/build/runner/ami-id`). Current: `ami-0d1c0c1e4fbf2a0dd`.
 - [x] **Image contract**: [ami/IMAGE.md](ami/IMAGE.md) (and `/etc/build-runner/manifest.json` on every instance).
 - [x] **Weekly rebuild** (`.github/workflows/ami.yml`): Monday 03:00 Sydney, or by hand. Bake → smoke test → promote →
