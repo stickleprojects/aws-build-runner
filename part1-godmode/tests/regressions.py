@@ -282,6 +282,46 @@ def claude_cache_is_warmed_by_a_real_install():
             for p in lines_matching([P2 / "ami" / "setup.sh"], r"npm cache add")]
 
 
+@rule("2026-11-16 (Kieron): no AWS bill over £30, and at the limit everything stops spending: the budget counts "
+      "what would be billed across the whole account (credits reduce it, refunds don't), budget-stop blocks anything new, and the kill switch terminates instances "
+      "and deletes the runner AMIs. Claude can't touch the kill switch.")
+def budget_stop_covers_everything():
+    problems = []
+    stop = json.loads((P1 / "bootstrap" / "budget-stop-policy.json").read_text())
+    denied = {a for st in stop["Statement"] if st["Effect"] == "Deny" for a in st["Action"]}
+    for must in ("ec2:RunInstances", "ec2:StartInstances", "ec2:RequestSpotInstances", "ec2:CreateFleet",
+                 "ec2:CreateVolume", "lambda:CreateFunction", "cloudformation:CreateStack", "iam:PassRole"):
+        if must not in denied:
+            problems.append(f"budget-stop no longer denies {must}")
+    script = (P1 / "bootstrap-budget-stop.sh").read_text()
+    # Credits are applied on the invoice (never billed); refunds come back later, if at all (2026-11-16).
+    if "IncludeCredit = true" not in script or "IncludeRefund = false" not in script or "IncludeTax = true" not in script:
+        problems.append("bootstrap-budget-stop.sh doesn't make the budget count what would be billed")
+    apply = (P1 / "apply.sh").read_text().replace(" ", "")
+    if "IncludeCredit:true" not in apply or "IncludeRefund:false" not in apply:
+        problems.append("apply.sh creates the budget without credits on and refunds off")
+    if "--approval-model AUTOMATIC" not in script:
+        problems.append("the budget action isn't automatic")
+    # Kieron (2026-11-16): at the limit, everything must stop spending, not just new things.
+    import yaml
+    p = yaml.safe_load((P1 / "policy.yaml").read_text())
+    ks = ((p.get("account_settings") or {}).get("budget_stop") or {}).get("kill_switch") or {}
+    if not (ks.get("terminate_instances") and ks.get("delete_runner_amis")):
+        problems.append("policy.yaml budget_stop.kill_switch no longer terminates instances and deletes runner AMIs")
+    code = (P1 / "bootstrap" / "kill_switch.py").read_text()
+    for call in ("terminate_instances", "cancel_spot_instance_requests", "deregister_image", "delete_snapshot"):
+        if call not in code:
+            problems.append(f"kill_switch.py no longer calls {call}")
+    if "create-subscriber" not in script or "SubscriptionType=SNS" not in script:
+        problems.append("the budget no longer notifies the kill switch")
+    protected = [r["arn"] for r in (p.get("protected") or {}).get("resources", [])]
+    if not any("function:guardrail-" in a for a in protected):
+        problems.append("the kill switch (guardrail-* Lambda) isn't protected from Claude in policy.yaml")
+    if int((p.get("account_settings") or {}).get("budget_usd", 999)) > 30:
+        problems.append("budget_usd is above US$30: no headroom under the £30 (≈US$38) bill ceiling for billing lag")
+    return problems
+
+
 def main():
     failed = 0
     for name, incident, fn in RULES:
