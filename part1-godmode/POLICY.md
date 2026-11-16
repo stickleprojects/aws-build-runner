@@ -2,10 +2,6 @@
 
 Generated from [policy.yaml](policy.yaml) by `build-policies.py`. Don't edit this file.
 
-> **DRAFT, not approved yet.** Pending:
-> - protected resources (the budget kill switch)
-> - change 2026-11-16: Budget US$25 (≈£20; the ceiling is a £30 bill), counted as what would be billed (credits reduce it, refunds don't). At 100%: AWS Budgets blocks anything new for Claude's user and roles, and the kill switch terminates every instance and deletes the runner AMIs. Claude can't touch the kill switch
-
 Claude's IAM user (`AWS_CLAUDE_USER`) in the account `AWS_ACCOUNT_ID` · home region Sydney (`ap-southeast-2`). The account id and user name aren't in the repo: see [config.py](config.py).
 
 ## In short
@@ -125,7 +121,7 @@ Each group also has an AWS Resource Group of the same name (a saved tag search) 
 | 2026-11-16 | First allow-list, for building the runner; replaces the old claude-assistant-policy v1 | 2026-11-16 Kieron |
 | 2026-11-16 | Every resource Claude creates must carry an approved resource-group tag (first group build-runner); adds AWS Resource Groups | 2026-11-16 Kieron |
 | 2026-11-16 | Read-only listing becomes Sydney only (was every region); IAM reads stay global, as IAM has no regions | 2026-11-16 Kieron |
-| 2026-11-16 | Budget US$25 (≈£20; the ceiling is a £30 bill), counted as what would be billed (credits reduce it, refunds don't). At 100%: AWS Budgets blocks anything new for Claude's user and roles, and the kill switch terminates every instance and deletes the runner AMIs. Claude can't touch the kill switch | pending |
+| 2026-11-16 | Budget US$25 (≈£20; the ceiling is a £30 bill), counted as what would be billed (credits reduce it, refunds don't). At 100%: AWS Budgets blocks anything new for Claude's user and roles, and the kill switch terminates every instance and deletes the runner AMIs. Claude can't touch the kill switch | 2026-11-16 Kieron |
 
 ## Policy sizes
 

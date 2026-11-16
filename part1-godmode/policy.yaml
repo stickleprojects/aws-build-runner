@@ -195,7 +195,7 @@ resource_groups:
 # Specific resources that Claude, and every role it creates, may not touch, whatever the approved
 # services allow. Each becomes an explicit deny in the policy and the boundary.
 protected:
-  approved: pending
+  approved: 2026-11-16 Kieron
   resources:
     - name: The budget kill switch
       why: Claude mustn't be able to change, disable or remove the automatic stop
@@ -237,4 +237,4 @@ changes:
     approved: 2026-11-16 Kieron
   - date: 2026-11-16
     what: "Budget US$25 (≈£20; the ceiling is a £30 bill), counted as what would be billed (credits reduce it, refunds don't). At 100%: AWS Budgets blocks anything new for Claude's user and roles, and the kill switch terminates every instance and deletes the runner AMIs. Claude can't touch the kill switch"
-    approved: pending
+    approved: 2026-11-16 Kieron
