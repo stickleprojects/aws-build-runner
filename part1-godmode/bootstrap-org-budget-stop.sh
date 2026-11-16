@@ -75,7 +75,9 @@ if [[ -z "$ou" || "$ou" == None ]]; then
 else
   echo "${ou}"
 fi
-in_ou="$(aws organizations list-accounts-for-parent --parent-id "$ou" --query 'Accounts[].Id' --output text)"
+# --output text separates with tabs; the membership test below matches on spaces, so convert
+# (2026-11-16: without it every account was reported as outside the OU).
+in_ou="$(aws organizations list-accounts-for-parent --parent-id "$ou" --query 'Accounts[].Id' --output text | tr '\t' ' ')"
 outside=0
 while read -r id name; do
   [[ -z "$id" || "$id" == "$MASTER" ]] && continue

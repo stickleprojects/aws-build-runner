@@ -379,6 +379,19 @@ def no_reading_multiline_cli_json_line_by_line():
     return problems
 
 
+@rule("2026-11-16: bootstrap-org-budget-stop.sh tested OU membership with spaces against the CLI's tab-separated "
+      "--output text, so every account was falsely reported as outside spend-capped.")
+def text_lists_are_space_separated_before_membership_tests():
+    problems = []
+    for path in SHELL_SCRIPTS:
+        text = path.read_text().replace("\\\n", " ")
+        for var in re.findall(r'^\s*(\w+)="\$\(aws [^\n]*--output text\)"', text, re.M):
+            if re.search(rf'\*" \$\{{?{var}\}}? "\*|" \$\{{{var}\}} "', text):
+                problems.append(f"{path.relative_to(ROOT)}: ${var} holds tab-separated CLI text but is "
+                                "membership-tested with spaces (pipe it through tr '\\t' ' ')")
+    return problems
+
+
 def main():
     failed = 0
     for name, incident, fn in RULES:
