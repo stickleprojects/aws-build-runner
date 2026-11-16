@@ -366,6 +366,19 @@ def org_budget_stop_uses_its_own_role_and_all_alerts():
     return problems
 
 
+@rule("2026-11-16: bootstrap-org-budget-stop.sh read only the first line ('{') of the CLI's multi-line JSON "
+      "into a variable, passed it as --notification, and failed before doing anything.")
+def no_reading_multiline_cli_json_line_by_line():
+    problems = []
+    for path in SHELL_SCRIPTS:
+        # Across line continuations: the 2026-11-16 case had the pipe on the next line.
+        text = path.read_text().replace("\\\n", " ")
+        for m in re.finditer(r"--output json[^\n]*\|\s*\{?\s*read -r", text):
+            problems.append(f"{path.relative_to(ROOT)}: pipes AWS CLI JSON into 'read' (gets only its first line; "
+                            f"compact it with jq -c): {m.group(0)[:80]}")
+    return problems
+
+
 def main():
     failed = 0
     for name, incident, fn in RULES:
