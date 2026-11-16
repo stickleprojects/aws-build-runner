@@ -7,7 +7,38 @@ command is complete; paste it as it is. First time through, do every step; after
 Before starting: the change is merged to `main` (see the [change process](README.md#change-process)),
 and the `policy` CI run on `main` has finished green. `apply.sh` refuses otherwise.
 
-## 1. Sign in to AWS
+## Automated: apply from GitHub (once set up)
+
+1. Open https://github.com/stickleprojects/aws-build-runner/actions/workflows/apply.yml
+2. **Run workflow**. Branch `main`, action **apply** (or **rollback**). Then **Run workflow**.
+3. The run waits for approval: open it, then **Review deployments** → tick the environment → **Approve and deploy**.
+4. It runs `apply.sh` (or `rollback.sh`) exactly as below and shows the same output in the log, with
+   the account details masked. The run *is* the deployment record: who started it, who approved it, when.
+
+It signs in to AWS through GitHub's OIDC as the role `godmode/aws-build-runner-apply`, with no stored
+keys. That role can only manage Claude's three policies and the account safety settings, and only a
+job in this repo's `aws` or `aws-rollback` environment, from `main`, after your approval, can use it.
+
+**Rollback** puts the previous version of each policy back, or detaches a policy that was new. It marks
+the last apply's deployment inactive, and opens an issue to revert the change in git.
+
+### One-time setup (godmode)
+
+- In CloudShell (steps 1–2 below first, if CloudShell isn't set up yet):
+  ```bash
+  export PATH=$HOME/bin:$PATH; cd ~/aws-build-runner/part1-godmode && git pull && ./bootstrap-github-apply.sh
+  ```
+  Validates the role's policies with Access Analyzer, then creates the GitHub OIDC provider and the role.
+  Ends with the role ARN. Run it again only if `bootstrap/*.json` changes.
+- Claude (from the laptop, as Kieron's GitHub account) sets up the GitHub side: environments `aws`
+  and `aws-rollback` requiring Kieron's approval, from `main` only; the environment secrets
+  `AWS_APPLY_ROLE_ARN`, `AWS_ACCOUNT_ID`, `AWS_CLAUDE_USER` and `AWS_ALERT_EMAIL`.
+
+The manual route below still works and is the fallback.
+
+## Manual: from CloudShell
+
+### 1. Sign in to AWS
 
 1. Go to https://signin.aws.amazon.com and choose **GitHub**. There is no root-user sign-in for this
    account; it's in the **kieron-wray-team** organization, and GitHub is the identity. (AWS
@@ -18,7 +49,7 @@ and the `policy` CI run on `main` has finished green. `apply.sh` refuses otherwi
 3. Top right, set the region to **Asia Pacific (Sydney)**.
 4. Open **CloudShell** (the `>_` icon, top bar).
 
-## 2. First time only: set up CloudShell
+### 2. First time only: set up CloudShell
 
 CloudShell keeps your home folder between sessions, so this is once.
 
@@ -69,7 +100,7 @@ gh auth status && gh api repos/stickleprojects/aws-build-runner/actions/variable
 It should end by listing `AWS_ACCOUNT_ID` and `AWS_CLAUDE_USER` "from GitHub repo variable". These
 values, and the budget alert email, are kept out of this public repo: see [config.py](config.py).
 
-## 3. Each apply
+### 3. Each apply
 
 In CloudShell:
 
@@ -103,7 +134,7 @@ Checks that pass in your account but are **blocked by the organization**: the ki
 organization's SCPs block some regions entirely (seen: eu-west-2, ap-southeast-4). `verify.py`
 reports those as "blocked by the organization's SCPs", not as failures.
 
-## 4. Afterwards
+### 4. Afterwards
 
 - Back on the laptop, as Claude's user: `python3 -I part1-godmode/check-live.py` reports
   "AWS has this checkout's commit applied".
@@ -135,5 +166,9 @@ As admin, in CloudShell:
   ```bash
   cd ~/aws-build-runner/part1-godmode && ACCT=$(python3 -I config.py AWS_ACCOUNT_ID) && U=$(python3 -I config.py AWS_CLAUDE_USER) && for p in claude-assistant-policy claude-assistant-iam; do aws iam detach-user-policy --user-name "$U" --policy-arn "arn:aws:iam::$ACCT:policy/$p"; done; aws iam list-attached-user-policies --user-name "$U"
   ```
-- **Back to the previous approved policy**: revert the change in a PR, merge, apply (the normal route).
-  A one-click rollback is planned with the automated apply.
+- **Rollback** to the previous policy versions: the **apply** workflow with action **rollback** (above), or
+  in CloudShell:
+  ```bash
+  export PATH=$HOME/bin:$PATH; cd ~/aws-build-runner/part1-godmode && git pull && ./rollback.sh
+  ```
+- **Back to the previous approved policy, properly**: revert the change in a PR, merge, apply.

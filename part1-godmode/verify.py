@@ -179,6 +179,13 @@ def build_cases(p, cfg):
         add(Case(action, "denied", me, g))
     add(Case("iam:CreateServiceLinkedRole", user_only, "*", g, **{"iam:AWSServiceName": "spot.amazonaws.com"}))
     add(Case("iam:CreateServiceLinkedRole", "denied", "*", g, **{"iam:AWSServiceName": "rds.amazonaws.com"}))
+    # The GitHub Actions apply role (bootstrap-github-apply.sh) is godmode: Claude can't touch or use it.
+    apply_role = f"arn:aws:iam::{acct}:role/godmode/aws-build-runner-apply"
+    for action in ("iam:UpdateAssumeRolePolicy", "iam:PutRolePolicy", "iam:AttachRolePolicy", "iam:DeleteRole",
+                   "iam:DeleteRolePolicy", "sts:AssumeRole"):
+        add(Case(action, "denied", apply_role, g))
+    add(Case("iam:PassRole", "denied", apply_role, g, **{"iam:PassedToService": "ec2.amazonaws.com"}))
+    add(Case("iam:CreateOpenIDConnectProvider", "denied", f"arn:aws:iam::{acct}:oidc-provider/token.actions.githubusercontent.com", g))
 
     if rg:
         key = rg["tag_key"]

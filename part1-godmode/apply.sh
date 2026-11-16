@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Godmode: applies the CI-checked policy artifact for main's head commit to AWS, and records
 # that it was applied. Run as an ADMIN, never as Claude's IAM user. Needs aws, gh, git, jq, python3+pyyaml.
+# Two ways to run it (CHECKLIST.md): the "apply" GitHub Actions workflow (after your approval, as
+# the role godmode/aws-build-runner-apply), or by hand in CloudShell.
 #
 #   ./apply.sh [ALERT_EMAIL]     (default: AWS_ALERT_EMAIL from config.py: env, .env.local or repo variable)
 #
@@ -31,8 +33,14 @@ caller_arn="$(aws sts get-caller-identity --query Arn --output text)"
 caller_account="$(aws sts get-caller-identity --query Account --output text)"
 [[ "$caller_account" == "$ACCOUNT_ID" ]] || { echo "Refusing: credentials are for ${caller_account}, policy.yaml says ${ACCOUNT_ID}." >&2; exit 1; }
 [[ "$caller_arn" != *":user/${USER_NAME}" ]] || { echo "Refusing: these are ${USER_NAME}'s own credentials. Use admin credentials." >&2; exit 1; }
-gh_user="$(gh api user --jq .login)"
-REPO="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
+# In GitHub Actions the "aws" environment records the deployment (with who started and approved it);
+# by hand, this script records it.
+IN_ACTIONS="${GITHUB_ACTIONS:-false}"
+if [[ "$IN_ACTIONS" == true ]]; then
+  gh_user="${GITHUB_ACTOR}"; REPO="${GITHUB_REPOSITORY}"
+else
+  gh_user="$(gh api user --jq .login)"; REPO="$(gh repo view --json nameWithOwner --jq .nameWithOwner)"
+fi
 echo "Account ${ACCOUNT_ID} as ${caller_arn}; GitHub ${gh_user} on ${REPO}"
 
 # ---------- 1-2. the commit to apply: main's head, clean, with a checked artifact ----------
@@ -95,10 +103,14 @@ if [[ -n "${AWS_CREDENTIAL_EXPIRATION:-}" ]]; then
   fi
 fi
 
-deployment_id="$(jq -n --arg ref "$commit" --arg env "$ENVIRONMENT" --arg by "$caller_arn" \
-  '{ref:$ref, environment:$env, auto_merge:false, required_contexts:[], description:("IAM policies, applied by " + $by)}' \
-  | gh api "repos/${REPO}/deployments" --input - --jq .id)"
+deployment_id=""
+if [[ "$IN_ACTIONS" != true ]]; then
+  deployment_id="$(jq -n --arg ref "$commit" --arg env "$ENVIRONMENT" --arg by "$caller_arn" \
+    '{ref:$ref, environment:$env, auto_merge:false, required_contexts:[], description:("IAM policies, applied by " + $by)}' \
+    | gh api "repos/${REPO}/deployments" --input - --jq .id)"
+fi
 deployment_status() {
+  [[ -n "$deployment_id" ]] || return 0   # GitHub Actions: the environment records it
   # GitHub rejects descriptions over 140 characters (HTTP 422).
   gh api "repos/${REPO}/deployments/${deployment_id}/statuses" -f state="$1" -f description="${2:0:140}" \
     -f environment="$ENVIRONMENT" >/dev/null || echo "WARNING: couldn't record deployment status $1"
@@ -180,7 +192,11 @@ tail -1 "$work/verify-live.txt"
 
 # ---------- 5. record ----------
 applied_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-applied_by="${gh_user} as ${caller_arn}"
+if [[ "$IN_ACTIONS" == true ]]; then
+  applied_by="${gh_user} via GitHub Actions run ${GITHUB_RUN_ID} (approved in environment ${ENVIRONMENT})"
+else
+  applied_by="${gh_user} as ${caller_arn}"
+fi
 applied_by="${applied_by:0:256}"
 for arn in "${want[@]}" "arn:aws:iam::${ACCOUNT_ID}:policy/${BOUNDARY_PATH_NAME}"; do
   aws iam tag-policy --policy-arn "$arn" --tags \
@@ -194,4 +210,8 @@ trap 'rm -rf "$work"' ERR
 deployment_status success "Applied ${applied_at} by ${gh_user} (${caller_short})"
 echo
 echo "Applied ${commit:0:12} at ${applied_at} by ${applied_by}."
-echo "Recorded: IAM tags on the three policies, and GitHub deployment ${deployment_id} (${REPO}, environment '${ENVIRONMENT}')."
+if [[ "$IN_ACTIONS" == true ]]; then
+  echo "Recorded: IAM tags on the three policies; this run is the GitHub deployment (environment '${ENVIRONMENT}')."
+else
+  echo "Recorded: IAM tags on the three policies, and GitHub deployment ${deployment_id} (${REPO}, environment '${ENVIRONMENT}')."
+fi
