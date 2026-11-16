@@ -1,0 +1,185 @@
+#!/usr/bin/env python3
+"""Regression rules: one per mistake that actually happened, so it can't happen again.
+
+Run in CI on every PR (policy workflow) and locally:  python3 -I part1-godmode/tests/regressions.py
+Each rule says what went wrong and when. When a fix is made for a new mistake, add a rule here.
+Exit 1 if any rule fails.
+"""
+import json
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+P1 = ROOT / "part1-godmode"
+SHELL_SCRIPTS = sorted(P1.glob("*.sh"))
+PY_SCRIPTS = sorted(P1.glob("*.py")) + sorted((P1 / "tests").glob("*.py"))
+WORKFLOWS = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
+IAM_TAG_VALUE = re.compile(r"[\w\s_.:/=+\-@]*", re.ASCII)
+# Regions the kieron-wray-team organization's SCPs block (seen 2026-11-16).
+ORG_BLOCKED_REGIONS = {"eu-west-2", "ap-southeast-4"}
+
+RULES = []
+
+
+def rule(incident):
+    def register(fn):
+        RULES.append((fn.__name__, incident, fn))
+        return fn
+    return register
+
+
+def lines_matching(paths, pattern, exclude=()):
+    hits = []
+    for path in paths:
+        if path.name in exclude:
+            continue
+        for n, line in enumerate(path.read_text().splitlines(), 1):
+            if re.search(pattern, line) and not line.lstrip().startswith("#"):
+                hits.append(f"{path.relative_to(ROOT)}:{n}: {line.strip()[:100]}")
+    return hits
+
+
+def bash(script):
+    return subprocess.run(["bash", "-c", script], capture_output=True, text=True, cwd=P1)
+
+
+@rule("2026-11-16: '(approved in environment aws)' in a tag value made iam tag-policy fail after an apply.")
+def iam_tags_only_through_the_cleaning_helper():
+    problems = lines_matching(SHELL_SCRIPTS, r"aws iam tag-policy", exclude={"lib.sh"})
+    problems = [f"tag directly, not via tag_applied (lib.sh): {p}" for p in problems]
+    samples = ["stickleprojects via GitHub Actions run 1, approved in environment aws (x)",
+               "a [b] {c} <d> 'e' \"f\" ; g & h | i # j % k ! l ? m * n ~ o",
+               "arn:aws:sts::123456789012:assumed-role/Role/session", "x" * 400]
+    for s in samples:
+        r = bash(f'. ./lib.sh; iam_tag_value {json.dumps(s)}')
+        out = r.stdout.rstrip("\n")
+        if r.returncode or not IAM_TAG_VALUE.fullmatch(out) or len(out) > 256:
+            problems.append(f"iam_tag_value gives an invalid tag value for {s[:40]!r}: {out[:60]!r}")
+    return problems
+
+
+@rule("2026-11-16: a GitHub deployment status description over 140 characters got HTTP 422.")
+def deployment_descriptions_only_through_the_truncating_helper():
+    problems = [f"description set directly, not via gh_deployment_status (lib.sh): {p}"
+                for p in lines_matching(SHELL_SCRIPTS, r"-f description=", exclude={"lib.sh"})]
+    # The helper discards gh's stdout, so the stub reports its arguments on stderr.
+    r = bash('gh() { printf "%s\\n" "$@" >&2; }; . ./lib.sh; gh_deployment_status o/r 1 success aws "$(printf "x%.0s" {1..300})"')
+    desc = [a for a in r.stderr.splitlines() if a.startswith("description=")]
+    if not desc or len(desc[0]) - len("description=") > 140:
+        problems.append("gh_deployment_status doesn't cap the description at 140 characters")
+    return problems
+
+
+@rule("2026-11-16: JMESPath (aws --query) can't compare text with < or >; rollback's version lookup was always empty.")
+def no_text_comparisons_in_aws_query():
+    return [f"comparison inside --query (use jq): {p}"
+            for p in lines_matching(SHELL_SCRIPTS + PY_SCRIPTS, r"--query[^|]*\[\?[^\]]*[<>]")]
+
+
+@rule("2026-11-16: python3 -I leaves the script's folder off sys.path, so 'import config' failed.")
+def local_imports_work_under_python_isolated_mode():
+    problems = []
+    for path in PY_SCRIPTS:
+        text = path.read_text()
+        if re.search(r"^import config|^from config", text, re.M) and "sys.path.insert" not in text:
+            problems.append(f"{path.relative_to(ROOT)} imports config without adding its folder to sys.path")
+    problems += [f"inline 'import config' under -I (use config.py's CLI): {p}"
+                 for p in lines_matching(SHELL_SCRIPTS + WORKFLOWS, r"python3 -I -c .*import config")]
+    return problems
+
+
+@rule("2026-11-16: 'gh variable get' doesn't exist in older gh (2.46); config.py failed silently.")
+def no_gh_variable_get():
+    return [f"use 'gh api repos/{{owner}}/{{repo}}/actions/variables/NAME' instead: {p}"
+            for p in lines_matching(SHELL_SCRIPTS + PY_SCRIPTS + WORKFLOWS, r"gh variable get",
+                                    exclude={"regressions.py"})]
+
+
+@rule("2026-11-16: the apply role's trust used name-based subjects, but this repo sends GitHub's immutable "
+      "(ID-based) subject, so the first automated apply couldn't sign in. Access Analyzer also asked for a branch check.")
+def apply_role_trust_uses_immutable_subject_and_main_only():
+    trust = json.loads((P1 / "bootstrap" / "apply-role-trust.json").read_text())
+    problems = []
+    for st in trust["Statement"]:
+        cond = st.get("Condition", {}).get("StringEquals", {})
+        subs = cond.get("token.actions.githubusercontent.com:sub", [])
+        subs = subs if isinstance(subs, list) else [subs]
+        if not subs:
+            problems.append("trust has no token.actions.githubusercontent.com:sub condition")
+        for sub in subs:
+            if not re.fullmatch(r"repo:[^/@]+@\d+/[^:@]+@\d+:environment:[\w-]+", sub):
+                problems.append(f"sub isn't the immutable form repo:OWNER@ID/REPO@ID:environment:ENV: {sub}")
+        if cond.get("token.actions.githubusercontent.com:ref") != "refs/heads/main":
+            problems.append("trust doesn't require token.actions.githubusercontent.com:ref = refs/heads/main")
+        if cond.get("token.actions.githubusercontent.com:aud") != "sts.amazonaws.com":
+            problems.append("trust doesn't require aud = sts.amazonaws.com")
+    return problems
+
+
+@rule("2026-11-16: an ERR trap needs set -E to fire inside functions (apply.sh's failure record).")
+def err_traps_have_errtrace():
+    problems = []
+    for path in SHELL_SCRIPTS:
+        text = path.read_text()
+        if re.search(r"^\s*trap .* ERR\b", text, re.M) and not re.search(r"^set -[a-zA-Z]*E", text, re.M):
+            problems.append(f"{path.relative_to(ROOT)} traps ERR without set -E")
+    return problems
+
+
+@rule("2026-11-16: literal tab characters in workflow bash were fragile; replaced with '|'.")
+def no_tabs_in_workflows():
+    return [f"{p.relative_to(ROOT)} contains a tab character" for p in WORKFLOWS if "\t" in p.read_text()]
+
+
+@rule("2026-11-16: verify.py's 'other region' was eu-west-2, which the organization's SCPs block, so a live check "
+      "failed and region tests passed for the wrong reason.")
+def other_region_is_not_blocked_by_the_organization():
+    text = (P1 / "verify.py").read_text()
+    m = re.search(r'^OTHER_REGION = "([a-z0-9-]+)"', text, re.M)
+    if not m:
+        return ["verify.py has no OTHER_REGION"]
+    return [f"OTHER_REGION {m.group(1)} is blocked by the organization; pick one it allows"] \
+        if m.group(1) in ORG_BLOCKED_REGIONS else []
+
+
+@rule("2026-11-16: exported CloudShell credentials (~15 min) expired mid-apply; apply.sh must refuse when they're about to.")
+def apply_keeps_the_credential_expiry_guard():
+    return [] if "AWS_CREDENTIAL_EXPIRATION" in (P1 / "apply.sh").read_text() \
+        else ["apply.sh lost its AWS_CREDENTIAL_EXPIRATION guard"]
+
+
+@rule("2026-11-16: verify.py simulated EC2 creates against resource types they don't create (24 false failures).")
+def every_enforced_ec2_create_has_its_resource_types():
+    import yaml
+    sys.path.insert(0, str(P1))
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("verify", P1 / "verify.py")
+    verify = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(verify)
+    p = yaml.safe_load((P1 / "policy.yaml").read_text())
+    problems = []
+    for group in (p.get("resource_groups") or {}).get("enforced_on", []):
+        for action in group["actions"]:
+            if action.startswith("ec2:") and action not in verify.EC2_CREATES:
+                problems.append(f"{action} is enforced but missing from verify.EC2_CREATES")
+    return problems
+
+
+def main():
+    failed = 0
+    for name, incident, fn in RULES:
+        problems = fn()
+        print(f"{'ok  ' if not problems else 'FAIL'} {name}")
+        for p in problems:
+            print(f"       {p}")
+        if problems:
+            print(f"       why: {incident}")
+            failed += 1
+    print(f"\n{len(RULES)} regression rules, {failed} failed")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

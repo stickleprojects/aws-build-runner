@@ -70,6 +70,8 @@ Commands for drafting: `python3 -I build-policies.py --draft`, `./verify.py --of
 | [config.py](config.py) | Account id and IAM user name, which are kept out of this public repo. Read from env vars, `.env.local` or GitHub repo variables. Committed JSON uses `{{ACCOUNT_ID}}`, filled in only when checking against AWS or applying |
 | [check-live.py](check-live.py) | Live AWS vs this checkout: drift, applied commit, date, who |
 | [apply.sh](apply.sh) | **Admin only.** Applies main's checked artifact and records it. Run by the **apply** workflow, or in CloudShell |
+| [lib.sh](lib.sh) | Shared helpers for apply/rollback: IAM tag values cleaned, deployment status descriptions capped |
+| [tests/regressions.py](tests/regressions.py) | One rule per past mistake, each with what went wrong; runs in CI with `shellcheck` |
 | [rollback.sh](rollback.sh) | **Admin only.** Puts the previous policy versions back, marks the deployment inactive, opens a "revert in git" issue |
 | [bootstrap-github-apply.sh](bootstrap-github-apply.sh), [bootstrap/](bootstrap/) | **Godmode, once.** GitHub OIDC provider plus the role `godmode/aws-build-runner-apply` that the **apply** workflow uses, with only these scripts' permissions |
 | [CHECKLIST.md](CHECKLIST.md) | The first godmode session, step by step |

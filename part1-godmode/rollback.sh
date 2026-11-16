@@ -14,6 +14,8 @@
 # check-live.py reports drift until that revert is merged.
 set -Eeuo pipefail
 cd "$(dirname "$0")"
+# shellcheck source=lib.sh
+. ./lib.sh
 
 ACCOUNT_ID="$(python3 -I config.py AWS_ACCOUNT_ID)"
 USER_NAME="$(python3 -I config.py AWS_CLAUDE_USER)"
@@ -52,10 +54,7 @@ for name in claude-assistant-policy claude-assistant-iam "$BOUNDARY"; do
     aws iam detach-user-policy --user-name "$USER_NAME" --policy-arn "$arn" 2>/dev/null || true
     summary+=("${name}: no previous version; detached from Claude's user")
   fi
-  # IAM tag values allow only letters, digits, spaces and _ . : / = + - @ (max 256).
-  tag_who="$(LC_ALL=C sed 's#[^A-Za-z0-9 _.:/=+@-]# #g; s#  *# #g' <<<"${who:0:256}")"
-  aws iam tag-policy --policy-arn "$arn" --tags Key=applied-commit,Value="rolled-back-from-${from_commit}" \
-    Key=applied-at,Value="$(date -u +%Y-%m-%dT%H:%M:%SZ)" Key=applied-by,Value="$tag_who"
+  tag_applied "$arn" "rolled-back-from-${from_commit}" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$who"
 done
 printf '%s\n' "${summary[@]}"
 
@@ -63,11 +62,11 @@ printf '%s\n' "${summary[@]}"
 for id in $(gh api "repos/${REPO}/deployments?environment=aws&per_page=30" --jq '.[].id'); do
   state="$(gh api "repos/${REPO}/deployments/${id}/statuses?per_page=1" --jq '.[0].state')"
   if [[ "$state" == success ]]; then
-    gh api "repos/${REPO}/deployments/${id}/statuses" -f state=inactive -f environment=aws \
-      -f description="Rolled back $(date -u +%Y-%m-%dT%H:%MZ)" >/dev/null && echo "deployment ${id} marked inactive"
+    gh_deployment_status "$REPO" "$id" inactive aws "Rolled back $(date -u +%Y-%m-%dT%H:%MZ)" && echo "deployment ${id} marked inactive"
     break
   fi
 done
+# shellcheck disable=SC2016  # the backticks are Markdown, not command substitution
 body="$(printf 'The apply of `%s` was rolled back in AWS by %s.\n\n%s\n\nAWS no longer matches `main`. Revert the change in a PR (or fix it forward), merge, and apply, so `check-live.py` shows no drift again.' \
   "$from_commit" "$who" "$(printf -- '- %s\n' "${summary[@]}")")"
 gh issue create --repo "$REPO" --title "Rolled back ${from_commit:0:12}: revert it in git" --body "$body" || echo "WARNING: couldn't open the issue"

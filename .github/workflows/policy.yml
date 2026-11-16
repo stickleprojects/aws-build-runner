@@ -113,6 +113,13 @@ jobs:
           done
           exit $status
 
+      - name: Regression rules (one per past mistake)
+        run: python3 -I part1-godmode/tests/regressions.py
+
+      - name: shellcheck the scripts
+        working-directory: part1-godmode
+        run: shellcheck -x ./*.sh
+
       - name: Offline allow/deny checks
         run: |
           set -o pipefail
