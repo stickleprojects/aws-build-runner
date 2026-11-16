@@ -28,7 +28,9 @@ reaper every 15 min ──> terminates anything older than 90 min
 - [x] **Smoke test** (`ami/smoke-test.sh`): 25 checks (tools work, security, boot step). A new AMI is only a
       *candidate* until it passes; then it becomes current (SSM `/build/runner/ami-id`). Current: `ami-0d1c0c1e4fbf2a0dd`.
 - [x] **Image contract**: [ami/IMAGE.md](ami/IMAGE.md) (and `/etc/build-runner/manifest.json` on every instance).
-- [ ] Weekly rebuild pipeline (bake, smoke test, promote, keep the last 3 AMIs, publish a release).
+- [x] **Weekly rebuild** (`.github/workflows/ami.yml`): Monday 03:00 Sydney, or by hand. Bake → smoke test → promote →
+      prune (keep 3) → GitHub Release with IMAGE.md and manifest.json. Role `/claude/build-runner-ami-ci` via OIDC (`ci/ami-ci-role.sh`).
+      **The latest image's contract is always the latest [release](https://github.com/stickleprojects/aws-build-runner/releases/latest).**
 - [ ] Webhook and launcher Lambda, per-job instance types, reaper: the runner itself.
 
 | Path | Purpose |
@@ -40,3 +42,6 @@ reaper every 15 min ──> terminates anything older than 90 min
 | `ami/bake.sh`, `ami/bake-role.sh` | Bake an AMI as Claude's user; the bake instance's role can only report, read its one GitHub token, and talk to Systems Manager |
 | `ami/smoke-test.sh` | Check a baked AMI; promote the candidate if it passes |
 | `lib/github-app.sh` | Short-lived GitHub App tokens (the key stays in SSM) |
+| `ami/prune-amis.sh` | Keep the newest 3 AMIs (always the current one); delete the rest and their snapshots |
+| `ci/ami-ci-role.sh` | The pipeline's AWS role (Claude creates it: `/claude/`, boundary, tagged) |
+| `ci/publish-release.sh` | Publish the current image as a GitHub Release: what changed, then IMAGE.md |

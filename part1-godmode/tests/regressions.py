@@ -322,6 +322,31 @@ def budget_stop_covers_everything():
     return problems
 
 
+@rule("2026-11-16: the weekly AMI pipeline added a new role that can launch instances (build-runner-ami-ci); "
+      "unless it's in budget_stop.roles, the budget stop wouldn't block it.")
+def every_launching_role_is_covered_by_the_budget_stop():
+    import yaml
+    p = yaml.safe_load((P1 / "policy.yaml").read_text())
+    covered = set(((p.get("account_settings") or {}).get("budget_stop") or {}).get("roles", []))
+    problems = []
+    for script in SHELL_SCRIPTS:
+        text = script.read_text()
+        m = re.search(r"^NAME=([\w-]+)$", text, re.M)
+        if m and "--role-name" in text and "ec2:RunInstances" in text and m.group(1) not in covered:
+            problems.append(f"{script.relative_to(ROOT)} creates role {m.group(1)}, which can launch instances, "
+                            "but it isn't in policy.yaml budget_stop.roles")
+    return problems
+
+
+@rule("2026-11-16: only a smoke-tested image may be published or cause old images to be pruned.")
+def ami_pipeline_tests_before_pruning_or_publishing():
+    wf = (ROOT / ".github" / "workflows" / "ami.yml").read_text()
+    order = [wf.find(s) for s in ("ami/bake.sh", "ami/smoke-test.sh", "ami/prune-amis.sh", "ci/publish-release.sh")]
+    if -1 in order:
+        return ["ami.yml is missing one of: bake, smoke test, prune, publish"]
+    return [] if order == sorted(order) else ["ami.yml doesn't run bake → smoke test → prune → publish in that order"]
+
+
 def main():
     failed = 0
     for name, incident, fn in RULES:

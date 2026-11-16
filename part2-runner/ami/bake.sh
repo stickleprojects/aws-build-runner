@@ -35,7 +35,8 @@ cleanup() {
 }
 trap cleanup EXIT
 
-./bake-role.sh
+# The bake role already exists for the pipeline, whose role can't touch IAM (the boundary); refresh it by hand.
+if [[ "${GITHUB_ACTIONS:-}" != true ]]; then ./bake-role.sh; fi
 
 base="$(aws ssm get-parameter --name /aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id \
   --query Parameter.Value --output text)"

@@ -218,7 +218,7 @@ account_settings:
   #  - the kill switch (Lambda guardrail-kill-switch, Sydney) stops what's already spending
   budget_stop:
     at_percent: 100
-    roles: [build-runner-bake]
+    roles: [build-runner-bake, build-runner-ami-ci]
     kill_switch:
       terminate_instances: true      # every instance in the account, and open spot requests
       delete_runner_amis: true       # resource-group=build-runner AMIs and snapshots (the pipeline rebuilds them)
@@ -238,3 +238,6 @@ changes:
   - date: 2026-11-16
     what: "Budget US$25 (≈£20; the ceiling is a £30 bill), counted as what would be billed (credits reduce it, refunds don't). At 100%: AWS Budgets blocks anything new for Claude's user and roles, and the kill switch terminates every instance and deletes the runner AMIs. Claude can't touch the kill switch"
     approved: 2026-11-16 Kieron
+  - date: 2026-11-16
+    what: The budget stop also covers the weekly AMI pipeline role (build-runner-ami-ci), so at the limit it can't launch bake instances either
+    approved: pending

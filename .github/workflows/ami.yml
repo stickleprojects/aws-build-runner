@@ -1,0 +1,63 @@
+# Weekly runner-image rebuild: bake a fresh AMI (latest Ubuntu updates, spellbound3d's current pins,
+# the latest Actions runner), smoke-test it, make it current only if every check passes, prune old
+# AMIs (keep 3), and publish it as a GitHub Release with IMAGE.md.
+#
+# No approval click: it only builds and tests an image; it can't change anyone's permissions. It signs
+# in to AWS by OIDC as /claude/build-runner-ami-ci (part2-runner/ci/ami-ci-role.sh), which only the
+# "ami" environment on main can assume. Account details are environment secrets (masked in logs).
+name: ami
+run-name: "ami: ${{ github.event_name == 'schedule' && 'weekly rebuild' || inputs.note || 'rebuild' }}"
+
+on:
+  schedule:
+    - cron: "0 16 * * 0"   # Monday 03:00 in Sydney (AEDT; 02:00 in AEST)
+  workflow_dispatch:
+    inputs:
+      note:
+        description: "Why rebuild now (shown as the run title)"
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ami
+  cancel-in-progress: false
+
+jobs:
+  rebuild:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: ami
+    timeout-minutes: 120
+    permissions:
+      contents: write   # publish the GitHub Release
+      id-token: write   # OIDC: sign in to AWS without keys
+    env:
+      AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}   # only so GitHub masks it in the logs
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Sign in to AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_AMI_ROLE_ARN }}
+          role-session-name: github-ami-${{ github.run_id }}
+          role-duration-seconds: 7200
+          aws-region: ap-southeast-2
+
+      - name: Bake a new image (becomes the candidate)
+        run: part2-runner/ami/bake.sh
+
+      - name: Smoke-test it (promoted to current only if every check passes)
+        run: part2-runner/ami/smoke-test.sh
+
+      - name: Prune old images (keep 3)
+        run: part2-runner/ami/prune-amis.sh 3
+
+      - name: Publish it as a GitHub Release
+        run: part2-runner/ci/publish-release.sh
