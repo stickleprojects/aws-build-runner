@@ -53,10 +53,15 @@ The bill is the organization's consolidated bill, paid by the **kieron-wray-team
 The steps above protect the identity account. These protect the **whole bill**: every account in
 the organization. Claude has no access to the management account; do this in the console.
 
-**The easy way: a script.** Sign in, choose the **kieron-wray-team management account**, open CloudShell, and
-(first time only: set up `gh` and the repo exactly as in "Manual: from CloudShell" step 2, in this account):
+**The easy way: a script.** Sign in, choose the **kieron-wray-team management account**, open CloudShell.
+No `gh` or token needed here: the repo is public, and the alert email is taken from the org budget's
+existing alerts (set `AWS_ALERT_EMAIL` only if the budget doesn't exist yet). First time:
 ```bash
-export PATH=$HOME/bin:$PATH; cd ~/aws-build-runner/part1-godmode && git pull && ./bootstrap-org-budget-stop.sh
+git clone https://github.com/stickleprojects/aws-build-runner.git ~/aws-build-runner
+```
+Then, every time:
+```bash
+cd ~/aws-build-runner/part1-godmode && git pull && ./bootstrap-org-budget-stop.sh
 ```
 It refuses to run anywhere but the management account. It creates or corrects everything below (the SCP,
 the `spend-capped` OU, a dedicated role, the budget and its four alerts, and the action), lists any member

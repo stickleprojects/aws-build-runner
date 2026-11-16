@@ -21,13 +21,27 @@ BUDGET=org-guardrail-monthly
 POLICY_NAME=org-budget-stop
 OU_NAME=spend-capped
 ROLE="org-budget-action-runner"
-EMAIL="$(python3 -I config.py AWS_ALERT_EMAIL)"
 AMOUNT="$(python3 -I -c "import yaml; print(yaml.safe_load(open('policy.yaml'))['account_settings']['budget_usd'])")"
 
 ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
 read -r ORG_ID MASTER <<<"$(aws organizations describe-organization --query 'Organization.[Id,MasterAccountId]' --output text)"
 [[ "$ACCOUNT" == "$MASTER" ]] || { echo "Refusing: run this in the organization's management account (this is ${ACCOUNT})." >&2; exit 1; }
 echo "Management account ${ACCOUNT}, organization ${ORG_ID}"
+
+# The alert email: AWS_ALERT_EMAIL if set; else the address the existing org budget already alerts
+# (so no email has to be typed or kept in this public repo); else config.py (env, .env.local, gh variable).
+EMAIL="${AWS_ALERT_EMAIL:-}"
+if [[ -z "$EMAIL" ]]; then
+  EMAIL="$(aws budgets describe-notifications-for-budget --account-id "$ACCOUNT" --budget-name "$BUDGET" \
+    --query 'Notifications[0]' --output json 2>/dev/null \
+    | { read -r n; [[ -n "$n" && "$n" != null ]] && aws budgets describe-subscribers-for-notification \
+        --account-id "$ACCOUNT" --budget-name "$BUDGET" --notification "$n" \
+        --query "Subscribers[?SubscriptionType=='EMAIL'].Address | [0]" --output text; } || true)"
+  [[ "$EMAIL" == None ]] && EMAIL=""
+fi
+[[ -n "$EMAIL" ]] || EMAIL="$(python3 -I config.py AWS_ALERT_EMAIL 2>/dev/null || true)"
+[[ -n "$EMAIL" ]] || { echo "No alert email: set AWS_ALERT_EMAIL (the org budget doesn't exist yet)." >&2; exit 1; }
+echo "alerts go to ${EMAIL%%@*}@…"
 
 echo "== SCP ${POLICY_NAME}"
 policy_id="$(aws organizations list-policies --filter SERVICE_CONTROL_POLICY \
