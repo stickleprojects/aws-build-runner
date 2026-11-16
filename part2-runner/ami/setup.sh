@@ -19,14 +19,26 @@ R=/opt/github-runners/spellbound3d
 FILES=/opt/bake/files
 IN_CONTAINER="${BAKE_IN_CONTAINER:-}"
 
-say() { echo "bake: $*"; [[ -n "$IN_CONTAINER" ]] || echo "bake: $*" > /dev/console; }
+# EC2 captures the serial port (ttyS0) as the console output bake.sh reads.
+say() {
+  echo "bake: $*"
+  [[ -n "$IN_CONTAINER" ]] || { echo "bake: $*" > /dev/ttyS0; echo "bake: $*" > /dev/console; } 2>/dev/null || true
+}
+# Reports to SSM (/build/bake/result/<instance-id>) through the bake role; bake.sh reads it.
+# Runs from /run: the clean-up deletes /opt/bake before the final report.
+REPORTER=/run/bake-report.py
+[[ -n "$IN_CONTAINER" ]] || cp "$FILES/report.py" "$REPORTER"
+report() { [[ -n "$IN_CONTAINER" ]] || python3 "$REPORTER" "$@" || true; }
 finish() {
   local result="$1"
   say "$result"
+  if [[ "$result" == BAKE-OK ]]; then report OK; else report FAILED /var/log/cloud-init-output.log; fi
   [[ -n "$IN_CONTAINER" ]] && exit "$([[ "$result" == BAKE-OK ]] && echo 0 || echo 1)"
-  sync; poweroff
+  # Give EC2's console capture time to pick up the result before the power goes.
+  sync; sleep 20; poweroff
 }
 trap 'finish "BAKE-FAILED at line $LINENO"' ERR
+report STARTED
 
 say "packages"
 export DEBIAN_FRONTEND=noninteractive

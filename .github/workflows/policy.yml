@@ -117,8 +117,9 @@ jobs:
         run: python3 -I part1-godmode/tests/regressions.py
 
       - name: shellcheck the scripts
-        working-directory: part1-godmode
-        run: shellcheck -x ./*.sh
+        run: |
+          shellcheck -x part1-godmode/*.sh
+          find part2-runner -name '*.sh' -print0 | xargs -0 -r shellcheck -x
 
       - name: Offline allow/deny checks
         run: |

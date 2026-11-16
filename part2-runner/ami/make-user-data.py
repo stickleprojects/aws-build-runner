@@ -19,7 +19,9 @@ def entry(src: Path, dest: str, mode: str) -> str:
 def main() -> int:
     files = [entry(HERE / "setup.sh", "/opt/bake/setup.sh", "0755")]
     for f in sorted((HERE / "files").iterdir()):
-        files.append(entry(f, f"/opt/bake/files/{f.name}", "0755" if f.suffix == ".sh" else "0644"))
+        if not f.is_file() or f.name.startswith("."):
+            continue  # skip __pycache__ and the like
+        files.append(entry(f, f"/opt/bake/files/{f.name}", "0755" if f.suffix in (".sh", ".py") else "0644"))
     text = ("#cloud-config\n"
             "# Bakes the build-runner AMI; see part2-runner/ami/setup.sh.\n"
             "write_files:\n" + "".join(files) +

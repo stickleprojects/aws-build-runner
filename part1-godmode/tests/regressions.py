@@ -13,7 +13,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 P1 = ROOT / "part1-godmode"
-SHELL_SCRIPTS = sorted(P1.glob("*.sh"))
+P2 = ROOT / "part2-runner"
+SHELL_SCRIPTS = sorted(P1.glob("*.sh")) + sorted(P2.rglob("*.sh"))
 PY_SCRIPTS = sorted(P1.glob("*.py")) + sorted((P1 / "tests").glob("*.py"))
 WORKFLOWS = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
 IAM_TAG_VALUE = re.compile(r"[\w\s_.:/=+\-@]*", re.ASCII)
@@ -165,6 +166,43 @@ def every_enforced_ec2_create_has_its_resource_types():
             if action.startswith("ec2:") and action not in verify.EC2_CREATES:
                 problems.append(f"{action} is enforced but missing from verify.EC2_CREATES")
     return problems
+
+
+@rule("2026-11-16: two real AMI bakes reported nothing: EC2's console capture came back empty, so bake.sh never "
+      "saw BAKE-OK and made no AMI, with no clue why. The result now goes through SSM (files/report.py).")
+def bake_result_comes_back_through_ssm():
+    setup = (P2 / "ami" / "setup.sh").read_text()
+    bake = (P2 / "ami" / "bake.sh").read_text()
+    problems = []
+    if not (P2 / "ami" / "files" / "report.py").is_file():
+        problems.append("files/report.py is missing")
+    if not re.search(r"^report STARTED", setup, re.M):
+        problems.append("setup.sh doesn't report STARTED first (proves the channel before anything else)")
+    if "report FAILED" not in setup:
+        problems.append("setup.sh doesn't report FAILED with its log")
+    if "/build/bake/result/" not in bake or "--iam-instance-profile" not in bake:
+        problems.append("bake.sh doesn't launch with the bake role and read /build/bake/result/<instance>")
+    if re.search(r"grep .*BAKE-OK.*console|console.*BAKE-OK", bake):
+        problems.append("bake.sh relies on the console output again")
+    return problems
+
+
+@rule("2026-11-16: make-user-data.py tried to pack a __pycache__ folder left in files/ by a test import.")
+def user_data_packs_only_regular_files():
+    text = (P2 / "ami" / "make-user-data.py").read_text()
+    return [] if "is_file()" in text else ["make-user-data.py packs everything in files/, not only regular files"]
+
+
+@rule("2026-11-16: the third bake reported STARTED, then nothing: the clean-up deleted /opt/bake (and report.py "
+      "with it) before the final OK report, so a probably good bake made no AMI.")
+def bake_reporter_survives_the_cleanup():
+    setup = (P2 / "ami" / "setup.sh").read_text()
+    m = re.search(r"^REPORTER=(\S+)", setup, re.M)
+    if not m:
+        return ["setup.sh doesn't copy report.py to a fixed REPORTER path"]
+    removed = re.findall(r"rm -rf ([^\n]+)", setup)
+    hits = [r for r in removed for path in r.split() if m.group(1).startswith(path.rstrip("/*")) and path.startswith("/")]
+    return [f"the clean-up ({hits[0]}) deletes the reporter {m.group(1)}"] if hits else []
 
 
 def main():
