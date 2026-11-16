@@ -113,7 +113,8 @@ aws ssm get-command-invocation --command-id "$cmd" --instance-id "$instance" --q
 [[ "$status" == Success ]] || { echo "Smoke test FAILED (${status})" >&2; exit 1; }
 echo "Smoke test passed: ${ami}"
 if [[ "$ami" == "$candidate" ]]; then
-  aws ssm put-parameter --name /build/runner/ami-id --type String --value "$ami" --overwrite \
+  # aws:ec2:image: the runner launch template resolves it at each launch (resolve:ssm), and only takes that type.
+  aws ssm put-parameter --name /build/runner/ami-id --type String --data-type aws:ec2:image --value "$ami" --overwrite \
     --description "Current build-runner AMI: baked by bake.sh, passed smoke-test.sh" >/dev/null
   aws ssm put-parameter --name /build/runner/manifest --type String --overwrite \
     --value "$(aws ssm get-parameter --name /build/runner/candidate-manifest --query Parameter.Value --output text)" \

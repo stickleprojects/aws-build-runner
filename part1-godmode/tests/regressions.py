@@ -392,6 +392,18 @@ def text_lists_are_space_separated_before_membership_tests():
     return problems
 
 
+@rule("2026-11-16: the runner launch template couldn't use /build/runner/ami-id (resolve:ssm): it was saved as plain "
+      "text, and launch templates only resolve parameters of data type aws:ec2:image.")
+def current_ami_parameter_is_an_image_type():
+    problems = []
+    for path in SHELL_SCRIPTS:
+        text = path.read_text().replace("\\\n", " ")
+        for line in text.splitlines():
+            if re.search(r"put-parameter --name /build/runner/ami-id\b", line) and "--data-type aws:ec2:image" not in line:
+                problems.append(f"{path.relative_to(ROOT)}: sets /build/runner/ami-id without --data-type aws:ec2:image")
+    return problems
+
+
 def main():
     failed = 0
     for name, incident, fn in RULES:

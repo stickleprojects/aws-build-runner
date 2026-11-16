@@ -10,9 +10,9 @@ It is built in a normal Claude session as Claude's IAM user, after
 ## In one picture
 
 ```
-job queued on GitHub ──webhook──> Lambda ──> spot t3.large from a baked AMI
-                                               runs one job (just-in-time runner), then terminates
-reaper every 15 min ──> terminates anything older than 90 min
+job queued on GitHub ──webhook──> Lambda ──> launcher ──> spot c7i.xlarge from the baked AMI
+                                                             runs one job (just-in-time runner), terminates
+every 5 min ──> launcher: catches missed webhooks; reaps runners > 90 min, or idle 20 min
 ```
 
 - **Switch over**: set the spellbound3d repo variable `SDLC_RUNNER` to `aws-spellbound3d`.
@@ -31,7 +31,9 @@ reaper every 15 min ──> terminates anything older than 90 min
 - [x] **Weekly rebuild** (`.github/workflows/ami.yml`): Monday 03:00 Sydney, or by hand. Bake → smoke test → promote →
       prune (keep 3) → GitHub Release with IMAGE.md and manifest.json. Role `/claude/build-runner-ami-ci` via OIDC (`ci/ami-ci-role.sh`).
       **The latest image's contract is always the latest [release](https://github.com/stickleprojects/aws-build-runner/releases/latest).**
-- [ ] Webhook and launcher Lambda, per-job instance types, reaper: the runner itself.
+- [x] **The runner** (`stack/deploy.sh`): webhook and launcher Lambdas, launch template, 5-minute reconcile and reaper,
+      at most 4 runners at once. Deployed and tested live (spot launch → runner online on GitHub in ≈ 40 s).
+- [ ] spellbound3d webhook, a test workflow, then the cut-over (PLAN.md steps 4–5).
 
 | Path | Purpose |
 |---|---|
@@ -45,3 +47,9 @@ reaper every 15 min ──> terminates anything older than 90 min
 | `ami/prune-amis.sh` | Keep the newest 3 AMIs (always the current one); delete the rest and their snapshots |
 | `ci/ami-ci-role.sh` | The pipeline's AWS role (Claude creates it: `/claude/`, boundary, tagged) |
 | `ci/publish-release.sh` | Publish the current image as a GitHub Release: what changed, then IMAGE.md |
+| `stack/deploy.sh` | Deploy or update the runner (`--delete` tears it down); runs `test_lambda.py` first |
+| `stack/template.yaml`, `stack/artifacts.yaml` | Stack `build-runner`; stack `build-runner-artifacts` (the Lambda zip bucket) |
+| `stack/lambda/runner.py` | The webhook and the launcher (reconcile, launch with spot fallback, reap) |
+| `stack/lambda/ghapp.py` | GitHub App sign-in with the standard library only (RS256 JWT) |
+| `stack/runner-role.sh` | The instances' role (SSM agent only); outside the stack, as CloudFormation can't tag instance profiles |
+| `stack/test_lambda.py` | Offline tests: signatures, filtering, planning, fallback, the lock (CI runs them) |
