@@ -243,4 +243,4 @@ changes:
     approved: 2026-11-16 Kieron
   - date: 2026-11-16
     what: The budget stop also covers the runner launcher's role (build-runner-launcher), so at the limit it can't launch runner instances either (the org-wide stop already did)
-    approved: pending
+    approved: 2026-11-16 Kieron
