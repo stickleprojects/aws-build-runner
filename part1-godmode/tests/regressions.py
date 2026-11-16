@@ -222,8 +222,9 @@ def runner_service_has_no_ordering_cycle():
     return []
 
 
-@rule("2026-11-16 (Kieron): the automatic stop must cover all costs: the budget counts gross cost across the "
-      "whole account, and budget-stop denies starting or creating anything billable.")
+@rule("2026-11-16 (Kieron): no AWS bill over £30, and at the limit everything stops spending: the budget counts "
+      "gross cost across the whole account, budget-stop blocks anything new, and the kill switch terminates instances "
+      "and deletes the runner AMIs. Claude can't touch the kill switch.")
 def budget_stop_covers_everything():
     problems = []
     stop = json.loads((P1 / "bootstrap" / "budget-stop-policy.json").read_text())
@@ -239,6 +240,23 @@ def budget_stop_covers_everything():
         problems.append("apply.sh creates the budget without IncludeCredit false")
     if "--approval-model AUTOMATIC" not in script:
         problems.append("the budget action isn't automatic")
+    # Kieron (2026-11-16): at the limit, everything must stop spending, not just new things.
+    import yaml
+    p = yaml.safe_load((P1 / "policy.yaml").read_text())
+    ks = ((p.get("account_settings") or {}).get("budget_stop") or {}).get("kill_switch") or {}
+    if not (ks.get("terminate_instances") and ks.get("delete_runner_amis")):
+        problems.append("policy.yaml budget_stop.kill_switch no longer terminates instances and deletes runner AMIs")
+    code = (P1 / "bootstrap" / "kill_switch.py").read_text()
+    for call in ("terminate_instances", "cancel_spot_instance_requests", "deregister_image", "delete_snapshot"):
+        if call not in code:
+            problems.append(f"kill_switch.py no longer calls {call}")
+    if "create-subscriber" not in script or "SubscriptionType=SNS" not in script:
+        problems.append("the budget no longer notifies the kill switch")
+    protected = [r["arn"] for r in (p.get("protected") or {}).get("resources", [])]
+    if not any("function:guardrail-" in a for a in protected):
+        problems.append("the kill switch (guardrail-* Lambda) isn't protected from Claude in policy.yaml")
+    if int((p.get("account_settings") or {}).get("budget_usd", 999)) > 30:
+        problems.append("budget_usd is above US$30: no headroom under the £30 (≈US$38) bill ceiling for billing lag")
     return problems
 
 

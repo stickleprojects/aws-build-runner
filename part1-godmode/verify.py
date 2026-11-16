@@ -197,6 +197,20 @@ def build_cases(p, cfg):
         add(Case(action, "denied", runner, g))
     add(Case("budgets:ExecuteBudgetAction", "denied", f"arn:aws:budgets::{acct}:budget/guardrail-monthly/action/*", g))
     add(Case("budgets:DeleteBudgetAction", "denied", f"arn:aws:budgets::{acct}:budget/guardrail-monthly/action/*", g))
+    # The kill switch (Lambda guardrail-kill-switch, Sydney): Claude may manage its own Lambdas there, but not
+    # this one (policy.yaml "protected"). Nor its SNS trigger (SNS isn't approved) or its role.
+    kill = f"arn:aws:lambda:{home}:{acct}:function:guardrail-kill-switch"
+    for action in ("lambda:UpdateFunctionCode", "lambda:UpdateFunctionConfiguration", "lambda:DeleteFunction",
+                   "lambda:RemovePermission", "lambda:PutFunctionConcurrency", "lambda:InvokeFunction"):
+        add(Case(action, "denied", kill, home))
+    add(Case("lambda:UpdateFunctionCode", "allowed", f"arn:aws:lambda:{home}:{acct}:function:build-runner-webhook", home))
+    topic = f"arn:aws:sns:{home}:{acct}:guardrail-budget-stop"
+    for action in ("sns:Unsubscribe", "sns:DeleteTopic", "sns:SetTopicAttributes", "sns:Subscribe"):
+        add(Case(action, "denied", topic, home))
+    ks_role = f"arn:aws:iam::{acct}:role/guardrails/budget-kill-switch"
+    for action in ("iam:PutRolePolicy", "iam:UpdateAssumeRolePolicy", "sts:AssumeRole"):
+        add(Case(action, "denied", ks_role, g))
+    add(Case("iam:PassRole", "denied", ks_role, g, **{"iam:PassedToService": "lambda.amazonaws.com"}))
     add(Case("iam:CreateOpenIDConnectProvider", "denied", f"arn:aws:iam::{acct}:oidc-provider/token.actions.githubusercontent.com", g))
 
     if rg:

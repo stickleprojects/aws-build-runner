@@ -192,18 +192,34 @@ resource_groups:
   untag_actions: ["ec2:DeleteTags", "lambda:UntagResource", "logs:UntagResource", "logs:UntagLogGroup",
                   "cloudformation:UntagResource", "iam:UntagRole", "iam:UntagPolicy", "iam:UntagInstanceProfile"]
 
+# Specific resources that Claude, and every role it creates, may not touch, whatever the approved
+# services allow. Each becomes an explicit deny in the policy and the boundary.
+protected:
+  approved: pending
+  resources:
+    - name: The budget kill switch
+      why: Claude mustn't be able to change, disable or remove the automatic stop
+      actions: ["lambda:*"]
+      arn: "arn:aws:lambda:*:{{ACCOUNT_ID}}:function:guardrail-*"
+
 # Applied by apply.sh (godmode), outside the policy. Claude can't change them.
 account_settings:
-  budget_usd: 30
+  # Kieron's ceiling is a bill of at most £30 (≈US$38). AWS bills in US$ and its billing data lags by up
+  # to about a day, so the stop fires at US$25 (≈£20), leaving room for the lag and anything still billing.
+  budget_usd: 25
   # The budget counts everything in the account (every service: instances, logs, snapshots, data transfer…),
   # gross: credits and refunds don't offset it. Set by apply.sh and bootstrap-budget-stop.sh.
   budget_counts_gross: true
-  # Automatic stop: at this % of ACTUAL spend, AWS Budgets attaches guardrails/budget-stop (no new billable
-  # resources) to Claude's user and these /claude/ roles. Godmode: bootstrap-budget-stop.sh (rerun when the
-  # list changes; roles that don't exist yet are skipped).
+  # Automatic stop at this % of ACTUAL spend (godmode: bootstrap-budget-stop.sh; rerun when roles change):
+  #  - AWS Budgets attaches guardrails/budget-stop (nothing new and billable) to Claude's user and these
+  #    /claude/ roles (ones that don't exist yet are skipped)
+  #  - the kill switch (Lambda guardrail-kill-switch, Sydney) stops what's already spending
   budget_stop:
     at_percent: 100
     roles: [build-runner-bake]
+    kill_switch:
+      terminate_instances: true      # every instance in the account, and open spot requests
+      delete_runner_amis: true       # resource-group=build-runner AMIs and snapshots (the pipeline rebuilds them)
   block_public_access: [S3 (whole account), AMIs, EBS snapshots]
   ebs_encryption_by_default: true
 
@@ -218,5 +234,5 @@ changes:
     what: Read-only listing becomes Sydney only (was every region); IAM reads stay global, as IAM has no regions
     approved: 2026-11-16 Kieron
   - date: 2026-11-16
-    what: Automatic stop at 100% of the monthly budget (guardrails/budget-stop on Claude's user and roles); budget counts gross cost
+    what: "Budget US$25 (≈£20; the ceiling is a £30 bill), counted gross. At 100%: AWS Budgets blocks anything new for Claude's user and roles, and the kill switch terminates every instance and deletes the runner AMIs. Claude can't touch the kill switch"
     approved: pending
