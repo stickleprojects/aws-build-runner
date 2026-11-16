@@ -1,0 +1,300 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  build-runner: on-demand GitHub Actions runner for stickleprojects/spellbound3d. A webhook Lambda
+  (public function URL, HMAC-checked) hands queued jobs to a launcher Lambda, which starts one spot
+  instance per job from the current baked AMI; a 5-minute schedule reconciles and reaps.
+  Deployed by part2-runner/stack/deploy.sh as Claude's IAM user.
+
+Parameters:
+  # No defaults: deploy.sh passes every one, from config.json (cloudformation deploy would otherwise keep
+  # the previous value, so a changed default never reached the stack: 2026-11-16).
+  CodeBucket: {Type: String, Description: "Bucket holding the Lambda zip (stack build-runner-artifacts)"}
+  CodeKey: {Type: String, Description: "Key of the Lambda zip (lambda/<sha256>.zip)"}
+  VpcId: {Type: "AWS::EC2::VPC::Id"}
+  Subnets: {Type: CommaDelimitedList, Description: "Public subnets (the default VPC's); no NAT gateway"}
+  MaxRunners: {Type: Number, MinValue: 1, MaxValue: 8,
+               Description: "Most runner instances alive at once (4 x c7i.xlarge = 16 of the 32-vCPU quota)"}
+  Pools:
+    Type: String
+    Description: >-
+      Runner label -> class (light/heavy) and instance types (JSON), tried in order: every spot type, then
+      on-demand. One size per label, because GitHub gives a queued job to any idle runner with its labels.
+  MaxAgeMinutes: {Type: Number, Description: "The reaper terminates runner instances older than this"}
+  IdleMinutes: {Type: Number, Description: "...and runners idle this long with nothing queued"}
+  Repo: {Type: String}
+
+Resources:
+  # ------------------------------------------------------------------ runner instances
+  RunnerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: build-runner
+      GroupDescription: build-runner instances - no inbound at all; outbound for GitHub and packages
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - {IpProtocol: "-1", CidrIp: 0.0.0.0/0, Description: "GitHub, package mirrors, Systems Manager"}
+      Tags: [{Key: resource-group, Value: build-runner}, {Key: Name, Value: build-runner}]
+
+  # The instances' role and instance profile (build-runner-instance) come from runner-role.sh:
+  # CloudFormation can't tag an instance profile at creation, and the policy requires the tag.
+
+  LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: build-runner
+      TagSpecifications:
+        - ResourceType: launch-template
+          Tags: [{Key: resource-group, Value: build-runner}]
+      LaunchTemplateData:
+        # The current image, resolved at each launch: the weekly pipeline promotes a new one by
+        # updating this parameter, with no stack change.
+        ImageId: resolve:ssm:/build/runner/ami-id
+        IamInstanceProfile: {Arn: !Sub "arn:aws:iam::${AWS::AccountId}:instance-profile/claude/build-runner-instance"}
+        SecurityGroupIds: [!Ref RunnerSecurityGroup]
+        InstanceInitiatedShutdownBehavior: terminate
+        MetadataOptions: {HttpTokens: required, HttpEndpoint: enabled, HttpPutResponseHopLimit: 1}
+        BlockDeviceMappings:
+          - DeviceName: /dev/sda1
+            Ebs: {VolumeSize: 30, VolumeType: gp3, DeleteOnTermination: true, Encrypted: true}
+
+  # ------------------------------------------------------------------ logs (14 days)
+  WebhookLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/build-runner-webhook
+      RetentionInDays: 14
+      Tags: [{Key: resource-group, Value: build-runner}]
+  LauncherLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: /aws/lambda/build-runner-launcher
+      # 60 days, not 14: the daily usage report adds up the whole month from these logs (≈ 10 MB/month;
+      # 30 is too short for a 31-day month, and CloudWatch allows only fixed values).
+      RetentionInDays: 60
+      Tags: [{Key: resource-group, Value: build-runner}]
+
+  # ------------------------------------------------------------------ webhook
+  WebhookRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: build-runner-webhook
+      Path: /claude/
+      PermissionsBoundary: !Sub "arn:aws:iam::${AWS::AccountId}:policy/guardrails/claude-boundary"
+      Description: "build-runner webhook: read the webhook secret, start the launcher, write its logs"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: [{Effect: Allow, Principal: {Service: lambda.amazonaws.com}, Action: sts:AssumeRole}]
+      Policies:
+        - PolicyName: webhook
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: ReadWebhookSecret
+                Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/build/github/webhook-secret"
+              - Sid: DecryptItThroughSsmOnly
+                Effect: Allow
+                Action: kms:Decrypt
+                Resource: "*"
+                Condition: {StringEquals: {"kms:ViaService": !Sub "ssm.${AWS::Region}.amazonaws.com"}}
+              - Sid: StartTheLauncher
+                Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt Launcher.Arn
+              - Sid: OwnLogs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub "${WebhookLogs.Arn}"
+      Tags: [{Key: resource-group, Value: build-runner}]
+
+  Webhook:
+    Type: AWS::Lambda::Function
+    DependsOn: WebhookLogs
+    Properties:
+      FunctionName: build-runner-webhook
+      Description: "GitHub workflow_job webhook: checks the signature, hands queued spellbound3d jobs to the launcher"
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: runner.webhook
+      MemorySize: 128
+      Timeout: 10
+      Role: !GetAtt WebhookRole.Arn
+      Code: {S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey}
+      Environment:
+        Variables: {REPO: !Ref Repo, POOLS: !Ref Pools, LAUNCHER_FUNCTION: !Ref Launcher}
+      Tags: [{Key: resource-group, Value: build-runner}]
+
+  WebhookUrl:
+    Type: AWS::Lambda::Url
+    Properties:
+      TargetFunctionArn: !GetAtt Webhook.Arn
+      # GitHub can't sign AWS requests; every request is checked against the webhook secret instead.
+      AuthType: NONE
+
+  WebhookUrlPublic:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Webhook
+      Action: lambda:InvokeFunctionUrl
+      Principal: "*"
+      FunctionUrlAuthType: NONE
+
+  WebhookUrlInvoke:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Webhook
+      Action: lambda:InvokeFunction
+      Principal: "*"
+      InvokedViaFunctionUrl: true
+
+  # ------------------------------------------------------------------ launcher (and reaper)
+  LauncherRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: build-runner-launcher
+      Path: /claude/
+      PermissionsBoundary: !Sub "arn:aws:iam::${AWS::AccountId}:policy/guardrails/claude-boundary"
+      Description: "build-runner launcher: start and reap runner instances from the build-runner launch template"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement: [{Effect: Allow, Principal: {Service: lambda.amazonaws.com}, Action: sts:AssumeRole}]
+      Policies:
+        - PolicyName: launcher
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: LaunchRunnersTaggedAndOnlyApprovedTypes
+                Effect: Allow
+                Action: ec2:RunInstances
+                Resource: [!Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*",
+                           !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:volume/*"]
+                Condition:
+                  StringEquals: {"aws:RequestTag/resource-group": build-runner, "aws:RequestTag/build-runner-role": runner}
+              - Sid: LaunchOnlyFromTheTemplateIntoOurGroupAndSubnets
+                Effect: Allow
+                Action: ec2:RunInstances
+                Resource:
+                  - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:launch-template/${LaunchTemplate}"
+                  - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:security-group/${RunnerSecurityGroup.GroupId}"
+                  - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:subnet/*"
+                  - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/*"
+                  - !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:spot-instances-request/*"
+                  - !Sub "arn:aws:ec2:${AWS::Region}::image/*"
+              - Sid: TagOnlyWhileLaunching
+                Effect: Allow
+                Action: ec2:CreateTags
+                Resource: [!Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*",
+                           !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:volume/*",
+                           !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:spot-instances-request/*"]
+                Condition: {StringEquals: {"ec2:CreateAction": RunInstances}}
+              - Sid: TerminateOnlyRunners
+                Effect: Allow
+                Action: ec2:TerminateInstances
+                Resource: !Sub "arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:instance/*"
+                Condition:
+                  StringEquals: {"aws:ResourceTag/resource-group": build-runner, "aws:ResourceTag/build-runner-role": runner}
+              - Sid: SeeInstances
+                Effect: Allow
+                Action: ec2:DescribeInstances
+                Resource: "*"
+              - Sid: GiveRunnersTheirRole
+                Effect: Allow
+                Action: iam:PassRole
+                Resource: !Sub "arn:aws:iam::${AWS::AccountId}:role/claude/build-runner-instance"
+                Condition: {StringEquals: {"iam:PassedToService": ec2.amazonaws.com}}
+              - Sid: ReadTheCurrentImageAndTheAppKey
+                Effect: Allow
+                Action: [ssm:GetParameter, ssm:GetParameters]
+                Resource:
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/build/runner/ami-id"
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/build/github/app-id"
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/build/github/app-private-key"
+              - Sid: DecryptItThroughSsmOnly
+                Effect: Allow
+                Action: kms:Decrypt
+                Resource: "*"
+                Condition: {StringEquals: {"kms:ViaService": !Sub "ssm.${AWS::Region}.amazonaws.com"}}
+              - Sid: OneRunAtATimeLock
+                Effect: Allow
+                Action: [ssm:PutParameter, ssm:GetParameter, ssm:DeleteParameter]
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/build/runner/launcher-lock"
+              - Sid: OwnLogs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !Sub "${LauncherLogs.Arn}"
+      Tags: [{Key: resource-group, Value: build-runner}]
+
+  Launcher:
+    Type: AWS::Lambda::Function
+    DependsOn: LauncherLogs
+    Properties:
+      FunctionName: build-runner-launcher
+      Description: "Reconciles queued spellbound3d jobs with runner instances (one run at a time); reaps on schedule"
+      Runtime: python3.13
+      Architectures: [arm64]
+      Handler: runner.launcher
+      MemorySize: 256
+      Timeout: 120
+      Role: !GetAtt LauncherRole.Arn
+      Code: {S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey}
+      Environment:
+        Variables:
+          REPO: !Ref Repo
+          POOLS: !Ref Pools
+          MAX_RUNNERS: !Ref MaxRunners
+          MAX_AGE_MINUTES: !Ref MaxAgeMinutes
+          IDLE_MINUTES: !Ref IdleMinutes
+          SUBNETS: !Join [",", !Ref Subnets]
+          LAUNCH_TEMPLATE_ID: !Ref LaunchTemplate
+      Tags: [{Key: resource-group, Value: build-runner}]
+
+  LauncherAsync:
+    Type: AWS::Lambda::EventInvokeConfig
+    Properties:
+      FunctionName: !Ref Launcher
+      Qualifier: $LATEST
+      MaximumRetryAttempts: 2
+      MaximumEventAgeInSeconds: 900
+
+  # ------------------------------------------------------------------ every 5 minutes: reconcile and reap
+  ScheduleRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: build-runner-schedule
+      Path: /claude/
+      PermissionsBoundary: !Sub "arn:aws:iam::${AWS::AccountId}:policy/guardrails/claude-boundary"
+      Description: "build-runner schedule: start the launcher, nothing else"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: {Service: scheduler.amazonaws.com}
+            Action: sts:AssumeRole
+            Condition: {StringEquals: {"aws:SourceAccount": !Ref "AWS::AccountId"}}
+      Policies:
+        - PolicyName: invoke-launcher
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement: [{Effect: Allow, Action: lambda:InvokeFunction, Resource: !GetAtt Launcher.Arn}]
+      Tags: [{Key: resource-group, Value: build-runner}]
+
+  Schedule:
+    Type: AWS::Scheduler::Schedule
+    Properties:
+      Name: build-runner-reconcile
+      Description: "Every 5 min: launch for queued jobs a webhook missed; reap old and idle runners"
+      ScheduleExpression: rate(5 minutes)
+      FlexibleTimeWindow: {Mode: "OFF"}
+      Target:
+        Arn: !GetAtt Launcher.Arn
+        RoleArn: !GetAtt ScheduleRole.Arn
+        Input: '{"source": "schedule"}'
+        RetryPolicy: {MaximumRetryAttempts: 0}
+
+Outputs:
+  WebhookUrl:
+    Description: "Point the spellbound3d webhook (Workflow jobs events only) here"
+    Value: !GetAtt WebhookUrl.FunctionUrl
+  LaunchTemplateId:
+    Value: !Ref LaunchTemplate

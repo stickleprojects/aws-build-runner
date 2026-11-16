@@ -68,6 +68,11 @@ t3's CPU credits made timings flaky. So jobs get fixed-performance c7i types, ch
 | Lambdas, SSM, Logs, data out | mostly free tier | < US$1 | < US$1 |
 | **Total** | | **≈ US$24–25** | **≈ US$13** |
 
+**Per label, not per job** (Kieron, 2026-11-16): GitHub gives a queued job to any idle runner with its
+labels, so check jobs get their own label (`aws-spellbound3d-check`), being agreed with spellbound3d. These
+figures hold once that's in place. Without it, the only safe choice would be 4 vCPU for every job:
+≈ US$31 at the busiest load (over the stop), ≈ US$16 at half.
+
 **Watch out:** at the **busiest observed load all month**, this lands at the **US$25 budget**, so the
 automatic stop would fire near month end. The "busiest load" was a single day of 100 runs in 11.5
 hours; a typical month should be well under. If months really run that hot, the options are:

@@ -1,0 +1,29 @@
+{
+  "Repo": "stickleprojects/spellbound3d",
+  "MaxRunners": 4,
+  "MaxAgeMinutes": 90,
+  "IdleMinutes": 20,
+  "Pools": {
+    "aws-spellbound3d": {
+      "class": "light",
+      "spot": [
+        "c7i.large",
+        "t3.large"
+      ],
+      "on_demand": [
+        "c7i.large"
+      ]
+    },
+    "aws-spellbound3d-check": {
+      "class": "heavy",
+      "spot": [
+        "c7i.xlarge",
+        "c6i.xlarge",
+        "m7i.xlarge"
+      ],
+      "on_demand": [
+        "c7i.xlarge"
+      ]
+    }
+  }
+}
