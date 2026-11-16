@@ -14,6 +14,10 @@ Needs iam:SimulatePrincipalPolicy / iam:SimulateCustomPolicy (the laptop user ha
 """
 import argparse
 import json
+import random
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 import subprocess
 import sys
 from collections import defaultdict
@@ -25,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))  # -I leaves the script
 import config  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
+PARALLEL = 8                # simulator calls at once
 OTHER_REGION = "eu-west-2"
 GLOBAL_REGION = "us-east-1"  # where IAM, STS and billing requests are evaluated
 ADMIN = json.dumps({"Version": "2012-10-17", "Statement": [{"Effect": "Allow", "Action": "*", "Resource": "*"}]})
@@ -230,11 +235,31 @@ def context_entries(region, ctx):
     return entries
 
 
-def aws(*args):
-    r = subprocess.run(["aws", *args, "--output", "json"], capture_output=True, text=True)
-    if r.returncode:
-        raise SystemExit(f"aws {' '.join(args[:2])} failed:\n{r.stderr}")
-    return json.loads(r.stdout)
+def _whoami():
+    r = subprocess.run(["aws", "sts", "get-caller-identity", "--query", "Arn", "--output", "text"],
+                       capture_output=True, text=True)
+    return r.stdout.strip() or "unknown (credentials missing or expired?)"
+
+
+def aws(*args, retries=6):
+    """Run an AWS CLI command; retry with backoff when IAM throttles (calls run in parallel)."""
+    for attempt in range(retries):
+        r = subprocess.run(["aws", *args, "--output", "json"], capture_output=True, text=True)
+        if r.returncode == 0:
+            return json.loads(r.stdout)
+        if "Throttling" in r.stderr or "Rate exceeded" in r.stderr:
+            time.sleep(min(2 ** attempt, 20) + random.random())
+            continue
+        message = f"aws {' '.join(args[:2])} failed:\n{r.stderr}"
+        if "expired" in r.stderr.lower() or "ExpiredToken" in r.stderr:
+            message += ("\nThe credentials have expired. Godmode credentials exported from CloudShell last about "
+                        "an hour: export fresh ones (aws configure export-credentials --format env) and run again.")
+        elif "AccessDenied" in r.stderr and "Simulate" in r.stderr:
+            message += (f"\nRunning as: {_whoami()}\n"
+                        "Before part 1 is applied only an admin can use the simulator: run this in the "
+                        "terminal with the exported godmode credentials. After that, Claude's user can too.")
+        raise SystemExit(message)
+    raise SystemExit(f"aws {' '.join(args[:2])}: still throttled after {retries} attempts")
 
 
 def live_policy(arn):
@@ -250,7 +275,11 @@ def simulate(who, source, cases):
         groups[(c.resource, c.region, tuple(sorted((k, tuple(v) if isinstance(v, list) else v)
                                                    for k, v in c.ctx.items())))].append(c)
     results = {}
-    for (resource, region, ctx), group in groups.items():
+    done = 0
+    lock = threading.Lock()
+
+    def run(item):
+        (resource, region, ctx), group = item
         actions = sorted({c.action for c in group})
         common = ["--action-names", *actions, "--resource-arns", resource,
                   "--context-entries", *context_entries(region, {k: list(v) if isinstance(v, tuple) else v
@@ -261,9 +290,27 @@ def simulate(who, source, cases):
             extra = ["--permissions-boundary-policy-input-list", source[2]] if source[2] else []
             out = aws("iam", "simulate-custom-policy", "--policy-input-list", *source[1], *extra, *common)
         decisions = {r["EvalActionName"]: r["EvalDecision"] for r in out["EvaluationResults"]}
-        for c in group:
-            results[id(c)] = decisions[c.action]
+        nonlocal done
+        with lock:
+            for c in group:
+                results[id(c)] = decisions[c.action]
+            done += 1
+            _progress(f"simulating {who}: {done}/{len(groups)} calls")
+
+    # Calls run in parallel (one AWS CLI process each); aws() retries if IAM throttles.
+    with ThreadPoolExecutor(max_workers=PARALLEL) as pool:
+        list(pool.map(run, groups.items()))
+    _progress(f"simulating {who}: {len(groups)}/{len(groups)} calls, done", end=True)
     return results
+
+
+def _progress(text, end=False):
+    """Progress on stderr, so stdout (the results) stays the same and can be piped."""
+    if sys.stderr.isatty():
+        sys.stderr.write("\r" + text + ("\n" if end else ""))
+    elif end:
+        sys.stderr.write(text + "\n")
+    sys.stderr.flush()
 
 
 # --offline: a small local IAM evaluator, enough for the statements build-policies.py writes
