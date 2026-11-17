@@ -25,5 +25,10 @@
         "c7i.xlarge"
       ]
     }
+  },
+  "Curfew": {
+    "start": "22:00",
+    "end": "07:00",
+    "tz": "Australia/Sydney"
   }
 }

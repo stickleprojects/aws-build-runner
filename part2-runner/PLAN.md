@@ -80,6 +80,12 @@ a review-sized Claude run 67 s at ≈ 280 MB; plenty of headroom. The launcher p
 one cap for both. Until spellbound3d has the second label, nothing cuts over. The labels and types are the
 stack parameter `Pools`.
 
+- **Nightly curfew (Kieron, 2026-11-17): no runners 22:00-07:00 Sydney.** At 21:00 a notice on the *AWS runner
+  curfew* issue mentions him. `/extend 1h` or `/extend 2h` pushes the stop back, with a new notice an hour before.
+  No answer: the launcher terminates every runner (running jobs are killed, his choice) and launches none; queued
+  jobs wait and start at 07:00. Overrides live in one SSM parameter, `/build/runner/curfew`. The rules are
+  `stack/lambda/curfew.py`, shared by the launcher, `.github/workflows/curfew.yml` and the `runner-curfew` skill.
+  The weekly image rebuild moved to Monday 08:30 (07:30 in winter) so it stays outside the curfew.
 - **No pre-baked Godot import cache** (`game/.godot`): stale caches have hidden failures in spellbound3d.
   Every job imports cold. An exact-match `actions/cache` is spellbound3d's proposal, and up to Kieron.
 - **8 vCPU** (c7i.2xlarge, ~US$0.194/h spot) is parked until spellbound3d's parallel gdUnit (0022) exists.

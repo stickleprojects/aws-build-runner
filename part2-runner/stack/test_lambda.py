@@ -297,5 +297,62 @@ except ValueError:
     pass
 check("lock: released on failure too", runner.LOCK not in ssm.params)
 
+# --- the curfew, through launcher() end to end (fakes for GitHub, EC2, the lock and the clock)
+import contextlib  # noqa: E402
+import curfew as curfew_mod  # noqa: E402
+
+calls = {"terminated": [], "launched": [], "removed": []}
+runner.lock = lambda *a, **k: contextlib.nullcontext()
+runner.ghapp.installation_token = lambda *a, **k: "tok"
+runner.ghapp.revoke = lambda *a, **k: None
+runner.GitHub = lambda token: type("G", (), {"paged": lambda self, *a: [{"name": "aws-1-x", "id": 3, "busy": True,
+                                                                         "status": "online"}]})()
+runner.queued_jobs = lambda gh: [{"id": 11, "pool": L, "created_at": 0}]
+runner.live_instances = lambda: [{"id": "i-1", "name": "aws-1-x", "runner_id": 3, "job_id": "1", "pool": L,
+                                  "spot": True, "type": "c7i.large", "launched": time.time() - 60}]
+runner.terminate = lambda ids: calls["terminated"].extend(ids)
+runner.remove_runner = lambda gh, rid: calls["removed"].append(rid) or False
+runner.launch = lambda gh, job_id, pool: calls["launched"].append(job_id)
+params = {"/build/github/app-id": "1", "/build/github/app-private-key": "k"}
+def fresh(n):
+    return params[n] if n in params else (_ for _ in ()).throw(ClientError("ParameterNotFound"))
+
+
+runner.parameter = lambda n: fresh(n) if n != curfew_mod.PARAMETER else (_ for _ in ()).throw(
+    AssertionError("the curfew must be read fresh, not through the cached parameter()"))
+runner.aws = lambda service: type("FreshSSM", (), {
+    "get_parameter": lambda self, Name, **k: {"Parameter": {"Value": fresh(Name)}}})()
+real_time = runner.time.time
+
+
+def at_sydney(h, m=0):
+    return __import__("datetime").datetime(2026, 11, 17, h, m, tzinfo=__import__("zoneinfo").ZoneInfo("Australia/Sydney")).timestamp()
+
+
+runner.time.time = lambda: at_sydney(23)
+r = runner.launcher({"source": "webhook", "job_id": 12, "pool": L}, None)
+check("curfew: at 23:00 the launcher terminates the running runner", calls["terminated"] == ["i-1"], str(calls))
+check("curfew: ...deregisters it", calls["removed"] == [3], str(calls))
+check("curfew: ...and launches nothing for the queued jobs", calls["launched"] == [] and r.get("curfew", {}).get("active"), str(r))
+for k in calls:
+    calls[k].clear()
+params[curfew_mod.PARAMETER] = json.dumps(curfew_mod.extend(at_sydney(21, 30), {}, 2))
+runner.launcher({"source": "webhook", "job_id": 12, "pool": L}, None)
+check("curfew: extended to 00:00, at 23:00 nothing is terminated", calls["terminated"] == [], str(calls))
+runner.time.time = lambda: at_sydney(15)
+del params[curfew_mod.PARAMETER]
+runner.launcher({"source": "schedule"}, None)
+check("curfew: in the afternoon, queued jobs launch as normal", 11 in calls["launched"], str(calls))
+r = runner.launcher({"source": "curfew-status"}, None)
+check("curfew: a status call reports the state and launches nothing extra",
+      r["curfew"]["active"] is False and r["curfew"]["reason"] == "open", str(r))
+params[curfew_mod.PARAMETER] = json.dumps(curfew_mod.stop(at_sydney(15)))
+for k in calls:
+    calls[k].clear()
+runner.launcher({"source": "schedule"}, None)
+check("curfew: /stop in the afternoon terminates and launches nothing",
+      calls["terminated"] == ["i-1"] and calls["launched"] == [], str(calls))
+runner.time.time = real_time
+
 print(f"\n{failed} failed")
 sys.exit(1 if failed else 0)

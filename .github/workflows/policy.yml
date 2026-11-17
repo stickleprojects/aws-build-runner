@@ -122,6 +122,9 @@ jobs:
       - name: Usage report tests (offline)
         run: python3 -I part2-runner/usage/test_report.py
 
+      - name: Runner curfew tests (offline)
+        run: python3 -I part2-runner/stack/test_curfew.py
+
       - name: Per-job usage record tests (offline)
         run: python3 -I part2-runner/ami/test_job_usage.py
 

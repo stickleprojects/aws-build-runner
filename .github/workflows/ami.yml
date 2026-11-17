@@ -10,7 +10,7 @@ run-name: "ami: ${{ github.event_name == 'schedule' && 'weekly rebuild' || input
 
 on:
   schedule:
-    - cron: "0 16 * * 0"   # Monday 03:00 in Sydney (AEDT; 02:00 in AEST)
+    - cron: "30 21 * * 0"  # Monday 08:30 in Sydney (AEDT; 07:30 in AEST): after the 22:00-07:00 runner curfew
   workflow_dispatch:
     inputs:
       note:
