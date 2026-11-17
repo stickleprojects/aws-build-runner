@@ -574,6 +574,19 @@ def smoke_test_remote_checks_are_posix_and_fail_closed():
         problems.append("smoke-test.sh skips spellbound3d's godot-smoke: it's on their main, so missing must fail")
     return problems
 
+
+@rule("2026-11-17: bootstrap-budget-stop.sh re-read the live budget and kept its limit, so after budget_usd went "
+      "from 25 to 29 (about £23, Kieron) the account budget, and its stop, stayed at US$25.")
+def budget_limit_comes_from_policy():
+    problems = []
+    for script in ("bootstrap-budget-stop.sh", "bootstrap-org-budget-stop.sh"):
+        text = (P1 / script).read_text()
+        if "['account_settings']['budget_usd']" not in text:
+            problems.append(f"{script} doesn't read budget_usd from policy.yaml")
+        if not re.search(r"BudgetLimit\.Amount = \$amt|BudgetLimit: \{Amount: \$amt", text):
+            problems.append(f"{script} doesn't set the budget's BudgetLimit from budget_usd")
+    return problems
+
 def main():
     failed = 0
     for name, incident, fn in RULES:
