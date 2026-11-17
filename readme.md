@@ -36,11 +36,41 @@ AMI rather than Docker. AWS's own option, CodeBuild-hosted runners, was ruled ou
 contain `${{ github.run_id }}`, which the repo's `SDLC_RUNNER` variable can't hold without editing
 the synced workflows.
 
-## Cost
+## Cost boundary
 
-Part 1 is free. The recommended runner (spot t3.large, one per job) is **≈ US$16–20/month**
-at the busiest observed workload, ≈ US$33 on demand only. Every option, priced:
-[PRICING.md](PRICING.md).
+Agreed with Kieron on 2026-11-17. All figures are in US$, the currency AWS bills in.
+
+| | |
+|---|---|
+| **Ceiling** | a bill of at most **US$35 a month**, all in |
+| **Automatic stop** | at **US$29** of actual spend: AWS Budgets blocks anything new and the kill switch stops what's running. The gap to the ceiling covers the 8–36 hours that billing data lags. A fast stop (CloudWatch alarms, about 10 minutes) catches runaway uploads, Lambda calls and logs without waiting for billing data. |
+| **Expected** | ≈ **US$13** a typical month, ≈ **US$25** at the busiest load seen; about US$2 with no jobs (3 kept images, the weekly rebuild). Credits cover usage while they last. |
+
+**What keeps it there.** CI fails any change that goes past one of these limits:
+
+| Limit | Value | Where it's set |
+|---|---|---|
+| Runners at once, all pools together | 4 | `part2-runner/stack/config.json` `MaxRunners` |
+| Runner size | up to `xlarge` (4 vCPU), spot first | `config.json` `Pools` |
+| Runner lifetime | 90 min, or 20 min idle | `config.json` `MaxAgeMinutes`, `IdleMinutes` |
+| Overnight curfew | at least 9 h (now 22:00–07:00 Sydney) | `config.json` `Curfew` |
+| Kept runner images | 3 | `part2-runner/ami/prune-amis.sh`, `.github/workflows/ami.yml` |
+| Root disk | 30 GiB gp3, deleted with the instance | `part2-runner/ami/bake.sh`, `stack/template.yaml` |
+| Upload rate per job | at most 6250 KiB/s (now 2500, ≈20 Mbps) | `part2-runner/ami/files/build-runner-boot.sh` |
+| Budget stop | at most US$29; anomaly email at US$3 or less | `part1-godmode/policy.yaml` `account_settings` |
+| Cost Explorer API (US$0.01 a call) | never on a schedule; only the budget-stop bootstrap | the check scans every workflow and script |
+
+**A quota isn't a cost.** EC2's vCPU quota (32 on-demand, 32 spot) is only a ceiling on what *could* run. Spend
+comes from what does run, which the limits above keep in check.
+
+**Changing a limit.** The values live in `cost_boundary` in
+[part1-godmode/policy.yaml](part1-godmode/policy.yaml), and the rule `cost_boundary_holds`
+([part1-godmode/tests/regressions.py](part1-godmode/tests/regressions.py)) checks the settings against them.
+CI also checks that the rule catches each kind of breach (`tests/test_cost_boundary.py`). Raising a value is a
+policy change: Claude opens it as `approved: pending`, with what it would cost a month, and only Kieron can
+approve it. That holds whoever asks for it, including another Claude session.
+
+Prices for every option considered: [PRICING.md](PRICING.md).
 
 ## Layout
 

@@ -344,7 +344,7 @@ def budget_stop_covers_everything():
     if not any("function:guardrail-" in a for a in protected):
         problems.append("the kill switch (guardrail-* Lambda) isn't protected from Claude in policy.yaml")
     if int((p.get("account_settings") or {}).get("budget_usd", 999)) > 30:
-        problems.append("budget_usd is above US$30: no headroom under the £30 (≈US$38) bill ceiling for billing lag")
+        problems.append("budget_usd is above US$30: no headroom under the US$35 bill ceiling for billing lag")
     return problems
 
 
@@ -511,8 +511,8 @@ def stops_cover_more_than_instances():
         if not isinstance(fast.get(key), int) or fast[key] <= 0:
             problems.append(f"policy.yaml fast_stop.{key} is missing")
     if float(settings.get("budget_usd", 99)) > 29:
-        problems.append(f"policy.yaml budget_usd is {settings.get('budget_usd')}: over US$29 (≈£23, Kieron 2026-11-17) "
-                        "leaves too little room for the billing lag under the £30 ceiling")
+        problems.append(f"policy.yaml budget_usd is {settings.get('budget_usd')}: over US$29 (Kieron 2026-11-17) "
+                        "leaves too little room for the billing lag under the US$35 ceiling")
     if "anomaly_alert_usd" not in settings:
         problems.append("policy.yaml has no anomaly_alert_usd (Cost Anomaly Detection)")
     boot = (P1 / "bootstrap-budget-stop.sh").read_text()
@@ -585,6 +585,80 @@ def budget_limit_comes_from_policy():
             problems.append(f"{script} doesn't read budget_usd from policy.yaml")
         if not re.search(r"BudgetLimit\.Amount = \$amt|BudgetLimit: \{Amount: \$amt", text):
             problems.append(f"{script} doesn't set the budget's BudgetLimit from budget_usd")
+    return problems
+
+
+@rule("2026-11-17 cost boundary (Kieron): each cost setting had its own rule or none, and a change agreed between "
+      "Claude sessions could raise one (more runners, bigger types, no curfew) without Kieron seeing a price.")
+def cost_boundary_holds():
+    import yaml
+    p = yaml.safe_load((P1 / "policy.yaml").read_text())
+    cb = p.get("cost_boundary")
+    if not cb:
+        return ["policy.yaml has no cost_boundary"]
+    problems = []
+    s = p["account_settings"]
+    if float(s["budget_usd"]) > cb["max_budget_usd"]:
+        problems.append(f"budget_usd {s['budget_usd']} is over the boundary's US${cb['max_budget_usd']}")
+    # At least US$5 between the stop and the ceiling, for the billing lag and anything still billing.
+    if float(cb["max_budget_usd"]) > cb["ceiling_usd"] - 5:
+        problems.append(f"max_budget_usd US${cb['max_budget_usd']} leaves under US$5 below the US${cb['ceiling_usd']} ceiling")
+    if float(s.get("anomaly_alert_usd", 999)) > cb["max_anomaly_alert_usd"]:
+        problems.append(f"anomaly_alert_usd {s.get('anomaly_alert_usd')} is over US${cb['max_anomaly_alert_usd']}")
+    org = (P1 / "bootstrap-org-budget-stop.sh").read_text()
+    if "['account_settings']['budget_usd']" not in org:
+        problems.append("the org budget isn't set from budget_usd")
+
+    cfg = json.loads((P2 / "stack" / "config.json").read_text())
+    if cfg["MaxRunners"] > cb["max_runners"]:
+        problems.append(f"config.json MaxRunners {cfg['MaxRunners']} is over {cb['max_runners']}")
+    if cfg["MaxAgeMinutes"] > cb["max_instance_minutes"]:
+        problems.append(f"config.json MaxAgeMinutes {cfg['MaxAgeMinutes']} is over {cb['max_instance_minutes']}")
+    if cfg["IdleMinutes"] > cb["max_idle_minutes"]:
+        problems.append(f"config.json IdleMinutes {cfg['IdleMinutes']} is over {cb['max_idle_minutes']}")
+    for name, pool in cfg["Pools"].items():
+        types = pool.get("spot", []) + pool.get("on_demand", [])
+        for itype in types:
+            if itype.split(".", 1)[-1] not in cb["instance_sizes"]:
+                problems.append(f"pool {name}: {itype} is bigger than the boundary allows ({cb['instance_sizes'][-1]})")
+        if cb["spot_first"] and not pool.get("spot"):
+            problems.append(f"pool {name} has no spot types: spot comes first")
+    curfew = cfg.get("Curfew")
+    if not curfew:
+        problems.append("config.json has no Curfew")
+    else:
+        h = lambda v: int(v.split(":")[0]) + int(v.split(":")[1]) / 60
+        hours = (h(curfew["end"]) - h(curfew["start"])) % 24
+        if hours < cb["min_curfew_hours"]:
+            problems.append(f"the curfew is {hours:g} hours, under {cb['min_curfew_hours']}")
+
+    prune = (P2 / "ami" / "prune-amis.sh").read_text()
+    ami_wf = (ROOT / ".github" / "workflows" / "ami.yml").read_text()
+    m = re.search(r'KEEP="\$\{1:-(\d+)\}"', prune)
+    if not m or int(m.group(1)) > cb["max_kept_amis"]:
+        problems.append(f"prune-amis.sh keeps more than {cb['max_kept_amis']} images by default")
+    for n in re.findall(r"prune-amis\.sh\s+(\d+)", ami_wf):
+        if int(n) > cb["max_kept_amis"]:
+            problems.append(f"ami.yml keeps {n} images, over {cb['max_kept_amis']}")
+    for path in (P2 / "ami" / "bake.sh", P2 / "stack" / "template.yaml"):
+        for size in re.findall(r"VolumeSize[=:]\s*(\d+)", path.read_text()):
+            if int(size) > cb["max_root_volume_gib"]:
+                problems.append(f"{path.relative_to(ROOT)}: a {size} GiB disk, over {cb['max_root_volume_gib']}")
+
+    boot = (P2 / "ami" / "files" / "build-runner-boot.sh").read_text()
+    m = re.search(r"^EGRESS_KBPS=(\d+)", boot, re.M)
+    if not m or int(m.group(1)) > cb["max_egress_kbps"]:
+        problems.append(f"build-runner-boot.sh EGRESS_KBPS is missing or over {cb['max_egress_kbps']}")
+
+    allowed = set(cb["cost_explorer_only_in"])
+    for path in sorted(list(ROOT.glob(".github/workflows/*.yml")) + list(P1.rglob("*.sh")) + list(P1.rglob("*.py"))
+                       + list(P2.rglob("*.sh")) + list(P2.rglob("*.py"))):
+        rel = str(path.relative_to(ROOT))
+        if rel in allowed or rel.startswith("part1-godmode/tests/"):  # the tests plant these on purpose
+            continue
+        text = path.read_text()
+        if re.search(r"\baws ce \b|client\(\s*[\"']ce[\"']", text):
+            problems.append(f"{rel} calls Cost Explorer (US$0.01 a call); only {', '.join(sorted(allowed))} may")
     return problems
 
 def main():

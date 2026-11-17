@@ -212,10 +212,33 @@ protected:
                 "cloudwatch:SetAlarmState", "cloudwatch:TagResource", "cloudwatch:UntagResource"]
       arn: "arn:aws:cloudwatch:*:{{ACCOUNT_ID}}:alarm:guardrail-*"
 
+# The cost boundary (Kieron, 2026-11-17): what the runners may cost and the settings that keep them there.
+# CI (tests/regressions.py, cost_boundary_holds) fails any change that goes past one of these. Raising a
+# value is a change to this file, so it goes through the approval like any permission, whoever asks for it:
+# another Claude session can propose it, only Kieron can agree it. Expected spend is in PRICING.md.
+cost_boundary:
+  approved: pending
+  ceiling_usd: 35               # Kieron's ceiling (2026-11-17): a bill of at most US$35 a month, all in
+  expected_month_usd:           # for the docs; the stop below is what enforces it
+    typical: 13
+    busiest: 25
+  max_budget_usd: 29            # budget_usd (account and org budget stops) may not go above this
+  max_anomaly_alert_usd: 3      # Cost Anomaly Detection must email at this daily amount or lower
+  max_runners: 4                # runners at once, all pools together
+  instance_sizes: [micro, small, medium, large, xlarge]   # at most 4 vCPU per runner
+  spot_first: true              # every pool tries spot before on-demand
+  max_instance_minutes: 90      # a runner older than this is terminated
+  max_idle_minutes: 20          # an idle runner is stopped after this
+  min_curfew_hours: 9           # no runners overnight (now 22:00-07:00 Sydney)
+  max_kept_amis: 3              # runner images kept, with their snapshots
+  max_root_volume_gib: 30       # gp3, deleted with the instance
+  max_egress_kbps: 6250         # what one job may send out, KiB/s (≈50 Mbps; now 2500, ≈20 Mbps)
+  cost_explorer_only_in: [part1-godmode/bootstrap-budget-stop.sh]   # its API is US$0.01 a call: nothing scheduled
+
 # Applied by apply.sh (godmode), outside the policy. Claude can't change them.
 account_settings:
-  # Kieron's ceiling is a bill of at most £30 (≈US$38). AWS bills in US$ and its billing data lags by
-  # 8-36 hours, so the stop fires at US$29 (≈£23, Kieron 2026-11-17; the budget counts tax), leaving ≈£7 for
+  # Kieron's ceiling is a bill of at most US$35 a month (cost_boundary, 2026-11-17; in US$, as AWS bills).
+  # Billing data lags by 8-36 hours, so the stop fires at US$29 (the budget counts tax), leaving US$6 for
   # the lag and anything still billing. The fast stop below doesn't wait for billing data at all (#30).
   # A busy month of runners is ≈US$24-25, so it fits under the stop.
   budget_usd: 29
@@ -282,3 +305,6 @@ changes:
   - date: 2026-11-17
     what: "More headroom (#30 fix 5): the budget stop fires at US$29, ≈£23 (was US$25); Cost Anomaly Detection emails Kieron about unusual daily spend of US$3 or more"
     approved: 2026-11-17 Kieron
+  - date: 2026-11-17
+    what: "Cost boundary: the runners stay within a US$35 ceiling (stop at US$29; expected ≈US$13 typical, ≈US$25 busiest a month), at most 4 runners of at most 4 vCPU, spot first, 90-minute and 20-minute limits, a 9-hour curfew, 3 kept images, 30 GiB disks, a capped upload rate, and no scheduled Cost Explorer calls. CI fails any change past these; raising one needs Kieron's approval, whoever asks"
+    approved: pending
