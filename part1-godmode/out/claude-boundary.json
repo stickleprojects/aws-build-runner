@@ -90,6 +90,8 @@
         "ec2:DisableImageBlockPublicAccess",
         "ec2:DisableSnapshotBlockPublicAccess",
         "ec2:EnableFastSnapshotRestores",
+        "ec2:EnableImageDeregistrationProtection",
+        "ec2:LockSnapshot",
         "ec2:ModifyReservedInstances",
         "ec2:Purchase*",
         "ec2:RequestSpotFleet",
@@ -182,6 +184,36 @@
             "io1",
             "io2"
           ]
+        }
+      }
+    },
+    {
+      "Sid": "MaxGp3Iops",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:CreateVolume",
+        "ec2:ModifyVolume",
+        "ec2:RunInstances"
+      ],
+      "Resource": "arn:aws:ec2:*:*:volume/*",
+      "Condition": {
+        "NumericGreaterThan": {
+          "ec2:VolumeIops": "3000"
+        }
+      }
+    },
+    {
+      "Sid": "MaxGp3Throughput",
+      "Effect": "Deny",
+      "Action": [
+        "ec2:CreateVolume",
+        "ec2:ModifyVolume",
+        "ec2:RunInstances"
+      ],
+      "Resource": "arn:aws:ec2:*:*:volume/*",
+      "Condition": {
+        "NumericGreaterThan": {
+          "ec2:VolumeThroughput": "125"
         }
       }
     },
@@ -303,6 +335,19 @@
         "lambda:*"
       ],
       "Resource": "arn:aws:lambda:*:{{ACCOUNT_ID}}:function:guardrail-*"
+    },
+    {
+      "Sid": "Protected1",
+      "Effect": "Deny",
+      "Action": [
+        "cloudwatch:PutMetricAlarm",
+        "cloudwatch:DeleteAlarms",
+        "cloudwatch:DisableAlarmActions",
+        "cloudwatch:SetAlarmState",
+        "cloudwatch:TagResource",
+        "cloudwatch:UntagResource"
+      ],
+      "Resource": "arn:aws:cloudwatch:*:{{ACCOUNT_ID}}:alarm:guardrail-*"
     }
   ]
 }

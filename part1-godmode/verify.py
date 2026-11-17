@@ -55,6 +55,7 @@ MUST_STAY_DENIED = [
     "ec2:DisableImageBlockPublicAccess", "ec2:DisableSnapshotBlockPublicAccess",
     "ec2:DisableEbsEncryptionByDefault", "lambda:PutProvisionedConcurrencyConfig",
     "s3:PutAccountPublicAccessBlock", "s3:PutBucketObjectLockConfiguration",
+    "ec2:LockSnapshot", "ec2:EnableImageDeregistrationProtection",  # #30: the kill switch must be able to delete
 ]
 
 # Creates that must always need an approved resource-group tag. Kept apart from policy.yaml, so
@@ -140,6 +141,12 @@ def build_cases(p, cfg):
         add(Case("ec2:CreateVolume", "allowed", vol, home, **{"ec2:VolumeSize": 100, "ec2:VolumeType": "gp3"}, **tag))
         add(Case("ec2:CreateVolume", "denied", vol, home, **{"ec2:VolumeSize": 500, "ec2:VolumeType": "gp3"}, **tag))
         add(Case("ec2:CreateVolume", "denied", vol, home, **{"ec2:VolumeSize": 50, "ec2:VolumeType": "io2"}, **tag))
+        # gp3 at the free baseline is fine; paid IOPS or throughput isn't (#30)
+        gp3 = {"ec2:VolumeSize": 30, "ec2:VolumeType": "gp3"}
+        add(Case("ec2:CreateVolume", "allowed", vol, home, **gp3, **{"ec2:VolumeIops": 3000, "ec2:VolumeThroughput": 125}, **tag))
+        add(Case("ec2:CreateVolume", "denied", vol, home, **gp3, **{"ec2:VolumeIops": 3001}, **tag))
+        add(Case("ec2:CreateVolume", "denied", vol, home, **gp3, **{"ec2:VolumeThroughput": 126}, **tag))
+        add(Case("ec2:RunInstances", "denied", vol, home, **gp3, **{"ec2:VolumeIops": 16000}, **tag))
 
     for action in UNAPPROVED:
         if action.split(":")[0] in approved_prefixes and action.split(":")[0] != "kms":
@@ -211,6 +218,15 @@ def build_cases(p, cfg):
     for action in ("iam:PutRolePolicy", "iam:UpdateAssumeRolePolicy", "sts:AssumeRole"):
         add(Case(action, "denied", ks_role, g))
     add(Case("iam:PassRole", "denied", ks_role, g, **{"iam:PassedToService": "lambda.amazonaws.com"}))
+    # The fast-stop alarms (#30): Claude may make its own alarms, not change or silence these.
+    alarm = f"arn:aws:cloudwatch:{home}:{acct}:alarm:guardrail-fast-network-out"
+    for action in ("cloudwatch:PutMetricAlarm", "cloudwatch:DeleteAlarms", "cloudwatch:DisableAlarmActions",
+                   "cloudwatch:SetAlarmState"):
+        add(Case(action, "denied", alarm, home))
+    add(Case("cloudwatch:PutMetricAlarm", "allowed", f"arn:aws:cloudwatch:{home}:{acct}:alarm:build-runner-test", home))
+    fast_topic = f"arn:aws:sns:{home}:{acct}:guardrail-fast-stop"
+    for action in ("sns:Unsubscribe", "sns:DeleteTopic", "sns:SetTopicAttributes"):
+        add(Case(action, "denied", fast_topic, home))
     add(Case("iam:CreateOpenIDConnectProvider", "denied", f"arn:aws:iam::{acct}:oidc-provider/token.actions.githubusercontent.com", g))
 
     if rg:

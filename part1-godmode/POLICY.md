@@ -2,6 +2,12 @@
 
 Generated from [policy.yaml](policy.yaml) by `build-policies.py`. Don't edit this file.
 
+> **DRAFT, not approved yet.** Pending:
+> - change 2026-11-17: Disk limits (#30 fix 4): gp3 disks at most the free 3,000 IOPS and 125 MiB/s; snapshot locks and AMI deletion protection blocked, so the kill switch can always remove what it must
+> - change 2026-11-17: Fast stop (#30 fix 2): CloudWatch alarms on data sent by instances, Lambda calls and log ingestion trigger the kill switch within ≈10 minutes, without waiting for billing data. It terminates instances and throttles our Lambdas; AMIs, disks and IPs stay. Claude can't change or delete the alarms
+> - change 2026-11-17: Wider stop at the budget (#30 fix 3): the kill switch also throttles our Lambdas, deletes detached build disks, releases unused Elastic IPs and deletes interface VPC endpoints; the budget stop also blocks resizing disks, copying snapshots, changing Lambdas, creating or changing schedules and rules, and creating log groups
+> - change 2026-11-17: More headroom (#30 fix 5): the budget stop fires at US$20 (was US$25); Cost Anomaly Detection emails Kieron about unusual daily spend of US$3 or more
+
 Claude's IAM user (`AWS_CLAUDE_USER`) in the account `AWS_ACCOUNT_ID` · home region Sydney (`ap-southeast-2`). The account id and user name aren't in the repo: see [config.py](config.py).
 
 ## In short
@@ -17,7 +23,7 @@ Claude's IAM user (`AWS_CLAUDE_USER`) in the account `AWS_ACCOUNT_ID` · home re
 
 | Service | Used for | Allowed | Approved |
 |---|---|---|---|
-| EC2 and VPC | Build machines, AMIs, snapshots, volumes, launch templates; VPCs, subnets, security groups, internet gateways | everything, except 17 blocked actions (below); instance type and disk limits | 2026-11-16 Kieron |
+| EC2 and VPC | Build machines, AMIs, snapshots, volumes, launch templates; VPCs, subnets, security groups, internet gateways | everything, except 19 blocked actions (below); instance type and disk limits | 2026-11-16 Kieron |
 | Systems Manager | Parameters and secrets (Parameter Store), Session Manager shell into instances, Run Command | everything | 2026-11-16 Kieron |
 | Lambda | The runner webhook and the reaper that removes stray instances | everything, except 1 blocked action (below) | 2026-11-16 Kieron |
 | EventBridge and Scheduler | Scheduled jobs (the reaper), event rules | everything | 2026-11-16 Kieron |
@@ -33,6 +39,7 @@ Claude's IAM user (`AWS_CLAUDE_USER`) in the account `AWS_ACCOUNT_ID` · home re
 - **No dedicated instances or hosts**: shared tenancy only.
 - **Disks**: at most 256 GiB each.
 - **No provisioned-IOPS disks**: io1, io2 blocked.
+- **No paid disk performance**: at most 3000 IOPS and 125 MiB/s per disk (gp3's free baseline; above it bills every month).
 - **Blocked actions**:
 
   | Action | What it is, and why it's blocked |
@@ -54,6 +61,8 @@ Claude's IAM user (`AWS_CLAUDE_USER`) in the account `AWS_ACCOUNT_ID` · home re
   | `ec2:DisableImageBlockPublicAccess` | Making AMIs public |
   | `ec2:DisableSnapshotBlockPublicAccess` | Making EBS snapshots public |
   | `ec2:DisableEbsEncryptionByDefault` | Turning off disk encryption by default |
+  | `ec2:LockSnapshot` | Locking a snapshot (locked, it can't be deleted, so it bills until the lock ends, and the kill switch can't remove it) |
+  | `ec2:EnableImageDeregistrationProtection` | Protecting an AMI from deletion (the kill switch couldn't remove it) |
   | `lambda:PutProvisionedConcurrencyConfig` | Provisioned concurrency (billed around the clock) |
   | `s3:PutAccountPublicAccessBlock` | Turning off the account-wide public access block |
   | `s3:PutBucketObjectLockConfiguration` | Object lock (locked data can't be deleted, so it is billed until the lock ends) |
@@ -104,12 +113,14 @@ Each group also has an AWS Resource Group of the same name (a saved tag search) 
 
 ## Set by godmode, outside the policy
 
-- Monthly budget **US$25**, email alerts at 50 %, 80 % and 100 % actual, and 100 % forecast. It counts **everything in the account**, every service (instances, logs, snapshots, data transfer…), as **what you'd be billed**: credits (applied automatically on the invoice) reduce it, refunds (paid back later, if ever) don't, and tax counts.
-- **Automatic stop at 100 % of actual spend** (US$25):
-  - **Nothing new:** AWS Budgets attaches `guardrails/budget-stop` to Claude's user and roles (`build-runner-bake`, `build-runner-ami-ci`, `build-runner-launcher`): no instances, spot/fleet, volumes, snapshots, images, IPs, NAT, endpoints, functions, buckets, stacks or passing roles.
-  - **Stop what's spending:** the kill switch (Lambda `guardrail-kill-switch`, Sydney) terminates **every instance** in the account and cancels open spot requests and deletes the runner AMIs and their snapshots (the weekly pipeline rebuilds them).
-  - Billing data lags by up to about a day, so the stop fires at US$25 to keep the bill under the £30 ceiling. Only Kieron can lift it (Billing → Budgets → Actions); Claude can't detach it or touch the kill switch.
-- **Protected resources** Claude and its roles can't touch, whatever the approved services allow: The budget kill switch (`arn:aws:lambda:*:ACCOUNT:function:guardrail-*`, lambda:*).
+- Monthly budget **US$20**, email alerts at 50 %, 80 % and 100 % actual, and 100 % forecast. It counts **everything in the account**, every service (instances, logs, snapshots, data transfer…), as **what you'd be billed**: credits (applied automatically on the invoice) reduce it, refunds (paid back later, if ever) don't, and tax counts.
+- **Automatic stop at 100 % of actual spend** (US$20):
+  - **Nothing new:** AWS Budgets attaches `guardrails/budget-stop` to Claude's user and roles (`build-runner-bake`, `build-runner-ami-ci`, `build-runner-launcher`): no instances, spot/fleet, volumes, snapshots, images, IPs, NAT, endpoints, functions, buckets, stacks or passing roles; no resizing disks, copying snapshots, changing Lambdas or their concurrency, creating or changing schedules and rules, or creating log groups.
+  - **Stop what's spending:** the kill switch (Lambda `guardrail-kill-switch`, Sydney) terminates **every instance** in the account and cancels open spot requests; sets **our Lambdas** (tagged `resource-group`) to 0 concurrency, so none runs; deletes the runner AMIs and their snapshots (the weekly pipeline rebuilds them); deletes **unattached disks** tagged `resource-group`; releases **Elastic IPs not attached** to anything; deletes **interface VPC endpoints**.
+  - Billing data lags by 8-36 hours, so the stop fires at US$20 to keep the bill under the £30 ceiling. Only Kieron can lift it (Billing → Budgets → Actions); Claude can't detach it or touch the kill switch.
+- **Fast stop, without waiting for billing data:** CloudWatch alarms (Sydney, whole account) trigger the kill switch when, for 2 periods of 5 minutes in a row (≈10 minutes), instances send more than 1 GiB, Lambdas are called more than 1,000 times, or logs take in more than 100 MiB, per 5 minutes. It then terminates every instance, cancels spot requests and throttles our Lambdas, and emails Kieron. It keeps the AMIs, disks and IPs, so a false alarm costs only the interrupted jobs. Turning the Lambdas back on is Kieron's call.
+- **Cost Anomaly Detection** (free) emails Kieron about unusual daily spend on any service of US$3 or more.
+- **Protected resources** Claude and its roles can't touch, whatever the approved services allow: The budget kill switch (`arn:aws:lambda:*:ACCOUNT:function:guardrail-*`, lambda:*); The fast-stop alarms (`arn:aws:cloudwatch:*:ACCOUNT:alarm:guardrail-*`, cloudwatch:PutMetricAlarm, cloudwatch:DeleteAlarms, cloudwatch:DisableAlarmActions, cloudwatch:SetAlarmState, cloudwatch:TagResource, cloudwatch:UntagResource).
 - Public access blocked for: S3 (whole account), AMIs, EBS snapshots. Claude can't turn it off.
 - EBS disk encryption on by default. Claude can't turn it off.
 - Service quotas: read-only to Claude, so the EC2 vCPU quota caps how much can run at once.
@@ -124,9 +135,13 @@ Each group also has an AWS Resource Group of the same name (a saved tag search) 
 | 2026-11-16 | Budget US$25 (≈£20; the ceiling is a £30 bill), counted as what would be billed (credits reduce it, refunds don't). At 100%: AWS Budgets blocks anything new for Claude's user and roles, and the kill switch terminates every instance and deletes the runner AMIs. Claude can't touch the kill switch | 2026-11-16 Kieron |
 | 2026-11-16 | The budget stop also covers the weekly AMI pipeline role (build-runner-ami-ci), so at the limit it can't launch bake instances either | 2026-11-16 Kieron |
 | 2026-11-16 | The budget stop also covers the runner launcher's role (build-runner-launcher), so at the limit it can't launch runner instances either (the org-wide stop already did) | 2026-11-16 Kieron |
+| 2026-11-17 | Disk limits (#30 fix 4): gp3 disks at most the free 3,000 IOPS and 125 MiB/s; snapshot locks and AMI deletion protection blocked, so the kill switch can always remove what it must | pending |
+| 2026-11-17 | Fast stop (#30 fix 2): CloudWatch alarms on data sent by instances, Lambda calls and log ingestion trigger the kill switch within ≈10 minutes, without waiting for billing data. It terminates instances and throttles our Lambdas; AMIs, disks and IPs stay. Claude can't change or delete the alarms | pending |
+| 2026-11-17 | Wider stop at the budget (#30 fix 3): the kill switch also throttles our Lambdas, deletes detached build disks, releases unused Elastic IPs and deletes interface VPC endpoints; the budget stop also blocks resizing disks, copying snapshots, changing Lambdas, creating or changing schedules and rules, and creating log groups | pending |
+| 2026-11-17 | More headroom (#30 fix 5): the budget stop fires at US$20 (was US$25); Cost Anomaly Detection emails Kieron about unusual daily spend of US$3 or more | pending |
 
 ## Policy sizes
 
-- `claude-assistant-policy.json`: 5277 of 6144 characters
+- `claude-assistant-policy.json`: 6038 of 6144 characters
 - `claude-assistant-iam.json`: 1814 of 6144 characters
-- `claude-boundary.json`: 4691 of 6144 characters
+- `claude-boundary.json`: 5452 of 6144 characters

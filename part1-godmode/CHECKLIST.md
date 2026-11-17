@@ -47,6 +47,16 @@ role AWS Budgets uses to attach it. Then sets the budget action: at 100 % of act
 Claude's user and roles. Ends by listing the action. To lift a stop once you've decided: Billing → Budgets →
 `guardrail-monthly` → Actions → reverse.
 
+Since #30 it also sets up the **fast stop** (CloudWatch alarms `guardrail-fast-*` → SNS `guardrail-fast-stop` →
+the kill switch in fast mode) and **Cost Anomaly Detection**. The first run emails a subscription confirmation for
+the fast-stop alerts: **click Confirm** in that email, or the alarms stop runners without telling you. It ends with
+a dry run of both modes. After a fast stop, once you've found the cause: turn our Lambdas back on with
+`aws lambda delete-function-concurrency --function-name build-runner-launcher` (and `build-runner-webhook`),
+or tell Claude to.
+
+When [bootstrap/budget-stop-policy.json](bootstrap/budget-stop-policy.json) changes, paste it again into the
+organization's `org-budget-stop` SCP (below), so the org-wide stop blocks the same things.
+
 ### The whole organization's bill (management account, once, by hand)
 
 The bill is the organization's consolidated bill, paid by the **kieron-wray-team management account**.

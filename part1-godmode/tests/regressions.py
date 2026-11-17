@@ -459,6 +459,80 @@ def logs_insights_aliases_dont_shadow_their_field():
     return problems
 
 
+@rule("2026-11-16 cost review (#30): a log group without retention keeps (and bills) everything forever, and a Lambda "
+      "without its own log group gets one AWS creates on first run, with no retention.")
+def every_log_group_has_retention():
+    problems = []
+    for path in sorted(P2.rglob("*.yaml")):
+        text = path.read_text()
+        if "AWSTemplateFormatVersion" not in text and "Resources:" not in text:
+            continue
+        blocks = re.split(r"^  (?=\w+:\n    Type: AWS::)", text, flags=re.M)
+        groups = set()
+        functions = []
+        for block in blocks:
+            m = re.match(r"(\w+):\n    Type: (AWS::\S+)", block)
+            if not m:
+                continue
+            name, kind = m.groups()
+            if kind == "AWS::Logs::LogGroup":
+                if not re.search(r"^      RetentionInDays: \d+", block, re.M):
+                    problems.append(f"{path.relative_to(ROOT)}: log group {name} has no RetentionInDays")
+                g = re.search(r"^      LogGroupName: (\S+)", block, re.M)
+                if g:
+                    groups.add(g.group(1))
+            elif kind in ("AWS::Lambda::Function", "AWS::Serverless::Function"):
+                f = re.search(r"^      FunctionName: (\S+)", block, re.M)
+                functions.append((name, f.group(1) if f else None))
+        for name, fn in functions:
+            if fn is None or fn.startswith("!"):
+                problems.append(f"{path.relative_to(ROOT)}: Lambda {name} needs a fixed FunctionName, so its log "
+                                "group can be declared (with retention) before AWS makes one without")
+            elif f"/aws/lambda/{fn}" not in groups:
+                problems.append(f"{path.relative_to(ROOT)}: Lambda {fn} has no /aws/lambda/{fn} log group with retention")
+    return problems
+
+
+@rule("2026-11-16 cost review (#30): the stop at the budget only stopped instances, and only after billing data "
+      "(8-36 hours late). Fast leaks (data out, Lambda or log loops) and leftovers (disks, IPs, endpoints) were missed.")
+def stops_cover_more_than_instances():
+    import yaml
+    p = yaml.safe_load((P1 / "policy.yaml").read_text())
+    settings = p["account_settings"]
+    stop = settings["budget_stop"]
+    ks = stop.get("kill_switch") or {}
+    problems = []
+    for key in ("terminate_instances", "throttle_lambdas", "delete_detached_volumes",
+                "release_unused_addresses", "delete_interface_endpoints"):
+        if ks.get(key) is not True:
+            problems.append(f"policy.yaml kill_switch.{key} isn't true")
+    fast = stop.get("fast_stop") or {}
+    for key in ("network_out_gib", "lambda_invocations", "log_ingest_mib"):
+        if not isinstance(fast.get(key), int) or fast[key] <= 0:
+            problems.append(f"policy.yaml fast_stop.{key} is missing")
+    if float(settings.get("budget_usd", 99)) > 20:
+        problems.append(f"policy.yaml budget_usd is {settings.get('budget_usd')}: over US$20 leaves too little room "
+                        "for VAT and the billing lag under the £30 ceiling")
+    if "anomaly_alert_usd" not in settings:
+        problems.append("policy.yaml has no anomaly_alert_usd (Cost Anomaly Detection)")
+    boot = (P1 / "bootstrap-budget-stop.sh").read_text()
+    for alarm in ("guardrail-fast-network-out", "guardrail-fast-lambda-invocations", "guardrail-fast-log-ingest"):
+        if alarm not in boot:
+            problems.append(f"bootstrap-budget-stop.sh doesn't create alarm {alarm}")
+    for env in ("THROTTLE_LAMBDAS", "DELETE_DETACHED_VOLUMES", "RELEASE_UNUSED_ADDRESSES", "DELETE_INTERFACE_ENDPOINTS"):
+        if f"{env}: $" not in boot:
+            problems.append(f"bootstrap-budget-stop.sh doesn't pass {env} to the kill switch")
+    denied = set(json.loads((P1 / "bootstrap" / "budget-stop-policy.json").read_text())["Statement"][0]["Action"])
+    # At the limit nothing may undo the kill switch's work or start new spending by another route.
+    for action in ("ec2:ModifyVolume", "ec2:CopySnapshot", "lambda:UpdateFunctionCode",
+                   "lambda:UpdateFunctionConfiguration", "lambda:PutFunctionConcurrency",
+                   "lambda:DeleteFunctionConcurrency", "scheduler:CreateSchedule", "scheduler:UpdateSchedule",
+                   "events:PutRule", "events:EnableRule", "events:PutTargets", "logs:CreateLogGroup"):
+        if action not in denied:
+            problems.append(f"bootstrap/budget-stop-policy.json doesn't deny {action}")
+    return problems
+
+
 def main():
     failed = 0
     for name, incident, fn in RULES:
