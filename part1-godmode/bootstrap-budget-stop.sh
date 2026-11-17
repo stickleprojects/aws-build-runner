@@ -39,6 +39,9 @@ BUDGET=guardrail-monthly
 PERCENT="$(yaml_get "['account_settings']['budget_stop']['at_percent']")"
 POLICY_ARN="arn:aws:iam::${ACCOUNT_ID}:policy/guardrails/budget-stop"
 RUNNER_ROLE="budget-action-runner"
+# The limit comes from policy.yaml, every run: before 2026-11-17 this kept whatever the budget had (US$25
+# stayed live after budget_usd went to 29).
+AMOUNT="$(yaml_get "['account_settings']['budget_usd']")"
 
 caller_arn="$(aws sts get-caller-identity --query Arn --output text)"
 [[ "$(aws sts get-caller-identity --query Account --output text)" == "$ACCOUNT_ID" ]] \
@@ -54,9 +57,9 @@ while read -r role; do
 done < <(yaml_get "['account_settings']['budget_stop']['roles']" | jq -r '.[]')
 echo "targets: user ${USER_NAME}; roles: ${roles[*]:-(none)}"
 
-echo "== budget ${BUDGET}: what would be billed (credits reduce it, refunds don't, tax counts)"
+echo "== budget ${BUDGET}: US\$${AMOUNT} a month (policy.yaml budget_usd); credits reduce it, refunds don't, tax counts"
 budget="$(aws budgets describe-budget --account-id "$ACCOUNT_ID" --budget-name "$BUDGET" --query Budget --output json)"
-budget="$(jq '.CostTypes.IncludeCredit = true | .CostTypes.IncludeRefund = false | .CostTypes.IncludeTax = true | del(.CalculatedSpend, .LastUpdatedTime)' <<<"$budget")"
+budget="$(jq --arg amt "$AMOUNT" '.BudgetLimit.Amount = $amt | .CostTypes.IncludeCredit = true | .CostTypes.IncludeRefund = false | .CostTypes.IncludeTax = true | del(.CalculatedSpend, .LastUpdatedTime)' <<<"$budget")"
 aws budgets update-budget --account-id "$ACCOUNT_ID" --new-budget "$budget"
 aws budgets describe-budget --account-id "$ACCOUNT_ID" --budget-name "$BUDGET" \
   --query 'Budget.{limit: BudgetLimit.Amount, filters: CostFilters, credits: CostTypes.IncludeCredit, refunds: CostTypes.IncludeRefund}' --output json
