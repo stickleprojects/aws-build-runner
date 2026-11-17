@@ -54,8 +54,9 @@ a dry run of both modes. After a fast stop, once you've found the cause: turn ou
 `aws lambda delete-function-concurrency --function-name build-runner-launcher` (and `build-runner-webhook`),
 or tell Claude to.
 
-When [bootstrap/budget-stop-policy.json](bootstrap/budget-stop-policy.json) changes, paste it again into the
-organization's `org-budget-stop` SCP (below), so the org-wide stop blocks the same things.
+When [bootstrap/budget-stop-policy.json](bootstrap/budget-stop-policy.json) or `budget_usd` changes, rerun
+`./bootstrap-org-budget-stop.sh` in the management account (below): it updates the `org-budget-stop` SCP
+and the org budget from the repo, so there's nothing to paste.
 
 ### The whole organization's bill (management account, once, by hand)
 
