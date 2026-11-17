@@ -2,12 +2,6 @@
 
 Generated from [policy.yaml](policy.yaml) by `build-policies.py`. Don't edit this file.
 
-> **DRAFT, not approved yet.** Pending:
-> - change 2026-11-17: Disk limits (#30 fix 4): gp3 disks at most the free 3,000 IOPS and 125 MiB/s; snapshot locks and AMI deletion protection blocked, so the kill switch can always remove what it must
-> - change 2026-11-17: Fast stop (#30 fix 2): CloudWatch alarms on data sent by instances, Lambda calls and log ingestion trigger the kill switch within ≈10 minutes, without waiting for billing data. It terminates instances and throttles our Lambdas; AMIs, disks and IPs stay. Claude can't change or delete the alarms
-> - change 2026-11-17: Wider stop at the budget (#30 fix 3): the kill switch also throttles our Lambdas, deletes detached build disks, releases unused Elastic IPs and deletes interface VPC endpoints; the budget stop also blocks resizing disks, copying snapshots, changing Lambdas, creating or changing schedules and rules, and creating log groups
-> - change 2026-11-17: More headroom (#30 fix 5): the budget stop fires at US$29, ≈£23 (was US$25); Cost Anomaly Detection emails Kieron about unusual daily spend of US$3 or more
-
 Claude's IAM user (`AWS_CLAUDE_USER`) in the account `AWS_ACCOUNT_ID` · home region Sydney (`ap-southeast-2`). The account id and user name aren't in the repo: see [config.py](config.py).
 
 ## In short
@@ -135,10 +129,10 @@ Each group also has an AWS Resource Group of the same name (a saved tag search) 
 | 2026-11-16 | Budget US$25 (≈£20; the ceiling is a £30 bill), counted as what would be billed (credits reduce it, refunds don't). At 100%: AWS Budgets blocks anything new for Claude's user and roles, and the kill switch terminates every instance and deletes the runner AMIs. Claude can't touch the kill switch | 2026-11-16 Kieron |
 | 2026-11-16 | The budget stop also covers the weekly AMI pipeline role (build-runner-ami-ci), so at the limit it can't launch bake instances either | 2026-11-16 Kieron |
 | 2026-11-16 | The budget stop also covers the runner launcher's role (build-runner-launcher), so at the limit it can't launch runner instances either (the org-wide stop already did) | 2026-11-16 Kieron |
-| 2026-11-17 | Disk limits (#30 fix 4): gp3 disks at most the free 3,000 IOPS and 125 MiB/s; snapshot locks and AMI deletion protection blocked, so the kill switch can always remove what it must | pending |
-| 2026-11-17 | Fast stop (#30 fix 2): CloudWatch alarms on data sent by instances, Lambda calls and log ingestion trigger the kill switch within ≈10 minutes, without waiting for billing data. It terminates instances and throttles our Lambdas; AMIs, disks and IPs stay. Claude can't change or delete the alarms | pending |
-| 2026-11-17 | Wider stop at the budget (#30 fix 3): the kill switch also throttles our Lambdas, deletes detached build disks, releases unused Elastic IPs and deletes interface VPC endpoints; the budget stop also blocks resizing disks, copying snapshots, changing Lambdas, creating or changing schedules and rules, and creating log groups | pending |
-| 2026-11-17 | More headroom (#30 fix 5): the budget stop fires at US$29, ≈£23 (was US$25); Cost Anomaly Detection emails Kieron about unusual daily spend of US$3 or more | pending |
+| 2026-11-17 | Disk limits (#30 fix 4): gp3 disks at most the free 3,000 IOPS and 125 MiB/s; snapshot locks and AMI deletion protection blocked, so the kill switch can always remove what it must | 2026-11-17 Kieron |
+| 2026-11-17 | Fast stop (#30 fix 2): CloudWatch alarms on data sent by instances, Lambda calls and log ingestion trigger the kill switch within ≈10 minutes, without waiting for billing data. It terminates instances and throttles our Lambdas; AMIs, disks and IPs stay. Claude can't change or delete the alarms | 2026-11-17 Kieron |
+| 2026-11-17 | Wider stop at the budget (#30 fix 3): the kill switch also throttles our Lambdas, deletes detached build disks, releases unused Elastic IPs and deletes interface VPC endpoints; the budget stop also blocks resizing disks, copying snapshots, changing Lambdas, creating or changing schedules and rules, and creating log groups | 2026-11-17 Kieron |
+| 2026-11-17 | More headroom (#30 fix 5): the budget stop fires at US$29, ≈£23 (was US$25); Cost Anomaly Detection emails Kieron about unusual daily spend of US$3 or more | 2026-11-17 Kieron |
 
 ## Policy sizes
 

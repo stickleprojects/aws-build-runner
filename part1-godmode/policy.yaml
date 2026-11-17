@@ -272,13 +272,13 @@ changes:
     approved: 2026-11-16 Kieron
   - date: 2026-11-17
     what: "Disk limits (#30 fix 4): gp3 disks at most the free 3,000 IOPS and 125 MiB/s; snapshot locks and AMI deletion protection blocked, so the kill switch can always remove what it must"
-    approved: pending
+    approved: 2026-11-17 Kieron
   - date: 2026-11-17
     what: "Fast stop (#30 fix 2): CloudWatch alarms on data sent by instances, Lambda calls and log ingestion trigger the kill switch within ≈10 minutes, without waiting for billing data. It terminates instances and throttles our Lambdas; AMIs, disks and IPs stay. Claude can't change or delete the alarms"
-    approved: pending
+    approved: 2026-11-17 Kieron
   - date: 2026-11-17
     what: "Wider stop at the budget (#30 fix 3): the kill switch also throttles our Lambdas, deletes detached build disks, releases unused Elastic IPs and deletes interface VPC endpoints; the budget stop also blocks resizing disks, copying snapshots, changing Lambdas, creating or changing schedules and rules, and creating log groups"
-    approved: pending
+    approved: 2026-11-17 Kieron
   - date: 2026-11-17
     what: "More headroom (#30 fix 5): the budget stop fires at US$29, ≈£23 (was US$25); Cost Anomaly Detection emails Kieron about unusual daily spend of US$3 or more"
-    approved: pending
+    approved: 2026-11-17 Kieron
