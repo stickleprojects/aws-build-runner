@@ -5,6 +5,7 @@
 #   2. the job's just-in-time registration, from user data, to /run/build-runner/jitconfig (ghrunner, 0600)
 #   3. blocks the ghrunner user from the instance metadata service (IMDS), so job code can't read the
 #      user data or any instance-role credentials. Root (e.g. the Systems Manager agent) keeps access.
+#   4. caps what ghrunner sends off the machine at about 20 Mbps, so a job can't run up a data-transfer bill
 set -euo pipefail
 
 # Backstop first, before anything can fail: this instance powers off (and is terminated) within 2 hours.
@@ -40,4 +41,14 @@ for rule in "iptables -d 169.254.169.254" "ip6tables -d fd00:ec2::254"; do
   "$cmd" -C OUTPUT -m owner --uid-owner ghrunner "$dflag" "$addr" -j REJECT 2>/dev/null \
     || "$cmd" -A OUTPUT -m owner --uid-owner ghrunner "$dflag" "$addr" -j REJECT
 done
-echo "build-runner boot: $(cat /etc/build-runner/instance.json); jitconfig $([[ -n "$jit" ]] && echo present || echo none); IMDS blocked for ghrunner"
+
+# 4. Egress cap: everything ghrunner (the runner and its jobs) sends off the machine shares one bucket of
+# EGRESS_KBPS. Data out of AWS costs US$0.114/GB, so an uncapped runner could cost ≈US$250/h; capped, at most
+# ≈US$1/h each (#30). Downloads (inbound) are free and not capped. Jobs have no sudo, so they can't lift it.
+EGRESS_KBPS=2500   # KiB/s, ≈ 20 Mbps
+for cmd in iptables ip6tables; do
+  cap=(OUTPUT ! -o lo -m owner --uid-owner ghrunner -m hashlimit --hashlimit-name "egress-${cmd}"
+       --hashlimit-above "${EGRESS_KBPS}kb/s" --hashlimit-burst "$((EGRESS_KBPS * 2))kb" -j DROP)
+  "$cmd" -C "${cap[@]}" 2>/dev/null || "$cmd" -A "${cap[@]}"
+done
+echo "build-runner boot: $(cat /etc/build-runner/instance.json); jitconfig $([[ -n "$jit" ]] && echo present || echo none); IMDS blocked for ghrunner; egress capped at ${EGRESS_KBPS} KiB/s"

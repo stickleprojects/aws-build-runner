@@ -459,6 +459,25 @@ def logs_insights_aliases_dont_shadow_their_field():
     return problems
 
 
+@rule("2026-11-16 cost review (#30): nothing limited what a runner sends out. Data out of AWS is US$0.114/GB, so one "
+      "job (a bad dependency, a misled Claude job) could run up ≈US$250/h per runner before billing even shows it.")
+def runner_egress_is_capped():
+    boot = (P2 / "ami" / "files" / "build-runner-boot.sh").read_text()
+    smoke = (P2 / "ami" / "smoke-test.sh").read_text()
+    problems = []
+    m = re.search(r"^EGRESS_KBPS=(\d+)", boot, re.M)
+    if not m:
+        problems.append("build-runner-boot.sh sets no EGRESS_KBPS")
+    elif int(m.group(1)) > 6250:  # ≈ 50 Mbps, the top of what Kieron agreed (#30)
+        problems.append(f"build-runner-boot.sh: EGRESS_KBPS={m.group(1)} is over 6250 KiB/s (≈50 Mbps)")
+    for needed in ("for cmd in iptables ip6tables", "--uid-owner ghrunner", "--hashlimit-above", "-j DROP"):
+        if needed not in boot:
+            problems.append(f"build-runner-boot.sh: the egress cap lost '{needed}'")
+    if "egress capped for jobs" not in smoke:
+        problems.append("smoke-test.sh no longer checks the egress cap")
+    return problems
+
+
 def main():
     failed = 0
     for name, incident, fn in RULES:
