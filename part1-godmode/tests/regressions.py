@@ -552,6 +552,28 @@ def runner_egress_is_capped():
     return problems
 
 
+
+@rule("2026-11-17: smoke-test.sh's remote checks run under Run Command's /bin/sh (dash). The Godot smoke check "
+      "used bash's [[ ]], which dash doesn't have, so it skipped silently even after spellbound3d #203 shipped it.")
+def smoke_test_remote_checks_are_posix_and_fail_closed():
+    smoke = (P2 / "ami" / "smoke-test.sh").read_text()
+    m = re.search(r"^read -r -d '' checks <<'EOF'.*?\n(.*?)^EOF$", smoke, re.S | re.M)
+    if not m:
+        return ["smoke-test.sh: can't find the remote checks block (read -r -d '' checks <<'EOF' ... EOF)"]
+    problems = []
+    bashisms = {r"\[\[": "[[ ]]", r"\[ [^]]*==": "== inside [ ]", r"<<<": "<<<", r"\$'": "$'...'",
+                r"^\s*\w+=\(": "an array", r"^\s*function\s": "'function'", r"\bsource\s": "'source'"}
+    for n, line in enumerate(m.group(1).splitlines(), 1):
+        code = line.split(" #", 1)[0] if not line.lstrip().startswith("#") else ""
+        for pattern, what in bashisms.items():
+            if re.search(pattern, code):
+                problems.append(f"smoke-test.sh remote checks line {n}: {what} isn't POSIX sh (dash runs this): {line.strip()[:80]}")
+    if "spellbound3d godot-smoke" not in m.group(1):
+        problems.append("smoke-test.sh no longer runs spellbound3d's godot-smoke")
+    if re.search(r"skip\s+spellbound3d godot-smoke", m.group(1)):
+        problems.append("smoke-test.sh skips spellbound3d's godot-smoke: it's on their main, so missing must fail")
+    return problems
+
 def main():
     failed = 0
     for name, incident, fn in RULES:

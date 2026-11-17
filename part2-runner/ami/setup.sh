@@ -112,7 +112,7 @@ npm install -g --no-fund --no-audit --loglevel=error "@anthropic-ai/claude-code@
 # Claude Code pulls in, so install-claude.sh can install offline (the smoke test caught this).
 as_runner "npm install --prefix /tmp/claude-warm --no-fund --no-audit --loglevel=error '@anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}' >/dev/null; rm -rf /tmp/claude-warm"
 
-say "spellbound3d's Godot smoke test (tools/runner-smoke/, if it's on main yet)"
+say "spellbound3d's Godot smoke test (tools/runner-smoke/; smoke-test.sh fails the image without it)"
 # Agreed with spellbound3d (their change 0034): smoke-test.sh runs godot-smoke.sh <godot_pinned> godot
 # as ghrunner on each new image. Copied from the same checkout, so it matches the baked commit.
 runner_smoke=absent
