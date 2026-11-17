@@ -23,7 +23,19 @@
         "cloudformation:CreateStack",
         "cloudformation:UpdateStack",
         "cloudformation:CreateChangeSet",
-        "iam:PassRole"
+        "iam:PassRole",
+        "ec2:ModifyVolume",
+        "ec2:CopySnapshot",
+        "lambda:UpdateFunctionCode",
+        "lambda:UpdateFunctionConfiguration",
+        "lambda:PutFunctionConcurrency",
+        "lambda:DeleteFunctionConcurrency",
+        "scheduler:CreateSchedule",
+        "scheduler:UpdateSchedule",
+        "events:PutRule",
+        "events:EnableRule",
+        "events:PutTargets",
+        "logs:CreateLogGroup"
       ],
       "Resource": "*"
     }

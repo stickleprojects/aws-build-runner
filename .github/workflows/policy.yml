@@ -116,6 +116,9 @@ jobs:
       - name: Regression rules (one per past mistake)
         run: python3 -I part1-godmode/tests/regressions.py
 
+      - name: Kill switch tests (offline)
+        run: python3 -I part1-godmode/tests/test_kill_switch.py
+
       - name: Runner Lambda tests (offline)
         run: python3 -I part2-runner/stack/test_lambda.py
 

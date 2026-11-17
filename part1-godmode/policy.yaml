@@ -29,6 +29,9 @@ services:
       instance_types: ["t3.*", "t3a.*", "t4g.*", "m*.large", "m*.xlarge", "c*.large", "c*.xlarge"]
       max_volume_gib: 256
       blocked_volume_types: [io1, io2]
+      # gp3 performance above the free baseline is billed every month the disk exists (#30)
+      max_gp3_iops: 3000
+      max_gp3_throughput_mibps: 125
       shared_tenancy_only: true
     blocked:
       "ec2:CreateNatGateway": NAT gateway (≈US$45/month each, plus data)
@@ -48,6 +51,8 @@ services:
       "ec2:DisableImageBlockPublicAccess": Making AMIs public
       "ec2:DisableSnapshotBlockPublicAccess": Making EBS snapshots public
       "ec2:DisableEbsEncryptionByDefault": Turning off disk encryption by default
+      "ec2:LockSnapshot": Locking a snapshot (locked, it can't be deleted, so it bills until the lock ends, and the kill switch can't remove it)
+      "ec2:EnableImageDeregistrationProtection": Protecting an AMI from deletion (the kill switch couldn't remove it)
 
   - id: ssm
     title: Systems Manager
@@ -201,12 +206,19 @@ protected:
       why: Claude mustn't be able to change, disable or remove the automatic stop
       actions: ["lambda:*"]
       arn: "arn:aws:lambda:*:{{ACCOUNT_ID}}:function:guardrail-*"
+    - name: The fast-stop alarms
+      why: Claude mustn't be able to change, mute, fake or delete the alarms that stop fast spending (#30)
+      actions: ["cloudwatch:PutMetricAlarm", "cloudwatch:DeleteAlarms", "cloudwatch:DisableAlarmActions",
+                "cloudwatch:SetAlarmState", "cloudwatch:TagResource", "cloudwatch:UntagResource"]
+      arn: "arn:aws:cloudwatch:*:{{ACCOUNT_ID}}:alarm:guardrail-*"
 
 # Applied by apply.sh (godmode), outside the policy. Claude can't change them.
 account_settings:
-  # Kieron's ceiling is a bill of at most £30 (≈US$38). AWS bills in US$ and its billing data lags by up
-  # to about a day, so the stop fires at US$25 (≈£20), leaving room for the lag and anything still billing.
-  budget_usd: 25
+  # Kieron's ceiling is a bill of at most £30 (≈US$38). AWS bills in US$ and its billing data lags by
+  # 8-36 hours, so the stop fires at US$29 (≈£23, Kieron 2026-11-17; the budget counts tax), leaving ≈£7 for
+  # the lag and anything still billing. The fast stop below doesn't wait for billing data at all (#30).
+  # A busy month of runners is ≈US$24-25, so it fits under the stop.
+  budget_usd: 29
   # The budget counts everything in the account (every service: instances, logs, snapshots, data transfer…),
   # as what would be BILLED: credits reduce it (AWS applies them on the invoice, so covered usage is never
   # charged), refunds don't (they come back later, if at all), tax counts. Set by apply.sh and
@@ -222,6 +234,20 @@ account_settings:
     kill_switch:
       terminate_instances: true      # every instance in the account, and open spot requests
       delete_runner_amis: true       # resource-group=build-runner AMIs and snapshots (the pipeline rebuilds them)
+      throttle_lambdas: true         # our Lambdas (tagged resource-group) get 0 concurrency: nothing runs, nothing bills
+      delete_detached_volumes: true  # unattached disks tagged resource-group (a runner's disk goes with it anyway)
+      release_unused_addresses: true # Elastic IPs not attached to anything (≈US$3.60/month each)
+      delete_interface_endpoints: true  # interface VPC endpoints (≈US$29/month each); gateway endpoints are free
+    # Fast stop, without waiting for billing data (#30): CloudWatch alarms, Sydney, each over 2 periods of 5
+    # minutes in a row (so ≈10 minutes), trigger the kill switch in "fast" mode: it terminates every instance,
+    # cancels spot requests and throttles our Lambdas, and emails Kieron. It keeps the AMIs, disks and IPs, and
+    # attaches nothing, so a false alarm costs only the interrupted jobs. Thresholds: per 5 minutes, whole account.
+    fast_stop:
+      network_out_gib: 1             # sent by instances (normal: a few MiB; 4 capped runners max out at ≈3 GiB)
+      lambda_invocations: 1000       # normal: ≈1 a minute (the launcher), plus webhook calls
+      log_ingest_mib: 100            # normal: ≈500 bytes per 5 minutes (measured 2026-11-17)
+  # Cost Anomaly Detection (free): emails Kieron when a day's spend on any service is unusual by this much.
+  anomaly_alert_usd: 3
   block_public_access: [S3 (whole account), AMIs, EBS snapshots]
   ebs_encryption_by_default: true
 
@@ -244,3 +270,15 @@ changes:
   - date: 2026-11-16
     what: The budget stop also covers the runner launcher's role (build-runner-launcher), so at the limit it can't launch runner instances either (the org-wide stop already did)
     approved: 2026-11-16 Kieron
+  - date: 2026-11-17
+    what: "Disk limits (#30 fix 4): gp3 disks at most the free 3,000 IOPS and 125 MiB/s; snapshot locks and AMI deletion protection blocked, so the kill switch can always remove what it must"
+    approved: 2026-11-17 Kieron
+  - date: 2026-11-17
+    what: "Fast stop (#30 fix 2): CloudWatch alarms on data sent by instances, Lambda calls and log ingestion trigger the kill switch within ≈10 minutes, without waiting for billing data. It terminates instances and throttles our Lambdas; AMIs, disks and IPs stay. Claude can't change or delete the alarms"
+    approved: 2026-11-17 Kieron
+  - date: 2026-11-17
+    what: "Wider stop at the budget (#30 fix 3): the kill switch also throttles our Lambdas, deletes detached build disks, releases unused Elastic IPs and deletes interface VPC endpoints; the budget stop also blocks resizing disks, copying snapshots, changing Lambdas, creating or changing schedules and rules, and creating log groups"
+    approved: 2026-11-17 Kieron
+  - date: 2026-11-17
+    what: "More headroom (#30 fix 5): the budget stop fires at US$29, ≈£23 (was US$25); Cost Anomaly Detection emails Kieron about unusual daily spend of US$3 or more"
+    approved: 2026-11-17 Kieron

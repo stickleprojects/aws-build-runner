@@ -73,8 +73,8 @@ labels, so check jobs get their own label (`aws-heavy`; light jobs use `aws-ligh
 figures hold once that's in place. Without it, the only safe choice would be 4 vCPU for every job:
 ≈ US$31 at the busiest load (over the stop), ≈ US$16 at half.
 
-**Watch out:** at the **busiest observed load all month**, this lands at the **US$25 budget**, so the
-automatic stop would fire near month end. The "busiest load" was a single day of 100 runs in 11.5
+**Watch out:** at the **busiest observed load all month**, this lands just under the **US$29 budget stop**, so a
+busier month would trip it before month end. The "busiest load" was a single day of 100 runs in 11.5
 hours; a typical month should be well under. If months really run that hot, the options are:
 - cap concurrent runners in the launcher (planned anyway),
 - keep light jobs on GitHub-hosted runners,
@@ -100,13 +100,26 @@ GitHub-hosted prices already include it.
 
 ## Worst case under the guardrails
 
-Since 2026-11-16 the budget **stops spending automatically** (part1-godmode/POLICY.md, "Set by godmode"):
-- at **US$25** (≈£20; the ceiling is a £30 bill), counting what would be billed,
-- **nothing new** can be started by Claude's user or roles,
-- the **kill switch terminates every instance** and deletes the runner AMIs,
-- and an **org-wide budget with an SCP** in the management account covers every account on the bill.
+**Corrected 2026-11-17 (#30).** This section used to say the realistic worst case was about £22–25. That was
+wrong. The budget stop isn't a hard cap: it fires on billing data that is 8–36 hours late, and it only
+stopped instances. Something that spends fast, or that isn't an instance, could run well past it. The review
+in #30 put the exposure at thousands of US$ for outbound data from a runner (≈ US$1,000/h for 4 runners).
 
-Billing data lags by up to about a day, so the stop fires after spend crosses US$25. The guardrails
-(small instance types, no purchases, no quota increases) and the 32-vCPU quota cap how fast it can
-grow meanwhile: the realistic worst case is about £22–25. It isn't a legal guarantee; AWS offers no
-hard spend cap.
+What's in place, once the #30 fixes are applied:
+
+| Guardrail | What it limits | Worst case it leaves |
+|---|---|---|
+| Upload cap on every runner (≈ 20 Mbps, [ami/files/build-runner-boot.sh](part2-runner/ami/files/build-runner-boot.sh)) | Data out, the biggest risk | ≈ US$1.05/h per runner, ≈ US$4.20/h for 4 |
+| Fast stop: CloudWatch alarms → kill switch within ≈ 10 minutes | Data out, Lambda loops, log floods | ≈ 10 minutes of the fastest leak: well under US$5 |
+| Budget stop at **US$29** (≈ £23, tax included; Kieron, 2026-11-17) | Everything, a day late | The lag: a few US$ at the capped rates |
+| Kill switch at the budget | Instances, our Lambdas, AMIs, detached disks, unused IPs, interface endpoints | — |
+| Disk limits | No paid IOPS/throughput, no locked snapshots or protected AMIs | — |
+| Cost Anomaly Detection (daily email from US$3) | Slow leaks the alarms don't see (e.g. S3 requests) | Noticed within about a day |
+| Org-wide budget with an SCP (management account) | Every account on the bill | — |
+
+So the bill should end below the £30 ceiling even with a mistake, but it is still not a legal guarantee: AWS offers
+no hard spend cap. Not covered by a fast alarm: S3 request floods (no free account-wide metric). They're slow at
+today's scale, and Cost Anomaly Detection and the budget stop catch them.
+
+At the busiest load seen so far, a month of runners costs ≈ US$24–25 (above), so a busy month fits under the
+US$29 stop with a little room; a month busier than that would trip it and stop builds until Kieron lifts it.

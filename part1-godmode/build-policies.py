@@ -160,6 +160,14 @@ def statements(p: dict) -> dict:
             "Resource": "arn:aws:ec2:*:*:volume/*",
             "Condition": {"StringEquals": {"ec2:VolumeType": limits["blocked_volume_types"]}},
         })
+    for key, sid, cond in (("max_gp3_iops", "MaxGp3Iops", "ec2:VolumeIops"),
+                           ("max_gp3_throughput_mibps", "MaxGp3Throughput", "ec2:VolumeThroughput")):
+        if key in limits:
+            denies.append({
+                "Sid": sid, "Effect": "Deny", "Action": volume_actions,
+                "Resource": "arn:aws:ec2:*:*:volume/*",
+                "Condition": {"NumericGreaterThan": {cond: str(limits[key])}},
+            })
 
     denies += resource_group_statements(p)
     for i, item in enumerate((p.get("protected") or {}).get("resources", [])):
@@ -278,6 +286,9 @@ def summary(p: dict, pending: list, sizes: dict) -> str:
         w(f"- **Disks**: at most {limits['max_volume_gib']} GiB each.")
     if limits.get("blocked_volume_types"):
         w(f"- **No provisioned-IOPS disks**: {', '.join(limits['blocked_volume_types'])} blocked.")
+    if "max_gp3_iops" in limits or "max_gp3_throughput_mibps" in limits:
+        w(f"- **No paid disk performance**: at most {limits.get('max_gp3_iops', 'any')} IOPS and "
+          f"{limits.get('max_gp3_throughput_mibps', 'any')} MiB/s per disk (gp3's free baseline; above it bills every month).")
     w("- **Blocked actions**:")
     w("")
     w("  | Action | What it is, and why it's blocked |")
@@ -349,16 +360,37 @@ def summary(p: dict, pending: list, sizes: dict) -> str:
         w(f"- **Automatic stop at {stop['at_percent']} % of actual spend** (US${settings.get('budget_usd')}):")
         w(f"  - **Nothing new:** AWS Budgets attaches `guardrails/budget-stop` to Claude's user and roles ({roles}): "
           "no instances, spot/fleet, volumes, snapshots, images, IPs, NAT, endpoints, functions, buckets, stacks or "
-          "passing roles.")
+          "passing roles; no resizing disks, copying snapshots, changing Lambdas or their concurrency, creating or "
+          "changing schedules and rules, or creating log groups.")
         stops = []
         if ks.get("terminate_instances"):
             stops.append("terminates **every instance** in the account and cancels open spot requests")
+        if ks.get("throttle_lambdas"):
+            stops.append("sets **our Lambdas** (tagged `resource-group`) to 0 concurrency, so none runs")
         if ks.get("delete_runner_amis"):
             stops.append("deletes the runner AMIs and their snapshots (the weekly pipeline rebuilds them)")
+        if ks.get("delete_detached_volumes"):
+            stops.append("deletes **unattached disks** tagged `resource-group`")
+        if ks.get("release_unused_addresses"):
+            stops.append("releases **Elastic IPs not attached** to anything")
+        if ks.get("delete_interface_endpoints"):
+            stops.append("deletes **interface VPC endpoints**")
         if stops:
-            w(f"  - **Stop what's spending:** the kill switch (Lambda `guardrail-kill-switch`, Sydney) {' and '.join(stops)}.")
-        w("  - Billing data lags by up to about a day, so the stop fires at US$25 to keep the bill under the £30 ceiling. "
-          "Only Kieron can lift it (Billing → Budgets → Actions); Claude can't detach it or touch the kill switch.")
+            w(f"  - **Stop what's spending:** the kill switch (Lambda `guardrail-kill-switch`, Sydney) {'; '.join(stops)}.")
+        w(f"  - Billing data lags by 8-36 hours, so the stop fires at US${settings.get('budget_usd')} to keep the bill "
+          "under the £30 ceiling. Only Kieron can lift it (Billing → Budgets → Actions); Claude can't detach it or "
+          "touch the kill switch.")
+        fast = stop.get("fast_stop")
+        if fast:
+            w("- **Fast stop, without waiting for billing data:** CloudWatch alarms (Sydney, whole account) trigger the "
+              "kill switch when, for 2 periods of 5 minutes in a row (≈10 minutes), instances send more than "
+              f"{fast['network_out_gib']} GiB, Lambdas are called more than {fast['lambda_invocations']:,} times, or "
+              f"logs take in more than {fast['log_ingest_mib']} MiB, per 5 minutes. It then terminates every instance, "
+              "cancels spot requests and throttles our Lambdas, and emails Kieron. It keeps the AMIs, disks and IPs, so "
+              "a false alarm costs only the interrupted jobs. Turning the Lambdas back on is Kieron's call.")
+    if "anomaly_alert_usd" in settings:
+        w(f"- **Cost Anomaly Detection** (free) emails Kieron about unusual daily spend on any service of "
+          f"US${settings['anomaly_alert_usd']} or more.")
     protected = (p.get("protected") or {}).get("resources", [])
     if protected:
         w("- **Protected resources** Claude and its roles can't touch, whatever the approved services allow: "
