@@ -215,9 +215,10 @@ protected:
 # Applied by apply.sh (godmode), outside the policy. Claude can't change them.
 account_settings:
   # Kieron's ceiling is a bill of at most £30 (≈US$38). AWS bills in US$ and its billing data lags by
-  # 8-36 hours, so the stop fires at US$20 (≈£15; 20% UK VAT on top is ≈US$24), leaving room for the lag
-  # and anything still billing. The fast stop below doesn't wait for billing data at all (#30).
-  budget_usd: 20
+  # 8-36 hours, so the stop fires at US$29 (≈£23, Kieron 2026-11-17; the budget counts tax), leaving ≈£7 for
+  # the lag and anything still billing. The fast stop below doesn't wait for billing data at all (#30).
+  # A busy month of runners is ≈US$24-25, so it fits under the stop.
+  budget_usd: 29
   # The budget counts everything in the account (every service: instances, logs, snapshots, data transfer…),
   # as what would be BILLED: credits reduce it (AWS applies them on the invoice, so covered usage is never
   # charged), refunds don't (they come back later, if at all), tax counts. Set by apply.sh and
@@ -279,5 +280,5 @@ changes:
     what: "Wider stop at the budget (#30 fix 3): the kill switch also throttles our Lambdas, deletes detached build disks, releases unused Elastic IPs and deletes interface VPC endpoints; the budget stop also blocks resizing disks, copying snapshots, changing Lambdas, creating or changing schedules and rules, and creating log groups"
     approved: pending
   - date: 2026-11-17
-    what: "More headroom (#30 fix 5): the budget stop fires at US$20 (was US$25); Cost Anomaly Detection emails Kieron about unusual daily spend of US$3 or more"
+    what: "More headroom (#30 fix 5): the budget stop fires at US$29, ≈£23 (was US$25); Cost Anomaly Detection emails Kieron about unusual daily spend of US$3 or more"
     approved: pending

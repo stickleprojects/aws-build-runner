@@ -24,7 +24,7 @@ needs godmode: roles go under `/claude/` with the `guardrails/claude-boundary` b
 ```
 GitHub workflow_job webhook ─> build-runner-webhook  (Lambda, public function URL)
                                  checks the HMAC signature, keeps spellbound3d "queued" jobs labelled
-                                 aws-spellbound3d, starts the launcher asynchronously (answers in < 1 s)
+                                 aws-light, starts the launcher asynchronously (answers in < 1 s)
                                      │
 EventBridge Scheduler, every 5 min ──┤
                                      v
@@ -44,11 +44,12 @@ EventBridge Scheduler, every 5 min ──┤
 - **Idempotent**: the launcher never trusts a single event. Duplicate or missed webhooks don't matter: the
   next run counts again. It can't reserve Lambda concurrency (this account's limit is the minimum 10), so
   an SSM parameter created with "fail if it exists" is the lock.
-- Labels: `aws-spellbound3d` and `aws-spellbound3d-check`, one per runner and nothing else: a JIT runner
+- Labels: `aws-light` and `aws-heavy`, one per runner and nothing else: a JIT runner
   has exactly the labels it's registered with, so it can never take a `self-hosted` job meant for the local
-  runner. Cut-over = set `SDLC_RUNNER` (and `SDLC_RUNNER_CHECK`) to them; rollback = back to `self-hosted`.
+  runner. Cut-over = set `SDLC_RUNNER` (and `SDLC_RUNNER_HEAVY`) to them; rollback = back to `self-hosted`.
 - One instance per job; ephemeral, clean every time. Registered on GitHub ≈ 40 s after launch (measured).
-- Instance: no SSH, no inbound rules (shell via Session Manager), IMDSv2 only, public IPv4 in a default-VPC
+- Instance: no SSH, no inbound rules (shell via Session Manager), IMDSv2 only, uploads capped at ≈ 20 Mbps
+  for the job user (#30: data out costs US$0.114/GB), public IPv4 in a default-VPC
   subnet (no NAT gateway), 30 GiB gp3 encrypted. Its role (`build-runner-instance`) only runs the SSM agent.
 - GitHub credential: the App `stickleprojects-aws-runner` (key in SSM); each launcher run gets a token for
   spellbound3d only, with only *administration: write* and *actions: read*, and revokes it at the end.
@@ -67,8 +68,8 @@ spellbound3d's heavy jobs get their own label (being agreed with spellbound3d: t
 
 | Label (repo variable) | Jobs | Instance, tried in order | Why |
 |---|---|---|---|
-| `aws-spellbound3d-check` (`SDLC_RUNNER_CHECK`, proposed) | CI `check`, `make check (after review)` | c7i.xlarge → c6i.xlarge → m7i.xlarge spot → c7i.xlarge on-demand. **Never 2 vCPU or t3** | Timing tests fail on 2 vCPU; t3 throttles when CPU credits run out |
-| `aws-spellbound3d` (`SDLC_RUNNER`) | Everything else (Claude jobs: review, mention, spec, descopes, PR title, evals) | c7i.large → t3.large spot → c7i.large on-demand | Mostly waiting on the API |
+| `aws-heavy` (`SDLC_RUNNER_HEAVY`) | CI `check`, `make check (after review)` | c7i.xlarge → c6i.xlarge → m7i.xlarge spot → c7i.xlarge on-demand. **Never 2 vCPU or t3** | Timing tests fail on 2 vCPU; t3 throttles when CPU credits run out |
+| `aws-light` (`SDLC_RUNNER`) | Everything else (Claude jobs: review, mention, spec, descopes, PR title, evals) | c7i.large → t3.large spot → c7i.large on-demand | Mostly waiting on the API |
 
 Which class a job uses is spellbound3d's choice, and its responsibility. A daily report
 (`usage/`) tracks hours and estimated cost per class, and opens an issue for Kieron if heavy takes over the
@@ -99,8 +100,8 @@ stack parameter `Pools`.
 3. [x] Stack `build-runner` (`stack/`): webhook and launcher Lambdas, launch template, security group,
    5-minute schedule, log groups (14 days). Tested live: signatures, a spot launch, the runner online.
 4. [ ] Add the spellbound3d webhook (*Workflow jobs* only) to the URL `deploy.sh` prints, with the secret.
-5. [ ] spellbound3d: a second label for its check jobs (proposed: `SDLC_RUNNER_CHECK`, falling back to `SDLC_RUNNER`).
-6. [ ] Test with a throwaway workflow on a branch that targets `aws-spellbound3d`, then switch
+5. [ ] spellbound3d: a second label for its check jobs (`SDLC_RUNNER_HEAVY`, falling back to `SDLC_RUNNER`; names decided 2026-11-17, Kieron).
+6. [ ] Test with a throwaway workflow on a branch that targets `aws-light`, then switch
    `SDLC_RUNNER`. Keep the local runner as the fallback until a week of green runs.
 
 ## Open questions

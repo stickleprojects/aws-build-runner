@@ -15,7 +15,7 @@ job queued on GitHub ──webhook──> Lambda ──> launcher ──> a spot
 every 5 min ──> launcher: catches missed webhooks; reaps runners > 90 min, or idle 20 min
 ```
 
-- **Switch over**: set the spellbound3d repo variable `SDLC_RUNNER` to `aws-spellbound3d`.
+- **Switch over**: set the spellbound3d repo variable `SDLC_RUNNER` to `aws-light`.
   **Roll back**: set it back to `self-hosted` (the local runner). The workflows don't change.
 - **Image**: Ubuntu 24.04 baked with the Actions runner, Godot 4.7.2 and the local runner's
   `job-started.sh` safety check.
@@ -54,7 +54,7 @@ every 5 min ──> launcher: catches missed webhooks; reaps runners > 90 min, o
 | [PLAN.md](PLAN.md) | Design, instance types per job, steps |
 | [ami/IMAGE.md](ami/IMAGE.md) | **What the image comes with** (generated from `ami/manifest.json`) |
 | `ami/setup.sh` | How the image is built (runs on the bake instance) |
-| `ami/files/` | The local runner's hook and allowlists; our job-completed hook and `job-usage.py` (one usage line per job); the boot step (instance info, job registration, IMDS block); the one-job service; the bake reporter |
+| `ami/files/` | The local runner's hook and allowlists; our job-completed hook and `job-usage.py` (one usage line per job); the boot step (instance info, job registration, IMDS block, upload cap); the one-job service; the bake reporter |
 | `ami/bake.sh`, `ami/bake-role.sh` | Bake an AMI as Claude's user; the bake instance's role can only report, read its one GitHub token, and talk to Systems Manager |
 | `ami/smoke-test.sh` | Check a baked AMI; promote the candidate if it passes |
 | `lib/github-app.sh` | Short-lived GitHub App tokens (the key stays in SSM) |

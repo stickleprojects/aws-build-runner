@@ -61,6 +61,8 @@ def main():
       "(2-hour hard limit). Every job starts on a clean machine.")
     w("- The local runner's `job-started.sh` hook and allowlists run first: same repos, same actors, no forks.")
     w("- systemd: `NoNewPrivileges`, `ProtectSystem=full` (`/usr`, `/boot`, `/etc` read-only), private `/tmp`.")
+    w("- Uploads are capped at about 20 Mbps (2,500 KiB/s) for everything ghrunner sends off the machine, "
+      "so a job can't run up a data-transfer bill (#30). Downloads aren't capped.")
     w("")
     w("## Not included, on purpose")
     w("")

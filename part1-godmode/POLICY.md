@@ -6,7 +6,7 @@ Generated from [policy.yaml](policy.yaml) by `build-policies.py`. Don't edit thi
 > - change 2026-11-17: Disk limits (#30 fix 4): gp3 disks at most the free 3,000 IOPS and 125 MiB/s; snapshot locks and AMI deletion protection blocked, so the kill switch can always remove what it must
 > - change 2026-11-17: Fast stop (#30 fix 2): CloudWatch alarms on data sent by instances, Lambda calls and log ingestion trigger the kill switch within ≈10 minutes, without waiting for billing data. It terminates instances and throttles our Lambdas; AMIs, disks and IPs stay. Claude can't change or delete the alarms
 > - change 2026-11-17: Wider stop at the budget (#30 fix 3): the kill switch also throttles our Lambdas, deletes detached build disks, releases unused Elastic IPs and deletes interface VPC endpoints; the budget stop also blocks resizing disks, copying snapshots, changing Lambdas, creating or changing schedules and rules, and creating log groups
-> - change 2026-11-17: More headroom (#30 fix 5): the budget stop fires at US$20 (was US$25); Cost Anomaly Detection emails Kieron about unusual daily spend of US$3 or more
+> - change 2026-11-17: More headroom (#30 fix 5): the budget stop fires at US$29, ≈£23 (was US$25); Cost Anomaly Detection emails Kieron about unusual daily spend of US$3 or more
 
 Claude's IAM user (`AWS_CLAUDE_USER`) in the account `AWS_ACCOUNT_ID` · home region Sydney (`ap-southeast-2`). The account id and user name aren't in the repo: see [config.py](config.py).
 
@@ -113,11 +113,11 @@ Each group also has an AWS Resource Group of the same name (a saved tag search) 
 
 ## Set by godmode, outside the policy
 
-- Monthly budget **US$20**, email alerts at 50 %, 80 % and 100 % actual, and 100 % forecast. It counts **everything in the account**, every service (instances, logs, snapshots, data transfer…), as **what you'd be billed**: credits (applied automatically on the invoice) reduce it, refunds (paid back later, if ever) don't, and tax counts.
-- **Automatic stop at 100 % of actual spend** (US$20):
+- Monthly budget **US$29**, email alerts at 50 %, 80 % and 100 % actual, and 100 % forecast. It counts **everything in the account**, every service (instances, logs, snapshots, data transfer…), as **what you'd be billed**: credits (applied automatically on the invoice) reduce it, refunds (paid back later, if ever) don't, and tax counts.
+- **Automatic stop at 100 % of actual spend** (US$29):
   - **Nothing new:** AWS Budgets attaches `guardrails/budget-stop` to Claude's user and roles (`build-runner-bake`, `build-runner-ami-ci`, `build-runner-launcher`): no instances, spot/fleet, volumes, snapshots, images, IPs, NAT, endpoints, functions, buckets, stacks or passing roles; no resizing disks, copying snapshots, changing Lambdas or their concurrency, creating or changing schedules and rules, or creating log groups.
   - **Stop what's spending:** the kill switch (Lambda `guardrail-kill-switch`, Sydney) terminates **every instance** in the account and cancels open spot requests; sets **our Lambdas** (tagged `resource-group`) to 0 concurrency, so none runs; deletes the runner AMIs and their snapshots (the weekly pipeline rebuilds them); deletes **unattached disks** tagged `resource-group`; releases **Elastic IPs not attached** to anything; deletes **interface VPC endpoints**.
-  - Billing data lags by 8-36 hours, so the stop fires at US$20 to keep the bill under the £30 ceiling. Only Kieron can lift it (Billing → Budgets → Actions); Claude can't detach it or touch the kill switch.
+  - Billing data lags by 8-36 hours, so the stop fires at US$29 to keep the bill under the £30 ceiling. Only Kieron can lift it (Billing → Budgets → Actions); Claude can't detach it or touch the kill switch.
 - **Fast stop, without waiting for billing data:** CloudWatch alarms (Sydney, whole account) trigger the kill switch when, for 2 periods of 5 minutes in a row (≈10 minutes), instances send more than 1 GiB, Lambdas are called more than 1,000 times, or logs take in more than 100 MiB, per 5 minutes. It then terminates every instance, cancels spot requests and throttles our Lambdas, and emails Kieron. It keeps the AMIs, disks and IPs, so a false alarm costs only the interrupted jobs. Turning the Lambdas back on is Kieron's call.
 - **Cost Anomaly Detection** (free) emails Kieron about unusual daily spend on any service of US$3 or more.
 - **Protected resources** Claude and its roles can't touch, whatever the approved services allow: The budget kill switch (`arn:aws:lambda:*:ACCOUNT:function:guardrail-*`, lambda:*); The fast-stop alarms (`arn:aws:cloudwatch:*:ACCOUNT:alarm:guardrail-*`, cloudwatch:PutMetricAlarm, cloudwatch:DeleteAlarms, cloudwatch:DisableAlarmActions, cloudwatch:SetAlarmState, cloudwatch:TagResource, cloudwatch:UntagResource).
@@ -138,7 +138,7 @@ Each group also has an AWS Resource Group of the same name (a saved tag search) 
 | 2026-11-17 | Disk limits (#30 fix 4): gp3 disks at most the free 3,000 IOPS and 125 MiB/s; snapshot locks and AMI deletion protection blocked, so the kill switch can always remove what it must | pending |
 | 2026-11-17 | Fast stop (#30 fix 2): CloudWatch alarms on data sent by instances, Lambda calls and log ingestion trigger the kill switch within ≈10 minutes, without waiting for billing data. It terminates instances and throttles our Lambdas; AMIs, disks and IPs stay. Claude can't change or delete the alarms | pending |
 | 2026-11-17 | Wider stop at the budget (#30 fix 3): the kill switch also throttles our Lambdas, deletes detached build disks, releases unused Elastic IPs and deletes interface VPC endpoints; the budget stop also blocks resizing disks, copying snapshots, changing Lambdas, creating or changing schedules and rules, and creating log groups | pending |
-| 2026-11-17 | More headroom (#30 fix 5): the budget stop fires at US$20 (was US$25); Cost Anomaly Detection emails Kieron about unusual daily spend of US$3 or more | pending |
+| 2026-11-17 | More headroom (#30 fix 5): the budget stop fires at US$29, ≈£23 (was US$25); Cost Anomaly Detection emails Kieron about unusual daily spend of US$3 or more | pending |
 
 ## Policy sizes
 

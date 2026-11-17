@@ -65,7 +65,7 @@ check("signature: sha1 header rejected", not runner.signature_ok(secret, body, "
 check("signature: empty secret rejects everything", not runner.signature_ok("", body, good))
 
 
-def event(action="queued", repo="stickleprojects/spellbound3d", labels=("aws-spellbound3d",)):
+def event(action="queued", repo="stickleprojects/spellbound3d", labels=("aws-light",)):
     return {"action": action, "repository": {"full_name": repo}, "workflow_job": {"id": 7, "labels": list(labels)}}
 
 
@@ -77,13 +77,13 @@ check("event: the local runner's label ignored",
       runner.wanted_event("workflow_job", event(labels=["self-hosted"])) is not None)
 check("event: ubuntu-latest ignored", runner.wanted_event("workflow_job", event(labels=["ubuntu-latest"])) is not None)
 check("event: self-hosted plus ours ignored (a JIT runner only has our label)",
-      runner.wanted_event("workflow_job", event(labels=["self-hosted", "aws-spellbound3d"])) is not None)
-check("event: the check label is ours too", runner.wanted_event("workflow_job", event(labels=["aws-spellbound3d-check"])) is None)
+      runner.wanted_event("workflow_job", event(labels=["self-hosted", "aws-light"])) is not None)
+check("event: the check label is ours too", runner.wanted_event("workflow_job", event(labels=["aws-heavy"])) is None)
 check("event: both of our labels at once ignored (no single runner has both)",
-      runner.wanted_event("workflow_job", event(labels=["aws-spellbound3d", "aws-spellbound3d-check"])) is not None)
-check("event: label case doesn't matter", runner.wanted_event("workflow_job", event(labels=["AWS-Spellbound3d"])) is None)
+      runner.wanted_event("workflow_job", event(labels=["aws-light", "aws-heavy"])) is not None)
+check("event: label case doesn't matter", runner.wanted_event("workflow_job", event(labels=["AWS-Light"])) is None)
 check("event: our label plus one we don't have ignored",
-      runner.wanted_event("workflow_job", event(labels=["aws-spellbound3d", "gpu"])) is not None)
+      runner.wanted_event("workflow_job", event(labels=["aws-light", "gpu"])) is not None)
 check("pools: never self-hosted (the local runner's label, and the rollback)",
       not any(l in runner.POOLS for l in ("self-hosted", "linux", "x64", "spellbound3d")))
 
@@ -115,13 +115,13 @@ check("webhook: base64 body handled", r["statusCode"] == 202 and len(fake_lambda
 
 # completed jobs: recorded for the usage report (queue wait, run time), never launch anything
 done_event = {"action": "completed", "repository": {"full_name": "stickleprojects/spellbound3d"},
-              "workflow_job": {"id": 8, "labels": ["aws-spellbound3d-check"], "workflow_name": "CI", "name": "check",
+              "workflow_job": {"id": 8, "labels": ["aws-heavy"], "workflow_name": "CI", "name": "check",
                                "run_id": 5, "conclusion": "success", "runner_name": "aws-x",
                                "created_at": "2026-11-16T07:00:00Z", "started_at": "2026-11-16T07:01:30Z",
                                "completed_at": "2026-11-16T07:21:30Z"}}
 rec = runner.completed_record("workflow_job", done_event)
 check("completed: queue wait and run time in seconds", rec and rec["queue_s"] == 90 and rec["run_s"] == 1200, str(rec))
-check("completed: label and class", rec and rec["label"] == "aws-spellbound3d-check" and rec["class"] == "heavy", str(rec))
+check("completed: label and class", rec and rec["label"] == "aws-heavy" and rec["class"] == "heavy", str(rec))
 check("completed: another repo's job isn't ours",
       runner.completed_record("workflow_job", {**done_event, "repository": {"full_name": "x/y"}}) is None)
 check("completed: a job on another label isn't ours",
@@ -129,7 +129,7 @@ check("completed: a job on another label isn't ours",
                                                                                "labels": ["self-hosted"]}}) is None)
 check("completed: a queued job isn't a completed one", runner.completed_record("workflow_job", event()) is None)
 check("completed: missing times are None, not an error",
-      runner.completed_record("workflow_job", {**done_event, "workflow_job": {"id": 9, "labels": ["aws-spellbound3d"]}})
+      runner.completed_record("workflow_job", {**done_event, "workflow_job": {"id": 9, "labels": ["aws-light"]}})
       ["queue_s"] is None)
 raw_done = json.dumps(done_event).encode()
 sig_done = "sha256=" + hmac.new(secret.encode(), raw_done, hashlib.sha256).hexdigest()
@@ -144,7 +144,7 @@ check("webhook: a forged completed event → 401", r["statusCode"] == 401)
 
 # --- planning
 now = time.time()
-L, C = "aws-spellbound3d", "aws-spellbound3d-check"
+L, C = "aws-light", "aws-heavy"
 
 
 def inst(name, age_min, job="1", pool=L):

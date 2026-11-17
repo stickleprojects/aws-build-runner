@@ -11,7 +11,7 @@
 #   4. stack build-runner: template.yaml with the settings in config.json, in the default VPC's public subnets
 #   5. prints the webhook URL, for the spellbound3d webhook (Workflow jobs events only)
 #
-# Runners aren't used until spellbound3d's SDLC_RUNNER says aws-spellbound3d; this only makes them possible.
+# Runners aren't used until spellbound3d's SDLC_RUNNER says aws-light; this only makes them possible.
 set -Eeuo pipefail
 cd "$(dirname "$0")"
 export AWS_REGION=ap-southeast-2

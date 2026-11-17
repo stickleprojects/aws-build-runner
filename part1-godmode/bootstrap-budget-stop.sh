@@ -25,7 +25,7 @@
 #     Lambdas only), and an email to Kieron (confirm the subscription the first time)
 #   - Cost Anomaly Detection: a monitor per service and a daily email above policy.yaml anomaly_alert_usd
 # Ends with a DRY RUN of both modes: what they would stop right now, without stopping anything.
-# Billing data lags 8-36 hours, which is why the budget stop is at US$20 for a £30 ceiling, and why the fast stop
+# Billing data lags 8-36 hours, which is why the budget stop is at US$29 (≈£23) for a £30 ceiling, and why the fast stop
 # doesn't use billing data at all.
 # Undo the block on new things: Billing → Budgets → guardrail-monthly → Actions → reverse, once you've decided.
 set -euo pipefail

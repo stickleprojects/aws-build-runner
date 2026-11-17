@@ -69,12 +69,12 @@ t3's CPU credits made timings flaky. So jobs get fixed-performance c7i types, ch
 | **Total** | | **≈ US$24–25** | **≈ US$13** |
 
 **Per label, not per job** (Kieron, 2026-11-16): GitHub gives a queued job to any idle runner with its
-labels, so check jobs get their own label (`aws-spellbound3d-check`), being agreed with spellbound3d. These
+labels, so check jobs get their own label (`aws-heavy`; light jobs use `aws-light`), being agreed with spellbound3d. These
 figures hold once that's in place. Without it, the only safe choice would be 4 vCPU for every job:
 ≈ US$31 at the busiest load (over the stop), ≈ US$16 at half.
 
-**Watch out:** at the **busiest observed load all month**, this lands above the **US$20 budget stop**, so the
-automatic stop would fire before month end. The "busiest load" was a single day of 100 runs in 11.5
+**Watch out:** at the **busiest observed load all month**, this lands just under the **US$29 budget stop**, so a
+busier month would trip it before month end. The "busiest load" was a single day of 100 runs in 11.5
 hours; a typical month should be well under. If months really run that hot, the options are:
 - cap concurrent runners in the launcher (planned anyway),
 - keep light jobs on GitHub-hosted runners,
@@ -111,7 +111,7 @@ What's in place, once the #30 fixes are applied:
 |---|---|---|
 | Upload cap on every runner (≈ 20 Mbps, [ami/files/build-runner-boot.sh](part2-runner/ami/files/build-runner-boot.sh)) | Data out, the biggest risk | ≈ US$1.05/h per runner, ≈ US$4.20/h for 4 |
 | Fast stop: CloudWatch alarms → kill switch within ≈ 10 minutes | Data out, Lambda loops, log floods | ≈ 10 minutes of the fastest leak: well under US$5 |
-| Budget stop at **US$20** (≈ £15; VAT makes it ≈ US$24) | Everything, a day late | The lag: a few US$ at the capped rates |
+| Budget stop at **US$29** (≈ £23, tax included; Kieron, 2026-11-17) | Everything, a day late | The lag: a few US$ at the capped rates |
 | Kill switch at the budget | Instances, our Lambdas, AMIs, detached disks, unused IPs, interface endpoints | — |
 | Disk limits | No paid IOPS/throughput, no locked snapshots or protected AMIs | — |
 | Cost Anomaly Detection (daily email from US$3) | Slow leaks the alarms don't see (e.g. S3 requests) | Noticed within about a day |
@@ -121,5 +121,5 @@ So the bill should end below the £30 ceiling even with a mistake, but it is sti
 no hard spend cap. Not covered by a fast alarm: S3 request floods (no free account-wide metric). They're slow at
 today's scale, and Cost Anomaly Detection and the budget stop catch them.
 
-**Watch out:** at the busiest load seen so far, a month of runners costs ≈ US$24–25 (above), more than the
-US$20 stop. A month that busy would trip the stop before month end and stop builds until Kieron lifts it.
+At the busiest load seen so far, a month of runners costs ≈ US$24–25 (above), so a busy month fits under the
+US$29 stop with a little room; a month busier than that would trip it and stop builds until Kieron lifts it.
