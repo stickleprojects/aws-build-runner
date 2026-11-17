@@ -13,8 +13,8 @@ launcher  reconciles, one run at a time (an SSM-parameter lock: this account's L
           registrations whose instance is gone.
 
 GitHub assigns a queued job to any idle runner with matching labels, so a runner can't be reserved for
-one job. Sizes are therefore per LABEL (a pool), never per job: aws-spellbound3d (2 vCPU, Claude jobs)
-and aws-spellbound3d-check (4 vCPU, make check). See PLAN.md, "Instance types".
+one job. Sizes are therefore per LABEL (a pool), never per job: aws-light (2 vCPU, Claude jobs)
+and aws-heavy (4 vCPU, make check). See PLAN.md, "Instance types".
 """
 import base64
 import contextlib
@@ -37,8 +37,8 @@ REPO = os.environ.get("REPO", "stickleprojects/spellbound3d")
 # on purpose: with "self-hosted" it could take jobs meant for the local runner (SDLC_RUNNER=self-hosted is
 # the rollback), and the two must never compete.
 DEFAULT_POOLS = {
-    "aws-spellbound3d": {"class": "light", "spot": ["c7i.large", "t3.large"], "on_demand": ["c7i.large"]},
-    "aws-spellbound3d-check": {"class": "heavy", "spot": ["c7i.xlarge", "c6i.xlarge", "m7i.xlarge"],
+    "aws-light": {"class": "light", "spot": ["c7i.large", "t3.large"], "on_demand": ["c7i.large"]},
+    "aws-heavy": {"class": "heavy", "spot": ["c7i.xlarge", "c6i.xlarge", "m7i.xlarge"],
                                "on_demand": ["c7i.xlarge"]},
 }
 POOLS = {k.lower(): v for k, v in json.loads(os.environ.get("POOLS") or json.dumps(DEFAULT_POOLS)).items()}
