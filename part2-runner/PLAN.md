@@ -48,7 +48,8 @@ EventBridge Scheduler, every 5 min ──┤
   has exactly the labels it's registered with, so it can never take a `self-hosted` job meant for the local
   runner. Cut-over = set `SDLC_RUNNER` (and `SDLC_RUNNER_HEAVY`) to them; rollback = back to `self-hosted`.
 - One instance per job; ephemeral, clean every time. Registered on GitHub ≈ 40 s after launch (measured).
-- Instance: no SSH, no inbound rules (shell via Session Manager), IMDSv2 only, public IPv4 in a default-VPC
+- Instance: no SSH, no inbound rules (shell via Session Manager), IMDSv2 only, uploads capped at ≈ 20 Mbps
+  for the job user (#30: data out costs US$0.114/GB), public IPv4 in a default-VPC
   subnet (no NAT gateway), 30 GiB gp3 encrypted. Its role (`build-runner-instance`) only runs the SSM agent.
 - GitHub credential: the App `stickleprojects-aws-runner` (key in SSM); each launcher run gets a token for
   spellbound3d only, with only *administration: write* and *actions: read*, and revokes it at the end.

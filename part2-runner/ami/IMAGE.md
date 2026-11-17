@@ -24,6 +24,7 @@ Built **2026-11-16T04:39:24Z** from Ubuntu 24.04.5 LTS (`ami-081307e05c61a3854`)
 - **One job per instance**: a just-in-time runner registration, then the instance powers off and is deleted (2-hour hard limit). Every job starts on a clean machine.
 - The local runner's `job-started.sh` hook and allowlists run first: same repos, same actors, no forks.
 - systemd: `NoNewPrivileges`, `ProtectSystem=full` (`/usr`, `/boot`, `/etc` read-only), private `/tmp`.
+- Uploads are capped at about 20 Mbps (2,500 KiB/s) for everything ghrunner sends off the machine, so a job can't run up a data-transfer bill (#30). Downloads aren't capped.
 
 ## Not included, on purpose
 

@@ -83,6 +83,7 @@ check "NoNewPrivileges"         "systemctl show -p NoNewPrivileges --value githu
 check "ghrunner has no sudo"    "! sudo -u ghrunner sudo -n true 2>/dev/null && echo refused"
 check "IMDS blocked for jobs"   "! as_job 'curl -sf -m 3 -X PUT http://169.254.169.254/latest/api/token -H X-aws-ec2-metadata-token-ttl-seconds:60' && echo blocked"
 check "IMDS open for root"      "curl -sf -m 3 -X PUT http://169.254.169.254/latest/api/token -H 'X-aws-ec2-metadata-token-ttl-seconds: 60' >/dev/null && echo ok"
+check "egress capped for jobs"  "iptables -S OUTPUT | grep -E -- '--uid-owner [0-9]+ .*--hashlimit-above [0-9]+kb/s .*-j DROP' && ip6tables -S OUTPUT | grep -q -- --hashlimit-above && echo capped"
 check "hook"                    "bash -n /etc/github-runner/job-started.sh && test -x /etc/github-runner/job-started.sh && echo syntax ok"
 check "job-completed hook"      "bash -n /etc/github-runner/job-completed.sh && grep -qx ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/etc/github-runner/job-completed.sh $R/.env && echo installed"
 check "job usage record"        "/opt/github-runners/job-usage.py --dry-run | jq -e '.msg == \"job\" and .nproc == 2 and .memory_mb > 0 and (.box_mem_peak_mb | type) == \"number\" and (.box_cpu_s | type) == \"number\"'"
