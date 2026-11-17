@@ -119,6 +119,9 @@ jobs:
       - name: Kill switch tests (offline)
         run: python3 -I part1-godmode/tests/test_kill_switch.py
 
+      - name: Cost boundary catches every kind of breach (offline)
+        run: python3 -I part1-godmode/tests/test_cost_boundary.py
+
       - name: Runner Lambda tests (offline)
         run: python3 -I part2-runner/stack/test_lambda.py
 

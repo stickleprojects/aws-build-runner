@@ -38,7 +38,8 @@ def pending_items(p: dict) -> list:
     items += [f"global: {g['title']}" for g in p["global"] if not is_approved(g.get("approved"))]
     for key, label in (("read_only", "read-only listing"), ("iam", "IAM for what Claude builds"),
                        ("resource_groups", "resource-group tag on everything Claude creates"),
-                       ("protected", "protected resources (the budget kill switch)")):
+                       ("protected", "protected resources (the budget kill switch)"),
+                       ("cost_boundary", "cost boundary (what the runners may cost)")):
         if key not in p:
             continue
         if not is_approved(p[key].get("approved")):
@@ -378,7 +379,7 @@ def summary(p: dict, pending: list, sizes: dict) -> str:
         if stops:
             w(f"  - **Stop what's spending:** the kill switch (Lambda `guardrail-kill-switch`, Sydney) {'; '.join(stops)}.")
         w(f"  - Billing data lags by 8-36 hours, so the stop fires at US${settings.get('budget_usd')} to keep the bill "
-          "under the £30 ceiling. Only Kieron can lift it (Billing → Budgets → Actions); Claude can't detach it or "
+          "under the US$35 ceiling. Only Kieron can lift it (Billing → Budgets → Actions); Claude can't detach it or "
           "touch the kill switch.")
         fast = stop.get("fast_stop")
         if fast:
@@ -396,6 +397,15 @@ def summary(p: dict, pending: list, sizes: dict) -> str:
         w("- **Protected resources** Claude and its roles can't touch, whatever the approved services allow: "
           + "; ".join(f"{r['name']} (`{r['arn'].replace('{{ACCOUNT_ID}}', 'ACCOUNT')}`, {', '.join(r['actions'])})"
                       for r in protected) + ".")
+    cb = p.get("cost_boundary")
+    if cb:
+        w(f"- **Cost boundary** (CI fails any change past it; raising a value needs Kieron's approval, whoever asks): "
+          f"a US${cb['ceiling_usd']} ceiling, the stop at most US${cb['max_budget_usd']} (expected ≈US${cb['expected_month_usd']['typical']} "
+          f"typical, ≈US${cb['expected_month_usd']['busiest']} busiest a month); at most {cb['max_runners']} runners, "
+          f"sizes up to {cb['instance_sizes'][-1]} (4 vCPU), spot first; runners end after {cb['max_instance_minutes']} min "
+          f"or {cb['max_idle_minutes']} min idle; a {cb['min_curfew_hours']}-hour overnight curfew; {cb['max_kept_amis']} kept "
+          f"images; {cb['max_root_volume_gib']} GiB disks; uploads at most {cb['max_egress_kbps']} KiB/s per job; "
+          "no scheduled Cost Explorer calls (US$0.01 each).")
     if settings.get("block_public_access"):
         w(f"- Public access blocked for: {', '.join(settings['block_public_access'])}. Claude can't turn it off.")
     if settings.get("ebs_encryption_by_default"):
