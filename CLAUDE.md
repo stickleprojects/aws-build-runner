@@ -58,6 +58,6 @@ Read [readme.md](readme.md) first; costs in [PRICING.md](PRICING.md).
 ## The runner (part 2)
 
 - Follow [part2-runner/PLAN.md](part2-runner/PLAN.md). Cut-over and rollback is only the repo variable
-  `SDLC_RUNNER` (`aws-spellbound3d` / `self-hosted`); don't edit spellbound3d's workflows.
+  `SDLC_RUNNER` (`aws-light` / `self-hosted`); don't edit spellbound3d's workflows.
 - The local runner (`/opt/github-runners/spellbound3d`, user `ghrunner`) is the reference and the
   fallback; reading it needs sudo.

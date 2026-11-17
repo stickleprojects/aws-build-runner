@@ -47,7 +47,7 @@ with tempfile.TemporaryDirectory() as d:
           ju.cgroup_stats(cg / "nope") == {"mem_peak_mb": None, "cpu_s": None, "cpu_stall_s": None, "mem_stall_s": None})
 
     instance = {"instance_type": "c7i.large", "instance_id": "i-1", "nproc": 2, "memory_mb": 3800,
-                "label": "aws-spellbound3d", "class": "light"}
+                "label": "aws-light", "class": "light"}
     job = ju.clean_job(json.dumps({"workflow": "CI", "job": "check", "run_id": "5", "started": "1000", "ended": "1300",
                                    "secret": "x", "repository": "o/r" * 100}))
     check("job info: only the known fields", "secret" not in job and job["job"] == "check", str(job))
