@@ -217,7 +217,7 @@ protected:
 # value is a change to this file, so it goes through the approval like any permission, whoever asks for it:
 # another Claude session can propose it, only Kieron can agree it. Expected spend is in PRICING.md.
 cost_boundary:
-  approved: pending
+  approved: 2026-11-17 Kieron
   ceiling_usd: 35               # Kieron's ceiling (2026-11-17): a bill of at most US$35 a month, all in
   expected_month_usd:           # for the docs; the stop below is what enforces it
     typical: 13
@@ -307,4 +307,4 @@ changes:
     approved: 2026-11-17 Kieron
   - date: 2026-11-17
     what: "Cost boundary: the runners stay within a US$35 ceiling (stop at US$29; expected ≈US$13 typical, ≈US$25 busiest a month), at most 4 runners of at most 4 vCPU, spot first, 90-minute and 20-minute limits, a 9-hour curfew, 3 kept images, 30 GiB disks, a capped upload rate, and no scheduled Cost Explorer calls. CI fails any change past these; raising one needs Kieron's approval, whoever asks"
-    approved: pending
+    approved: 2026-11-17 Kieron
