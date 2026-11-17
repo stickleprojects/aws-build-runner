@@ -80,7 +80,7 @@ check("fit: a light job using little CPU is fine", report.fit_notes([job(avg_vcp
 check("fit: a heavy job using its CPUs is fine", report.fit_notes([job("heavy", avg_vcpu=3.2, memory_mb=7800)], []) == [])
 n = report.fit_notes([job(wall_max_s=80 * 60)], [])
 check("fit: near the 90-minute limit", len(n) == 1 and "90-minute" in n[0], str(n))
-q = [{"label": "aws-spellbound3d", "n": 20, "wait_avg": 60, "wait_p95": 240, "wait_max": 300}]
+q = [{"label": "aws-light", "n": 20, "wait_avg": 60, "wait_p95": 240, "wait_max": 300}]
 n = report.fit_notes([], q)
 check("fit: jobs waiting over 2 minutes for a runner", len(n) == 1 and "Waiting for runners" in n[0], str(n))
 check("fit: quick starts are fine", report.fit_notes([], [{**q[0], "wait_p95": 45}]) == [])

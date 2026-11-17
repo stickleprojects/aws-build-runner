@@ -69,7 +69,7 @@ t3's CPU credits made timings flaky. So jobs get fixed-performance c7i types, ch
 | **Total** | | **≈ US$24–25** | **≈ US$13** |
 
 **Per label, not per job** (Kieron, 2026-11-16): GitHub gives a queued job to any idle runner with its
-labels, so check jobs get their own label (`aws-spellbound3d-check`), being agreed with spellbound3d. These
+labels, so check jobs get their own label (`aws-heavy`; light jobs use `aws-light`), being agreed with spellbound3d. These
 figures hold once that's in place. Without it, the only safe choice would be 4 vCPU for every job:
 ≈ US$31 at the busiest load (over the stop), ≈ US$16 at half.
 

@@ -15,7 +15,7 @@ job queued on GitHub ──webhook──> Lambda ──> launcher ──> a spot
 every 5 min ──> launcher: catches missed webhooks; reaps runners > 90 min, or idle 20 min
 ```
 
-- **Switch over**: set the spellbound3d repo variable `SDLC_RUNNER` to `aws-spellbound3d`.
+- **Switch over**: set the spellbound3d repo variable `SDLC_RUNNER` to `aws-light`.
   **Roll back**: set it back to `self-hosted` (the local runner). The workflows don't change.
 - **Image**: Ubuntu 24.04 baked with the Actions runner, Godot 4.7.2 and the local runner's
   `job-started.sh` safety check.

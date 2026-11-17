@@ -4,7 +4,7 @@
   "MaxAgeMinutes": 90,
   "IdleMinutes": 20,
   "Pools": {
-    "aws-spellbound3d": {
+    "aws-light": {
       "class": "light",
       "spot": [
         "c7i.large",
@@ -14,7 +14,7 @@
         "c7i.large"
       ]
     },
-    "aws-spellbound3d-check": {
+    "aws-heavy": {
       "class": "heavy",
       "spot": [
         "c7i.xlarge",
