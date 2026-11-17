@@ -99,9 +99,11 @@ stack parameter `Pools`.
 2. [x] GitHub App key and id in SSM; webhook secret (`stack/deploy.sh`).
 3. [x] Stack `build-runner` (`stack/`): webhook and launcher Lambdas, launch template, security group,
    5-minute schedule, log groups (14 days). Tested live: signatures, a spot launch, the runner online.
-4. [ ] Add the spellbound3d webhook (*Workflow jobs* only) to the URL `deploy.sh` prints, with the secret.
+4. [x] Add the spellbound3d webhook (*Workflow jobs* only) to the URL `deploy.sh` prints, with the secret.
+   Done 2026-11-17 (Kieron asked; the secret went from SSM straight into the GitHub API, never printed). Ping answered 200.
 5. [ ] spellbound3d: a second label for its check jobs (`SDLC_RUNNER_HEAVY`, falling back to `SDLC_RUNNER`; names decided 2026-11-17, Kieron).
-6. [ ] Test with a throwaway workflow on a branch that targets `aws-light`, then switch
+6. [ ] Trial: spellbound3d's `aws-trial.yml` (workflow_dispatch only), `make check` on `aws-heavy` and a short job
+   on `aws-light`, planned for 2026-11-18 after 07:00; `runs-on` must be exactly one of our labels. Then switch
    `SDLC_RUNNER`. Keep the local runner as the fallback until a week of green runs.
 
 ## Open questions
