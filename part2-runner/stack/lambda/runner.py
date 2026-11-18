@@ -213,10 +213,20 @@ def unclaimed(instances: list[dict], runners: list[dict], now: float) -> list[di
     return out
 
 
-def with_recent_launches(instances: list[dict], recent: list[dict], now: float) -> list[dict]:
-    """Live instances plus recent launches EC2 doesn't list yet (each counts until BOOT_GRACE)."""
+REGISTRATION_LAG = 60  # GitHub's runner list may not show a just-made registration for this long
+
+
+def with_recent_launches(instances: list[dict], recent: list[dict], now: float,
+                         runner_names: set[str] | None = None) -> list[dict]:
+    """Live instances plus recent launches EC2 doesn't list yet (each counts until BOOT_GRACE).
+
+    A recent launch whose runner is no longer registered has finished its one job (JIT runners deregister when
+    it ends), so it doesn't count, however recent: a 12-second job ended inside BOOT_GRACE, and the gone instance
+    held back the next job's launch for ~2.5 min (2026-11-18). REGISTRATION_LAG covers GitHub's list lagging."""
     seen = {i["id"] for i in instances}
-    return instances + [r for r in recent if r["id"] not in seen and now - r["launched"] < BOOT_GRACE]
+    return instances + [r for r in recent if r["id"] not in seen and now - r["launched"] < BOOT_GRACE
+                        and (runner_names is None or r.get("name") in runner_names
+                             or now - r["launched"] < REGISTRATION_LAG)]
 
 
 def recent_launches_to_keep(recent: list[dict], new: list[dict], now: float) -> list[dict]:
@@ -530,7 +540,7 @@ def launcher(event, context):
             runners = [r for r in gh.paged(f"/repos/{REPO}/actions/runners", "runners")
                        if r["name"].startswith(NAME_PREFIX)]
             recent = read_launches()
-            instances = with_recent_launches(live_instances(), recent, now)
+            instances = with_recent_launches(live_instances(), recent, now, {r["name"] for r in runners})
 
             if source == "schedule":
                 # Usage, for the daily report (part2-runner/usage/): one sample per live runner per 5-minute run.
