@@ -132,7 +132,7 @@ global:
 # IAM is the exception: it has no regions (AWS evaluates every IAM request as us-east-1), so a
 # Sydney condition would block IAM reads altogether.
 read_only:
-  approved: pending
+  approved: 2026-11-18 Kieron
   home_region:
     - "ec2:Describe*"
     - "lambda:List*"
@@ -312,4 +312,4 @@ changes:
     approved: 2026-11-17 Kieron
   - date: 2026-11-18
     what: "SNS read-only (Sydney): list topics and their subscriptions, so Claude can check the alert emails are confirmed and the budget and fast stops still reach the kill switch. Free; no publishing, subscribing or changes"
-    approved: pending
+    approved: 2026-11-18 Kieron
