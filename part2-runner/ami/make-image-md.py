@@ -46,7 +46,7 @@ def main():
         ("gitleaks", t["gitleaks"], "spellbound3d's `scripts/install-gitleaks.sh`"),
         ("Python tools", "from `uv.lock`", "`uv sync --frozen` at bake time warms ghrunner's uv cache"),
         ("GitHub Actions runner", r["version"], "latest release at bake time, SHA-256 checked"),
-        ("Node / npm", f"{t['node']} / {t['npm']}", "Ubuntu packages"),
+        ("Node / npm", f"{t['node']} / {t['npm']}", "latest `NODE_MAJOR` (22) release from nodejs.org at bake time, SHA-256 checked; renovate-check needs >= 22.9"),
         ("Python", t["python"], "Ubuntu packages (with venv, pip)"),
         ("git, jq, make", f"{t['git']}, {t['jq']}", "Ubuntu packages; also curl, unzip, zip, build-essential, libfontconfig1"),
     ]

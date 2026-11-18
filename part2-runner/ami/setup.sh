@@ -40,11 +40,30 @@ say "packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -q
 [[ -n "$IN_CONTAINER" ]] || apt-get -y -q upgrade
-# git/curl/jq/unzip/make/python3-venv: the stack (setup-stack, Makefile, the hook); nodejs/npm: Claude Code;
+# git/curl/jq/unzip/make/python3-venv: the stack (setup-stack, Makefile, the hook); xz-utils: the Node tarball;
 # build-essential: native npm/pip builds; libfontconfig1: Godot needs it even headless; iptables: the
 # boot step blocks jobs from the instance metadata service.
 apt-get install -y -q --no-install-recommends ca-certificates curl git jq unzip zip make \
-  python3 python3-venv python3-pip nodejs npm build-essential sudo libfontconfig1 iptables
+  python3 python3-venv python3-pip xz-utils build-essential sudo libfontconfig1 iptables
+
+# Node: the latest NODE_MAJOR release from nodejs.org, not Ubuntu's nodejs (v18 on 24.04). make check's
+# renovate-check runs renovate 42, which needs Node >= 20.17 / 22.9; on v18 it crashed (2026-11-18, #45).
+# spellbound3d pins no Node version, so the major is pinned here, matching the local runner (v22).
+# It also provides npm (Claude Code) and npx (renovate-check).
+NODE_MAJOR=22
+say "Node ${NODE_MAJOR}.x from nodejs.org (SHA-256 checked), in /usr/local"
+NODE_VERSION="$(curl -fsSL https://nodejs.org/dist/index.json | jq -r --arg m "v${NODE_MAJOR}." \
+  '[.[] | select(.version | startswith($m))][0].version')"
+[[ "$NODE_VERSION" =~ ^v${NODE_MAJOR}\.[0-9]+\.[0-9]+$ ]]
+node_tar="node-${NODE_VERSION}-linux-x64.tar.xz"
+curl -fsSL --retry 3 -o "/tmp/${node_tar}" "https://nodejs.org/dist/${NODE_VERSION}/${node_tar}"
+curl -fsSL --retry 3 "https://nodejs.org/dist/${NODE_VERSION}/SHASUMS256.txt" | grep -E "  ${node_tar}\$" > /tmp/node.sha256
+(cd /tmp && sha256sum -c --quiet node.sha256)
+tar xJf "/tmp/${node_tar}" -C /usr/local --strip-components=1 --no-same-owner \
+  "node-${NODE_VERSION}-linux-x64/bin" "node-${NODE_VERSION}-linux-x64/lib" "node-${NODE_VERSION}-linux-x64/include" \
+  "node-${NODE_VERSION}-linux-x64/share"
+rm -f "/tmp/${node_tar}" /tmp/node.sha256
+[[ "$(/usr/local/bin/node --version)" == "$NODE_VERSION" ]]
 
 say "user ghrunner, home $H"
 mkdir -p /opt/github-runners /etc/build-runner

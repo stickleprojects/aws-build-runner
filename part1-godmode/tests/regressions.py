@@ -661,6 +661,33 @@ def cost_boundary_holds():
             problems.append(f"{rel} calls Cost Explorer (US$0.01 a call); only {', '.join(sorted(allowed))} may")
     return problems
 
+
+@rule("2026-11-18 (#45): the image took Node from Ubuntu 24.04's packages (v18.19.1); make check's renovate-check "
+      "(renovate 42, needs Node >= 22.9 or 20.17) crashed on the first AWS trial. The laptop runner has v22.")
+def runner_image_node_is_22_or_later_from_nodejs_org():
+    setup = (P2 / "ami" / "setup.sh").read_text()
+    code = "\n".join(l for l in setup.splitlines() if not l.lstrip().startswith("#"))
+    problems = []
+    # Any apt-get install line (with its continuation lines) that names nodejs or npm.
+    for m in re.finditer(r"apt(?:-get)?\s+install(?:[^\n]*\\\n)*[^\n]*", code):
+        if re.search(r"(?<![\w-])(nodejs|npm)(?![\w-])", m.group(0)):
+            problems.append("setup.sh installs nodejs/npm from apt (Ubuntu 24.04's is v18)")
+    major = re.search(r"^NODE_MAJOR=(\d+)\s*$", code, re.M)
+    if not major:
+        problems.append("setup.sh doesn't pin NODE_MAJOR")
+    elif int(major.group(1)) < 22:
+        problems.append(f"setup.sh pins NODE_MAJOR={major.group(1)}; make check needs 22 or later")
+    if major and "nodejs.org/dist" not in code:
+        problems.append("setup.sh doesn't install Node from nodejs.org")
+    if "SHASUMS256.txt" not in code or "sha256sum -c" not in code:
+        problems.append("setup.sh doesn't check the Node download against nodejs.org's SHASUMS256.txt")
+    # Until spellbound3d's runner-smoke checks make check's prerequisites, the image's own smoke test does.
+    smoke = (P2 / "ami" / "smoke-test.sh").read_text()
+    if not re.search(r'check "node >= 22\.9', smoke) and "prereqs" not in smoke:
+        problems.append("smoke-test.sh doesn't check the job's Node version (or spellbound3d's prereqs check)")
+    return problems
+
+
 def main():
     failed = 0
     for name, incident, fn in RULES:
