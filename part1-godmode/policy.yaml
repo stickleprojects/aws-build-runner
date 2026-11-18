@@ -132,7 +132,7 @@ global:
 # IAM is the exception: it has no regions (AWS evaluates every IAM request as us-east-1), so a
 # Sydney condition would block IAM reads altogether.
 read_only:
-  approved: 2026-11-16 Kieron
+  approved: pending
   home_region:
     - "ec2:Describe*"
     - "lambda:List*"
@@ -153,6 +153,8 @@ read_only:
     - "access-analyzer:CheckNoNewAccess"
     - "access-analyzer:CheckAccessNotGranted"
     - "access-analyzer:CheckNoPublicAccess"
+    - "sns:ListTopics"
+    - "sns:ListSubscriptionsByTopic"
   global:
     - "iam:Get*"
     - "iam:List*"
@@ -308,3 +310,6 @@ changes:
   - date: 2026-11-17
     what: "Cost boundary: the runners stay within a US$35 ceiling (stop at US$29; expected ≈US$13 typical, ≈US$25 busiest a month), at most 4 runners of at most 4 vCPU, spot first, 90-minute and 20-minute limits, a 9-hour curfew, 3 kept images, 30 GiB disks, a capped upload rate, and no scheduled Cost Explorer calls. CI fails any change past these; raising one needs Kieron's approval, whoever asks"
     approved: 2026-11-17 Kieron
+  - date: 2026-11-18
+    what: "SNS read-only (Sydney): list topics and their subscriptions, so Claude can check the alert emails are confirmed and the budget and fast stops still reach the kill switch. Free; no publishing, subscribing or changes"
+    approved: pending

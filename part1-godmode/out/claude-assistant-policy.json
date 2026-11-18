@@ -82,6 +82,8 @@
         "s3:ListAllMyBuckets",
         "servicequotas:Get*",
         "servicequotas:List*",
+        "sns:ListSubscriptionsByTopic",
+        "sns:ListTopics",
         "tag:GetResources",
         "tag:GetTagKeys",
         "tag:GetTagValues"

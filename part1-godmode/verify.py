@@ -162,6 +162,15 @@ def build_cases(p, cfg):
     add(Case("iam:GetRole", {"user": "allowed", "role": "denied"}, region=GLOBAL_REGION))
     add(Case("ce:GetCostAndUsage", {"user": "allowed", "role": "denied"}, region=GLOBAL_REGION))
     add(Case("sts:GetCallerIdentity", "allowed", region=GLOBAL_REGION))
+    # SNS: listing only, for the user, in Sydney (checking the alert emails and the stops' wiring).
+    # Nothing that publishes, subscribes or changes a topic: that could silence or fire the kill switch.
+    topic = f"arn:aws:sns:{home}:{acct}:guardrail-fast-stop"
+    add(Case("sns:ListTopics", {"user": "allowed", "role": "denied"}, region=home))
+    add(Case("sns:ListTopics", "denied", region=OTHER_REGION))
+    add(Case("sns:ListSubscriptionsByTopic", {"user": "allowed", "role": "denied"}, topic, home))
+    for action in ("sns:Publish", "sns:Subscribe", "sns:Unsubscribe", "sns:SetTopicAttributes",
+                   "sns:SetSubscriptionAttributes", "sns:DeleteTopic", "sns:GetTopicAttributes"):
+        add(Case(action, "denied", topic, home))
 
     # IAM for what Claude builds.
     g = GLOBAL_REGION
