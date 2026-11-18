@@ -134,6 +134,9 @@ jobs:
       - name: Per-job usage record tests (offline)
         run: python3 -I part2-runner/ami/test_job_usage.py
 
+      - name: Machine requirements reader tests (offline)
+        run: python3 -I part2-runner/ami/test_machine_requirements.py
+
       - name: shellcheck the scripts
         run: |
           # -P SCRIPTDIR: resolve "source lib.sh" next to each script, not from the repo root.
