@@ -620,6 +620,27 @@ def cost_boundary_holds():
         problems.append(f"config.json MaxAgeMinutes {cfg['MaxAgeMinutes']} is over {cb['max_instance_minutes']}")
     if cfg["IdleMinutes"] > cb["max_idle_minutes"]:
         problems.append(f"config.json IdleMinutes {cfg['IdleMinutes']} is over {cb['max_idle_minutes']}")
+    # The consumer's pools (#54) are checked by the same code the launcher runs: config.json's starting copy here,
+    # spellbound3d's pools.json at every read. The boundary comes from policy.yaml, as deploy.sh builds it.
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("pools_cb", P2 / "stack" / "lambda" / "pools.py")
+    pools_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pools_mod)
+    ec2 = next(x for x in p["services"] if x["id"] == "ec2")
+    boundary = {"instance_types": ec2["limits"]["instance_types"], "instance_sizes": cb["instance_sizes"],
+                "max_runners": cb["max_runners"], "max_instance_minutes": cb["max_instance_minutes"],
+                "max_idle_minutes": cb["max_idle_minutes"]}
+    try:
+        pools_mod.validate({"version": 1, "pools": cfg["Pools"]}, boundary)
+    except pools_mod.Invalid as e:
+        problems += [f"config.json Pools: {r}" for r in e.reasons]
+    for probe, why in (("c7i.2xlarge", "over 4 vCPU"), ("t4g.large", "Graviton"), ("r5.large", "unapproved")):
+        try:
+            pools_mod.validate({"version": 1, "pools": {"aws-x": {"class": "light", "spot": [probe], "on_demand": []}}},
+                               boundary)
+            problems.append(f"pools.py accepts {probe} ({why}): a consumer could ask for it")
+        except pools_mod.Invalid:
+            pass
     for name, pool in cfg["Pools"].items():
         types = pool.get("spot", []) + pool.get("on_demand", [])
         for itype in types:

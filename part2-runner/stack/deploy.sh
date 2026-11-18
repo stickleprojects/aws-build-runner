@@ -79,9 +79,20 @@ vpc="$(aws ec2 describe-vpcs --filters Name=is-default,Values=true --query 'Vpcs
 subnets="$(aws ec2 describe-subnets --filters "Name=vpc-id,Values=${vpc}" Name=default-for-az,Values=true \
   --query 'Subnets[].SubnetId' --output text | tr '\t' ',')"
 [[ -n "$subnets" ]] || { echo "No default subnets in ${vpc}" >&2; exit 1; }
+# The cost boundary a consumer's pools.json must stay within (#54), straight from policy.yaml.
+boundary="$(python3 -I - ../../part1-godmode/policy.yaml <<'PY'
+import json, sys, yaml
+p = yaml.safe_load(open(sys.argv[1]))
+cb = p["cost_boundary"]
+ec2 = next(s for s in p["services"] if s["id"] == "ec2")
+print(json.dumps({"instance_types": ec2["limits"]["instance_types"], "instance_sizes": cb["instance_sizes"],
+                  "max_runners": cb["max_runners"], "max_instance_minutes": cb["max_instance_minutes"],
+                  "max_idle_minutes": cb["max_idle_minutes"]}, separators=(",", ":")))
+PY
+)"
 aws cloudformation deploy --stack-name build-runner --template-file template.yaml \
   --capabilities CAPABILITY_NAMED_IAM --tags "resource-group=${GROUP}" --no-fail-on-empty-changeset \
-  --parameter-overrides "CodeBucket=${bucket}" "CodeKey=${key}" "VpcId=${vpc}" "Subnets=${subnets}" "${settings[@]}"
+  --parameter-overrides "CodeBucket=${bucket}" "CodeKey=${key}" "VpcId=${vpc}" "Subnets=${subnets}" "Boundary=${boundary}" "${settings[@]}"
 
 echo "== 5. webhook URL"
 aws cloudformation describe-stacks --stack-name build-runner \
