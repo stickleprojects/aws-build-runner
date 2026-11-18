@@ -30,6 +30,7 @@ import time
 
 import curfew
 import ghapp
+import pools as pools_mod
 
 REPO = os.environ.get("REPO", "stickleprojects/spellbound3d")
 # Label -> instance types, tried in order: every spot type, then on-demand. A JIT runner has exactly the
@@ -59,7 +60,20 @@ LOCK_STALE = 150      # longer than the launcher's 120 s timeout
 # What recent runs launched, written under the lock. DescribeInstances lags RunInstances, so the next run
 # counts these as booting until EC2 lists them (2026-11-18, #47: a second heavy instance for one job).
 LAUNCHES = "/build/runner/launches"
-TOKEN_PERMISSIONS = {"administration": "write", "actions": "read"}
+TOKEN_PERMISSIONS = {"administration": "write", "actions": "read", "contents": "read"}  # contents: pools.json
+# The consumer's pools (#54, phase 1): spellbound3d's tools/runner-image/pools.json on main, read at most every
+# POOLS_TTL, checked against BOUNDARY (the cost boundary from policy.yaml, passed by deploy.sh). A refused or
+# unreachable copy keeps the last good one (SSM POOLS_LAST_GOOD); POOLS_STATUS says which, for the daily check.
+# Until the consumer's file exists, config.json's Pools (env POOLS) are the starting copy.
+CONSUMER_POOLS = os.environ.get("CONSUMER_POOLS", "tools/runner-image/pools.json")
+POOLS_LAST_GOOD = "/build/runner/pools"
+POOLS_STATUS = "/build/runner/pools-status"
+POOLS_TTL = 600
+DEFAULT_BOUNDARY = {"instance_types": ["t3.*", "t3a.*", "m*.large", "m*.xlarge", "c*.large", "c*.xlarge"],
+                    "instance_sizes": ["micro", "small", "medium", "large", "xlarge"],
+                    "max_runners": 4, "max_instance_minutes": 90, "max_idle_minutes": 20}
+BOUNDARY = json.loads(os.environ.get("BOUNDARY") or json.dumps(DEFAULT_BOUNDARY))
+_pools_cache = {"at": 0.0, "checked": None, "ssm_at": 0.0}
 # Try the next type / subnet on these; anything else is a real error.
 CAPACITY_ERRORS = {"InsufficientInstanceCapacity", "InsufficientCapacity", "SpotMaxPriceTooLow",
                    "MaxSpotInstanceCountExceeded", "Unsupported", "InsufficientFreeAddressesInSubnet",
@@ -155,6 +169,7 @@ def webhook(event, context):
         log("rejected: bad signature")
         return response(401, "bad signature")
     kind = headers.get("x-github-event", "")
+    webhook_pools(time.time())
     if kind == "ping":
         return response(200, "pong")
     try:
@@ -264,6 +279,83 @@ class GitHub:
             if len(items) < 100:
                 break
         return out
+
+
+def bootstrap_pools() -> dict:
+    """config.json's pools and limits (deploy-time), until the consumer's file has been read once."""
+    return {"pools": {k: {"class": v.get("class", "unknown"), "spot": v.get("spot", []), "on_demand": v.get("on_demand", [])}
+                      for k, v in POOLS.items()},
+            "limits": {"max_runners": MAX_RUNNERS, "max_instance_minutes": MAX_AGE // 60, "idle_minutes": IDLE_MAX // 60}}
+
+
+def use_pools(checked: dict) -> None:
+    """Puts a checked copy in force for this run: the pools and the limits."""
+    global POOLS, MAX_RUNNERS, MAX_AGE, IDLE_MAX
+    lim = pools_mod.effective(checked, BOUNDARY)
+    POOLS = checked["pools"]
+    MAX_RUNNERS, MAX_AGE, IDLE_MAX = lim["max_runners"], lim["max_instance_minutes"] * 60, lim["idle_minutes"] * 60
+
+
+def last_good_pools(ssm) -> dict | None:
+    try:
+        return json.loads(ssm.get_parameter(Name=POOLS_LAST_GOOD)["Parameter"]["Value"]) or None
+    except Exception as e:
+        if error_code(e) != "ParameterNotFound":
+            log("couldn't read the last good pools", error=error_code(e) or type(e).__name__)
+        return None
+
+
+def consumer_pools(gh: GitHub) -> dict | None:
+    """The consumer's pools.json on main, parsed; None if it doesn't exist (yet)."""
+    status, data = gh.call("GET", f"/repos/{REPO}/contents/{CONSUMER_POOLS}?ref=main", ok=(200, 404))
+    if status == 404:
+        return None
+    return json.loads(base64.b64decode(data["content"]))
+
+
+def load_pools(gh: GitHub, now: float, ssm=None) -> dict:
+    """The pools in force: the consumer's, if they pass the boundary; else the last good copy; else config.json's."""
+    if _pools_cache["checked"] and now - _pools_cache["at"] < POOLS_TTL:
+        return _pools_cache["checked"]
+    ssm = ssm or aws("ssm")
+    try:
+        doc = consumer_pools(gh)
+        if doc is None:
+            raise FileNotFoundError(CONSUMER_POOLS)
+        checked = pools_mod.validate(doc, BOUNDARY)
+        status = {"state": "ok", "reason": ""}
+        good = last_good_pools(ssm)
+        if checked != good:
+            ssm.put_parameter(Name=POOLS_LAST_GOOD, Value=json.dumps(checked), Type="String", Overwrite=True)
+            log("pools updated from the consumer", repo=REPO, file=CONSUMER_POOLS, pools=sorted(checked["pools"]))
+    except pools_mod.Invalid as e:
+        status = {"state": "refused", "reason": str(e)[:900]}
+    except FileNotFoundError:
+        status = {"state": "missing", "reason": f"{REPO} has no {CONSUMER_POOLS} on main"}
+    except Exception as e:  # GitHub down, bad JSON...: keep what we had
+        status = {"state": "unreachable", "reason": f"{type(e).__name__}: {str(e)[:300]}"}
+    if status["state"] != "ok":
+        checked = last_good_pools(ssm) or bootstrap_pools()
+        log("pools: keeping the last good copy", state=status["state"], reason=status["reason"])
+    try:
+        old = json.loads(ssm.get_parameter(Name=POOLS_STATUS)["Parameter"]["Value"])
+    except Exception:
+        old = {}
+    if (old.get("state"), old.get("reason")) != (status["state"], status["reason"]):
+        ssm.put_parameter(Name=POOLS_STATUS, Value=json.dumps({**status, "since": int(now)}), Type="String",
+                          Overwrite=True)
+    _pools_cache.update(at=now, checked=checked)
+    return checked
+
+
+def webhook_pools(now: float, ssm=None) -> None:
+    """The webhook's view of the labels: the launcher's last good copy (re-read each minute), else config.json's."""
+    if now - _pools_cache["ssm_at"] < 60:
+        return
+    _pools_cache["ssm_at"] = now
+    good = last_good_pools(ssm or aws("ssm"))
+    if good:
+        use_pools(good)
 
 
 def queued_jobs(gh: GitHub) -> list[dict]:
@@ -424,6 +516,7 @@ def launcher(event, context):
         try:
             gh = GitHub(token)
             now = time.time()
+            use_pools(load_pools(gh, now))
             queued = queued_jobs(gh)
             if (source == "webhook" and event.get("job_id") and event.get("pool") in POOLS
                     and event["job_id"] not in {j["id"] for j in queued}):
@@ -471,7 +564,7 @@ def launcher(event, context):
                     until=curfew.local(night["until"], CURFEW))
                 return {"ok": True, "curfew": night}
 
-            plan = launches_needed(queued, instances, runners, now)
+            plan = launches_needed(queued, instances, runners, now, cap=MAX_RUNNERS)
             covered = {i["job_id"] for i in instances}
             log("reconcile", source=source, queued=len(queued), live=len(instances),
                 unclaimed=len(unclaimed(instances, runners, now)), launching=plan, cap=MAX_RUNNERS)
