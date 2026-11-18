@@ -199,13 +199,14 @@ fi
 rm -r "$zipdir"
 aws lambda wait function-active-v2 --region "$REGION" --function-name "$FUNCTION"
 # #30 fix 6: 2 executions always free for the kill switch, whatever else floods the account. Lambda keeps 100
-# unreserved, so this needs the account limit raised from a new account's 10 (quota L-B99A9384, to 1,000).
+# unreserved, so this needs the account limit raised from a new account's 10 (quota L-B99A9384, to 110:
+# the least that fits 5 + 2 reserved; Kieron's choice 2026-11-18, to keep a runaway's ceiling low).
 limit="$(aws lambda get-account-settings --region "$REGION" --query AccountLimit.ConcurrentExecutions --output text)"
 if (( limit >= 102 )); then
   aws lambda put-function-concurrency --region "$REGION" --function-name "$FUNCTION" --reserved-concurrent-executions 2 >/dev/null
   echo "reserved 2 concurrent executions for ${FUNCTION}"
 else
-  echo "WARNING: the account's Lambda limit is ${limit}; request 1000 (quota L-B99A9384) and rerun to reserve the kill switch's 2" >&2
+  echo "WARNING: the account's Lambda limit is ${limit}; request 110 (quota L-B99A9384) and rerun to reserve the kill switch's 2" >&2
 fi
 aws logs create-log-group --region "$REGION" --log-group-name "/aws/lambda/${FUNCTION}" 2>/dev/null || true
 aws logs put-retention-policy --region "$REGION" --log-group-name "/aws/lambda/${FUNCTION}" --retention-in-days 90

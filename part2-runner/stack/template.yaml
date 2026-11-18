@@ -140,8 +140,8 @@ Resources:
       MemorySize: 128
       Timeout: 10
       # #30 fix 6: a flood of (even unsigned) requests uses at most 5 executions, so it can't starve the launcher,
-      # the reaper or the kill switch, and spends at most ≈US$0.07/h. Needs the account limit at 1,000 (Lambda keeps
-      # 100 unreserved). The fast stop sets it to 0; recovering resets it to 5 (CHECKLIST.md), not deletes it.
+      # the reaper or the kill switch, and spends at most ≈US$0.07/h. Needs the account limit at 107 or more (Lambda keeps
+      # 100 unreserved; Kieron chose 110, the least that works, 2026-11-18). The fast stop sets it to 0; recovering resets it to 5 (CHECKLIST.md), not deletes it.
       ReservedConcurrentExecutions: 5
       Role: !GetAtt WebhookRole.Arn
       Code: {S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey}
