@@ -24,6 +24,27 @@
       "on_demand": [
         "c7i.xlarge"
       ]
+    },
+    "aws-spellbound3d-light": {
+      "class": "light",
+      "spot": [
+        "c7i.large",
+        "t3.large"
+      ],
+      "on_demand": [
+        "c7i.large"
+      ]
+    },
+    "aws-spellbound3d-heavy": {
+      "class": "heavy",
+      "spot": [
+        "c7i.xlarge",
+        "c6i.xlarge",
+        "m7i.xlarge"
+      ],
+      "on_demand": [
+        "c7i.xlarge"
+      ]
     }
   },
   "Curfew": {

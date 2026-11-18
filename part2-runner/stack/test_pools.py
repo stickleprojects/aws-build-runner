@@ -56,7 +56,7 @@ check("limits left out take the boundary's",
 check("stricter limits are kept", pools.effective(pools.validate(edit(lambda d: d["limits"].update(max_runners=2)), B), B)["max_runners"] == 2)
 config = json.loads((HERE / "config.json").read_text())
 check("today's config.json Pools pass as a v1 file", pools.validate({"version": 1, "pools": config["Pools"]}, B)["pools"].keys()
-      == {"aws-light", "aws-heavy"})
+      == {"aws-light", "aws-heavy", "aws-spellbound3d-light", "aws-spellbound3d-heavy"})
 
 check("version 2 is refused", refused(edit(lambda d: d.update(version=2)), "version"))
 check("true isn't version 1", refused(edit(lambda d: d.update(version=True)), "version"))
