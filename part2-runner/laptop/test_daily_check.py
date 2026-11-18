@@ -98,6 +98,15 @@ s, a, w = run(subscriptions=[{"TopicArn": "arn:aws:sns:x:1:guardrail-fast-stop",
                               "SubscriptionArn": "PendingConfirmation"}])
 check("an unconfirmed alert email: a warning", any("PendingConfirmation" in x for x in w), w)
 
+s, a, w = run(pools_status={"state": "refused", "reason": "pools.aws-heavy.spot: c7i.4xlarge is bigger than the boundary allows"})
+check("pools.json refused by the launcher: an alert", any("refused spellbound3d's pools.json" in x for x in a), a)
+s, a, w = run(pools_status={"state": "unreachable", "reason": "RuntimeError: HTTP 502"})
+check("pools.json unreachable: a warning", any("couldn't read" in x for x in w), w)
+s, a, w = run(pools_status={"state": "missing", "reason": "no file yet"})
+check("pools.json not there yet (migration): quiet", not a and not w, (a, w))
+s, a, w = run(pools_status={"state": "ok", "reason": ""})
+check("pools.json ok: quiet", not a and not w)
+
 # Telegram config: missing is reported (not fatal); a file others can read is refused.
 with tempfile.TemporaryDirectory() as d:
     dc.CONFIG = Path(d) / "notify.env"

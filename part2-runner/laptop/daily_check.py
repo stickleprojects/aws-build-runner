@@ -14,6 +14,7 @@ guardrails look alive:
   - no runner instance older than the 90-minute limit, none running during the curfew
   - nothing left behind that bills monthly: unattached disks, unattached Elastic IPs, more images than kept
   - the alert emails are confirmed (SNS subscriptions not "PendingConfirmation")
+  - spellbound3d's pools.json wasn't refused by the launcher (/build/runner/pools-status, #54)
 
 Free calls only: Budgets, CloudWatch, EC2, Lambda and SNS reads, with Claude's read-only CLI profile.
 NOT Cost Explorer: its API costs US$0.01 a call, and nothing scheduled may call it (cost_boundary).
@@ -99,6 +100,14 @@ def aws(*args) -> dict | list:
     return json.loads(r.stdout or "{}")
 
 
+def pools_status() -> dict:
+    """The launcher's verdict on the consumer's pools.json; {} if there's none yet."""
+    try:
+        return json.loads(aws("ssm", "get-parameter", "--name", "/build/runner/pools-status")["Parameter"]["Value"])
+    except (RuntimeError, ValueError, KeyError):
+        return {}
+
+
 def gather() -> dict:
     acct = aws("sts", "get-caller-identity")["Account"]
     d = {"budget": aws("budgets", "describe-budget", "--account-id", acct, "--budget-name", BUDGET)["Budget"],
@@ -113,7 +122,8 @@ def gather() -> dict:
          "volumes": aws("ec2", "describe-volumes", "--filters", "Name=status,Values=available").get("Volumes", []),
          "addresses": aws("ec2", "describe-addresses").get("Addresses", []),
          "images": aws("ec2", "describe-images", "--owners", "self").get("Images", []),
-         "subscriptions": []}
+         "subscriptions": [],
+         "pools_status": pools_status()}
     for t in aws("sns", "list-topics").get("Topics", []):
         if t["TopicArn"].split(":")[-1].startswith("guardrail-"):
             d["subscriptions"] += aws("sns", "list-subscriptions-by-topic", "--topic-arn", t["TopicArn"]).get(
@@ -186,6 +196,12 @@ def evaluate(d: dict, now: dt.datetime, lim: dict) -> tuple[str, list[str], list
     if pending:
         warns.append(f"{len(pending)} alert subscription(s) still PendingConfirmation: "
                      + ", ".join(f"{s['TopicArn'].split(':')[-1]} ({s['Protocol']})" for s in pending))
+
+    ps = d.get("pools_status") or {}
+    if ps.get("state") == "refused":
+        alerts.append(f"the launcher refused spellbound3d's pools.json, so the last good copy is in force: {ps.get('reason', '')[:300]}")
+    elif ps.get("state") == "unreachable":
+        warns.append(f"the launcher couldn't read spellbound3d's pools.json: {ps.get('reason', '')[:200]}")
 
     state = "ALERT" if alerts else "WARN" if warns else "OK"
     fc_text = f", forecast US${forecast:.2f}" if forecast is not None else ""

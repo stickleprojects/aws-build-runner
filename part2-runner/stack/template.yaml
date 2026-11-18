@@ -22,6 +22,11 @@ Parameters:
   MaxAgeMinutes: {Type: Number, Description: "The reaper terminates runner instances older than this"}
   IdleMinutes: {Type: Number, Description: "...and runners idle this long with nothing queued"}
   Repo: {Type: String}
+  Boundary:
+    Type: String
+    Description: >-
+      The cost boundary a consumer's pools.json must stay within (JSON, from policy.yaml's cost_boundary and EC2
+      instance types; deploy.sh builds it). lambda/pools.py refuses a copy outside it.
   Curfew:
     Type: String
     Description: 'Nightly quiet hours, JSON {"start": "22:00", "end": "07:00", "tz": "Australia/Sydney"} (lambda/curfew.py)'
@@ -109,6 +114,10 @@ Resources:
                 Action: kms:Decrypt
                 Resource: "*"
                 Condition: {StringEquals: {"kms:ViaService": !Sub "ssm.${AWS::Region}.amazonaws.com"}}
+              - Sid: ReadTheLastGoodPools
+                Effect: Allow
+                Action: ssm:GetParameter
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${PoolsLastGood}"
               - Sid: StartTheLauncher
                 Effect: Allow
                 Action: lambda:InvokeFunction
@@ -162,6 +171,25 @@ Resources:
   # ------------------------------------------------------------------ launcher (and reaper)
   # What the launcher's recent runs launched (#47): DescribeInstances lags RunInstances, so the next run counts
   # these as booting until EC2 lists them. Written under the launcher's lock; entries last BOOT_GRACE (5 min).
+  # The consumer's pools (#54): the last copy of its pools.json that passed the boundary, and whether the latest
+  # read was ok, refused, missing or unreachable (the daily check alerts on refused). Written by the launcher.
+  PoolsLastGood:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /build/runner/pools
+      Type: String
+      Value: "{}"
+      Description: build-runner consumer pools, last copy that passed the cost boundary (runner.py POOLS_LAST_GOOD)
+      Tags: {resource-group: build-runner}
+  PoolsStatus:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /build/runner/pools-status
+      Type: String
+      Value: "{}"
+      Description: build-runner consumer pools, state of the latest read (runner.py POOLS_STATUS)
+      Tags: {resource-group: build-runner}
+
   RecentLaunches:
     Type: AWS::SSM::Parameter
     Properties:
@@ -243,6 +271,12 @@ Resources:
                 Effect: Allow
                 Action: [ssm:PutParameter, ssm:GetParameter, ssm:DeleteParameter]
                 Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/build/runner/launcher-lock"
+              - Sid: ConsumerPoolsLastGoodAndStatus
+                Effect: Allow
+                Action: [ssm:PutParameter, ssm:GetParameter]
+                Resource:
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${PoolsLastGood}"
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${PoolsStatus}"
               - Sid: RecentLaunchesRecord
                 Effect: Allow
                 Action: [ssm:PutParameter, ssm:GetParameter]
@@ -273,6 +307,7 @@ Resources:
           MAX_RUNNERS: !Ref MaxRunners
           MAX_AGE_MINUTES: !Ref MaxAgeMinutes
           IDLE_MINUTES: !Ref IdleMinutes
+          BOUNDARY: !Ref Boundary
           CURFEW: !Ref Curfew
           SUBNETS: !Join [",", !Ref Subnets]
           LAUNCH_TEMPLATE_ID: !Ref LaunchTemplate

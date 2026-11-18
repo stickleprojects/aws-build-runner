@@ -620,6 +620,27 @@ def cost_boundary_holds():
         problems.append(f"config.json MaxAgeMinutes {cfg['MaxAgeMinutes']} is over {cb['max_instance_minutes']}")
     if cfg["IdleMinutes"] > cb["max_idle_minutes"]:
         problems.append(f"config.json IdleMinutes {cfg['IdleMinutes']} is over {cb['max_idle_minutes']}")
+    # The consumer's pools (#54) are checked by the same code the launcher runs: config.json's starting copy here,
+    # spellbound3d's pools.json at every read. The boundary comes from policy.yaml, as deploy.sh builds it.
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("pools_cb", P2 / "stack" / "lambda" / "pools.py")
+    pools_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pools_mod)
+    ec2 = next(x for x in p["services"] if x["id"] == "ec2")
+    boundary = {"instance_types": ec2["limits"]["instance_types"], "instance_sizes": cb["instance_sizes"],
+                "max_runners": cb["max_runners"], "max_instance_minutes": cb["max_instance_minutes"],
+                "max_idle_minutes": cb["max_idle_minutes"]}
+    try:
+        pools_mod.validate({"version": 1, "pools": cfg["Pools"]}, boundary)
+    except pools_mod.Invalid as e:
+        problems += [f"config.json Pools: {r}" for r in e.reasons]
+    for probe, why in (("c7i.2xlarge", "over 4 vCPU"), ("t4g.large", "Graviton"), ("r5.large", "unapproved")):
+        try:
+            pools_mod.validate({"version": 1, "pools": {"aws-x": {"class": "light", "spot": [probe], "on_demand": []}}},
+                               boundary)
+            problems.append(f"pools.py accepts {probe} ({why}): a consumer could ask for it")
+        except pools_mod.Invalid:
+            pass
     for name, pool in cfg["Pools"].items():
         types = pool.get("spot", []) + pool.get("on_demand", [])
         for itype in types:
@@ -676,19 +697,29 @@ def runner_image_node_is_22_or_later_from_nodejs_org():
     for m in re.finditer(r"apt(?:-get)?\s+install(?:[^\n]*\\\n)*[^\n]*", code):
         if re.search(r"(?<![\w-])(nodejs|npm)(?![\w-])", m.group(0)):
             problems.append("setup.sh installs nodejs/npm from apt (Ubuntu 24.04's is v18)")
-    major = re.search(r"^NODE_MAJOR=(\d+)\s*$", code, re.M)
-    if not major:
-        problems.append("setup.sh doesn't pin NODE_MAJOR")
-    elif int(major.group(1)) < 22:
-        problems.append(f"setup.sh pins NODE_MAJOR={major.group(1)}; make check needs 22 or later")
-    if major and "nodejs.org/dist" not in code:
-        problems.append("setup.sh doesn't install Node from nodejs.org")
-    if "SHASUMS256.txt" not in code or "sha256sum -c" not in code:
-        problems.append("setup.sh doesn't check the Node download against nodejs.org's SHASUMS256.txt")
-    # Until spellbound3d's runner-smoke checks make check's prerequisites, the image's own smoke test does.
-    smoke = (P2 / "ami" / "smoke-test.sh").read_text()
-    if not re.search(r'check "node >= 22\.13', smoke) and "prereqs" not in smoke:
-        problems.append("smoke-test.sh doesn't check the job's Node version (or spellbound3d's prereqs check)")
+    # Since 2026-11-18 the version comes from spellbound3d's machine-requirements.txt (their range follows
+    # renovate's engines), read by files/machine_requirements.py; the download is checked against its hash.
+    if "machine_requirements.py" not in code or "machine-requirements.txt" not in code:
+        problems.append("setup.sh doesn't take node's version from spellbound3d's machine-requirements.txt")
+    if "nodejs.org/dist" not in code or not re.search(r'NODE_SHA256\}?  .*\| sha256sum -c', code):
+        problems.append("setup.sh doesn't check the node download from nodejs.org against the file's sha256")
+    reader = P2 / "ami" / "files" / "machine_requirements.py"
+    if not reader.is_file():
+        problems.append("files/machine_requirements.py is missing")
+    else:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("mr_45", reader)
+        mr = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mr)
+        h = "0" * 64
+        for v in ("18.19.1", "22.12.0", "23.1.0"):  # v18 crashed renovate 42; the others are outside its range
+            text = (f"tool node 22.13 exact:{v}\nrange node ^22.13.0||^24.11.0 renovate@42.99.0\n"
+                    f"sha256 node node-v{v}-linux-x64.tar.xz {h}\n")
+            try:
+                mr.parse(text)
+                problems.append(f"the reader accepts node exact:{v}, which renovate 42.99.0 can't run on")
+            except mr.Bad:
+                pass
     return problems
 
 
