@@ -1,15 +1,8 @@
 #!/usr/bin/env bash
-# Builds the runner image. Runs once, as root, on the bake instance (cloud-init runcmd), with the
-# files from files/ already in /opt/bake/files. Reports STARTED, then OK (with the manifest) or FAILED
-# (with its log) to SSM via files/report.py, and powers off; bake.sh then makes the AMI.
-#
-# Versions come from spellbound3d itself, so the image always matches what its CI pins: the bake
-# checks out spellbound3d's main (a short-lived, read-only GitHub App token that bake.sh puts in SSM
-# /build/bake/github-token) and runs spellbound3d's own install scripts as ghrunner.
-#
-# Layout matches the local runner: /opt/github-runners/spellbound3d, user ghrunner, HOME inside it, the
-# job-started hook and allowlists in /etc/github-runner. Tools are also on the PATH for everyone.
-#
+# Bakes the runner image, once, as root, on the bake instance (files/ in /opt/bake/files). Reports
+# STARTED, then OK (manifest) or FAILED (log) to SSM via report.py, and powers off; bake.sh makes the AMI.
+# Versions and install scripts come from spellbound3d's main (read-only token from SSM, set by bake.sh).
+# Layout as the local runner: /opt/github-runners/spellbound3d, user ghrunner, HOME inside it.
 #   BAKE_IN_CONTAINER=1 GITHUB_TOKEN=... ./setup.sh   test run in a plain ubuntu:24.04 container
 set -Eeuo pipefail
 
@@ -46,24 +39,16 @@ apt-get update -q
 apt-get install -y -q --no-install-recommends ca-certificates curl git jq unzip zip make \
   python3 python3-venv python3-pip xz-utils build-essential sudo libfontconfig1 iptables
 
-# Node: the latest NODE_MAJOR release from nodejs.org, not Ubuntu's nodejs (v18 on 24.04). make check's
-# renovate-check runs renovate 42, which needs Node >= 20.17 / 22.9; on v18 it crashed (2026-11-18, #45).
-# spellbound3d pins no Node version, so the major is pinned here, matching the local runner (v22).
-# It also provides npm (Claude Code) and npx (renovate-check).
+# Node from nodejs.org, not Ubuntu's v18, which broke renovate-check (#45); smoke-test.sh checks the floor.
 NODE_MAJOR=22
-say "Node ${NODE_MAJOR}.x from nodejs.org (SHA-256 checked), in /usr/local"
-NODE_VERSION="$(curl -fsSL https://nodejs.org/dist/index.json | jq -r --arg m "v${NODE_MAJOR}." \
-  '[.[] | select(.version | startswith($m))][0].version')"
-[[ "$NODE_VERSION" =~ ^v${NODE_MAJOR}\.[0-9]+\.[0-9]+$ ]]
-node_tar="node-${NODE_VERSION}-linux-x64.tar.xz"
-curl -fsSL --retry 3 -o "/tmp/${node_tar}" "https://nodejs.org/dist/${NODE_VERSION}/${node_tar}"
-curl -fsSL --retry 3 "https://nodejs.org/dist/${NODE_VERSION}/SHASUMS256.txt" | grep -E "  ${node_tar}\$" > /tmp/node.sha256
-(cd /tmp && sha256sum -c --quiet node.sha256)
-tar xJf "/tmp/${node_tar}" -C /usr/local --strip-components=1 --no-same-owner \
-  "node-${NODE_VERSION}-linux-x64/bin" "node-${NODE_VERSION}-linux-x64/lib" "node-${NODE_VERSION}-linux-x64/include" \
-  "node-${NODE_VERSION}-linux-x64/share"
-rm -f "/tmp/${node_tar}" /tmp/node.sha256
-[[ "$(/usr/local/bin/node --version)" == "$NODE_VERSION" ]]
+say "Node ${NODE_MAJOR}.x from nodejs.org, SHA-256 checked"
+d=https://nodejs.org/dist
+v="$(curl -fsSL $d/index.json | jq -r --arg m "v$NODE_MAJOR." 'map(select(.version|startswith($m)))[0].version')"
+t="node-$v-linux-x64"
+curl -fsSL --retry 3 -o "/tmp/$t.tar.xz" "$d/$v/$t.tar.xz"
+curl -fsSL "$d/$v/SHASUMS256.txt" | grep " $t.tar.xz\$" | (cd /tmp && sha256sum -c --quiet)
+tar xJf "/tmp/$t.tar.xz" -C /usr/local --strip-components=1 --no-same-owner "$t"/{bin,lib,include,share}
+rm "/tmp/$t.tar.xz"
 
 say "user ghrunner, home $H"
 mkdir -p /opt/github-runners /etc/build-runner

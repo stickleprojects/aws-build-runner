@@ -663,7 +663,7 @@ def cost_boundary_holds():
 
 
 @rule("2026-11-18 (#45): the image took Node from Ubuntu 24.04's packages (v18.19.1); make check's renovate-check "
-      "(renovate 42, needs Node >= 22.9 or 20.17) crashed on the first AWS trial. The laptop runner has v22.")
+      "(renovate 42.99.0, needs Node ^22.13 or ^24.11) crashed on the first AWS trial. The laptop runner has v22.")
 def runner_image_node_is_22_or_later_from_nodejs_org():
     setup = (P2 / "ami" / "setup.sh").read_text()
     code = "\n".join(l for l in setup.splitlines() if not l.lstrip().startswith("#"))
@@ -683,7 +683,7 @@ def runner_image_node_is_22_or_later_from_nodejs_org():
         problems.append("setup.sh doesn't check the Node download against nodejs.org's SHASUMS256.txt")
     # Until spellbound3d's runner-smoke checks make check's prerequisites, the image's own smoke test does.
     smoke = (P2 / "ami" / "smoke-test.sh").read_text()
-    if not re.search(r'check "node >= 22\.9', smoke) and "prereqs" not in smoke:
+    if not re.search(r'check "node >= 22\.13', smoke) and "prereqs" not in smoke:
         problems.append("smoke-test.sh doesn't check the job's Node version (or spellbound3d's prereqs check)")
     return problems
 

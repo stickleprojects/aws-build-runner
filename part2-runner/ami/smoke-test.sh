@@ -102,8 +102,8 @@ else
 fi
 check "claude from npm cache, offline" "as_job \"rm -rf /tmp/c && npm install --prefix /tmp/c --offline --no-fund --no-audit --loglevel=error @anthropic-ai/claude-code@$CLAUDE_VER >/dev/null && /tmp/c/node_modules/.bin/claude --version\""
 check "claude global"           "as_job 'claude --version'"
-# make check's renovate-check (renovate 42) needs Node >= 22.9 (or 20.17); Ubuntu's v18 broke it (2026-11-18, #45).
-check "node >= 22.9 for jobs"   "as_job 'node -e \"const [a, b] = process.versions.node.split(\\\".\\\").map(Number); if (a < 22 || (a === 22 && b < 9)) process.exit(1)\" && command -v node npx && node --version'"
+# renovate-check (renovate 42.99.0) needs Node ^22.13 or ^24.11; Ubuntu's v18 broke it (#45). Until spellbound3d's prereqs.
+check "node >= 22.13 for jobs"   "as_job 'node -e \"const [a, b] = process.versions.node.split(\\\".\\\").map(Number); if (a < 22 || (a === 22 && b < 13)) process.exit(1)\" && command -v node npx && node --version'"
 check "uv runs python"          "as_job 'uv run --no-project python3 -c \"print(42)\"' | grep -x 42"
 check "python venv"             "as_job 'python3 -m venv /tmp/v && /tmp/v/bin/python -c \"import sys; print(sys.version.split()[0])\"'"
 check "git commit"              "as_job 'rm -rf /tmp/g && git init -q /tmp/g && git -C /tmp/g -c user.name=x -c user.email=x@x commit -q --allow-empty -m x && git -C /tmp/g log --oneline | wc -l'"
