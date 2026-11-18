@@ -51,8 +51,9 @@ Since #30 it also sets up the **fast stop** (CloudWatch alarms `guardrail-fast-*
 the kill switch in fast mode) and **Cost Anomaly Detection**. The first run emails a subscription confirmation for
 the fast-stop alerts: **click Confirm** in that email, or the alarms stop runners without telling you. It ends with
 a dry run of both modes. After a fast stop, once you've found the cause: turn our Lambdas back on with
-`aws lambda delete-function-concurrency --function-name build-runner-launcher` (and `build-runner-webhook`),
-or tell Claude to.
+`aws lambda delete-function-concurrency --function-name build-runner-launcher` and
+`aws lambda put-function-concurrency --function-name build-runner-webhook --reserved-concurrent-executions 5`
+(the webhook keeps its 5-execution cap against floods, #30 fix 6; don't delete it), or tell Claude to.
 
 When [bootstrap/budget-stop-policy.json](bootstrap/budget-stop-policy.json) or `budget_usd` changes, rerun
 `./bootstrap-org-budget-stop.sh` in the management account (below): it updates the `org-budget-stop` SCP
