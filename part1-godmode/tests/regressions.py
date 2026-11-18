@@ -807,6 +807,24 @@ def launcher_sees_its_own_launches_before_ec2_does():
     return []
 
 
+@rule("2026-11-18 (#30 fix 6): a new account's Lambda limit (10) let a webhook flood use every execution, which "
+      "could delay the reaper and the kill switch. The webhook is capped and the kill switch has executions reserved.")
+def webhook_is_capped_and_kill_switch_reserved():
+    problems = []
+    tpl = (P2 / "stack" / "template.yaml").read_text()
+    hook = tpl[tpl.find("  Webhook:\n"):tpl.find("\n  WebhookUrl:")]
+    m = re.search(r"^\s+ReservedConcurrentExecutions:\s*(\d+)", hook, re.M)
+    if not m or not 1 <= int(m.group(1)) <= 10:
+        problems.append("template.yaml: the webhook needs ReservedConcurrentExecutions between 1 and 10")
+    boot = (P1 / "bootstrap-budget-stop.sh").read_text()
+    if not re.search(r'put-function-concurrency .*--function-name "\$FUNCTION" --reserved-concurrent-executions [1-9]', boot):
+        problems.append("bootstrap-budget-stop.sh doesn't reserve concurrency for the kill switch")
+    checklist = (P1 / "CHECKLIST.md").read_text()
+    if re.search(r"delete-function-concurrency[^`]*build-runner-webhook|\(and `build-runner-webhook`\)", checklist):
+        problems.append("CHECKLIST.md recovers the webhook by deleting its concurrency, which removes its flood cap")
+    return problems
+
+
 def main():
     failed = 0
     for name, incident, fn in RULES:
