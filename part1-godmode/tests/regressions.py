@@ -825,6 +825,29 @@ def webhook_is_capped_and_kill_switch_reserved():
     return problems
 
 
+@rule("2026-11-18: a 12-second job's instance terminated inside the launcher's 5-minute memory of its own launches, "
+      "so the next heavy job waited ~2.5 min: the gone instance still counted as a free runner.")
+def finished_recent_launches_dont_hold_back_new_jobs():
+    import importlib.util
+    lam = P2 / "stack" / "lambda"
+    sys.path.insert(0, str(lam))
+    try:
+        spec = importlib.util.spec_from_file_location("runner_done", lam / "runner.py")
+        r = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(r)
+    finally:
+        sys.path.remove(str(lam))
+    now = 1_000_000.0
+    pool = next(iter(r.POOLS))
+    gone = {"id": "i-gone", "name": "aws-1-gone", "job_id": "1", "pool": pool, "launched": now - 120}
+    try:
+        live = r.with_recent_launches([], [gone], now, set())   # EC2: nothing; GitHub: no such runner any more
+    except TypeError:
+        live = r.with_recent_launches([], [gone], now)          # the old signature can't be told
+    plan = r.launches_needed([{"id": 2, "pool": pool, "created_at": "x"}], live, [], now, cap=4)
+    return [] if plan == {pool: 1} else [f"a finished recent launch held back a new job's launch (plan {plan})"]
+
+
 def main():
     failed = 0
     for name, incident, fn in RULES:

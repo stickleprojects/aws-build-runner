@@ -388,6 +388,12 @@ runner.time.time = real
 now2 = time.time()
 rec = {"id": "i-r", "name": "aws-9-r", "job_id": "9", "pool": L, "launched": now2 - 10}
 check("#47: a recent launch EC2 doesn't list counts as live", runner.with_recent_launches([], [rec], now2) == [rec])
+done = {**rec, "launched": now2 - 120}
+check("a recent launch whose runner has deregistered (job done) doesn't count",
+      runner.with_recent_launches([], [done], now2, set()) == [])
+check("...while its runner is still registered, it does", runner.with_recent_launches([], [done], now2, {"aws-9-r"}) == [done])
+check("...and a just-made one counts before GitHub lists its runner",
+      runner.with_recent_launches([], [{**rec, "launched": now2 - 10}], now2, set()) != [])
 check("#47: ...once listed it isn't counted twice",
       runner.with_recent_launches([{**rec, "type": "x"}], [rec], now2) == [{**rec, "type": "x"}])
 check("#47: ...and it stops counting after the boot grace",
