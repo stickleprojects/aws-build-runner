@@ -39,17 +39,6 @@ apt-get update -q
 apt-get install -y -q --no-install-recommends ca-certificates curl git jq unzip zip make \
   python3 python3-venv python3-pip xz-utils build-essential sudo libfontconfig1 iptables
 
-# Node from nodejs.org, not Ubuntu's v18, which broke renovate-check (#45); smoke-test.sh checks the floor.
-NODE_MAJOR=22
-say "Node ${NODE_MAJOR}.x from nodejs.org, SHA-256 checked"
-d=https://nodejs.org/dist
-v="$(curl -fsSL $d/index.json | jq -r --arg m "v$NODE_MAJOR." 'map(select(.version|startswith($m)))[0].version')"
-t="node-$v-linux-x64"
-curl -fsSL --retry 3 -o "/tmp/$t.tar.xz" "$d/$v/$t.tar.xz"
-curl -fsSL "$d/$v/SHASUMS256.txt" | grep " $t.tar.xz\$" | (cd /tmp && sha256sum -c --quiet)
-tar xJf "/tmp/$t.tar.xz" -C /usr/local --strip-components=1 --no-same-owner "$t"/{bin,lib,include,share}
-rm "/tmp/$t.tar.xz"
-
 say "user ghrunner, home $H"
 mkdir -p /opt/github-runners /etc/build-runner
 id ghrunner >/dev/null 2>&1 || useradd --system --create-home --home-dir "$H" --shell /bin/bash ghrunner
@@ -70,6 +59,22 @@ CLAUDE_CODE_VERSION="$(sed -nE 's/.*CLAUDE_CODE_VERSION:-([0-9][0-9.]*)\}.*/\1/p
 UV_VERSION="$(sed -nE 's/^ *UV_VERSION: *"?([0-9][0-9.]*)"?.*/\1/p' "$SB3D/.github/actions/setup-stack/action.yml" | head -1)"
 [[ -n "${GODOT_VERSION:-}" && -n "$CLAUDE_CODE_VERSION" && -n "$UV_VERSION" ]]
 say "pins from spellbound3d ${sb3d_commit:0:12}: Godot ${GODOT_VERSION}, Claude Code ${CLAUDE_CODE_VERSION}, uv ${UV_VERSION}"
+
+say "machine requirements: spellbound3d's tools/runner-smoke/machine-requirements.txt (ami/MACHINE-REQUIREMENTS.md)"
+# What make check takes from the machine, owned by spellbound3d: its distro packages, and node at an exact
+# version checked against the file's own SHA-256 (not Ubuntu's v18, which broke renovate-check, #45).
+# The reader fails the bake on a missing file, no node line, an unknown kind, or a pin outside its range.
+req="$(python3 "$FILES/machine_requirements.py" "$SB3D/tools/runner-smoke/machine-requirements.txt")"
+eval "$req"
+say "  apt: ${APT_PACKAGES}; node ${NODE_VERSION}"
+# shellcheck disable=SC2086 # one word per package, checked by the reader
+apt-get install -y -q --no-install-recommends $APT_PACKAGES
+curl -fsSL --retry 3 -o "/tmp/${NODE_FILE}" "https://nodejs.org/dist/v${NODE_VERSION}/${NODE_FILE}"
+echo "${NODE_SHA256}  /tmp/${NODE_FILE}" | sha256sum -c --quiet
+t="${NODE_FILE%.tar.xz}"
+tar xJf "/tmp/${NODE_FILE}" -C /usr/local --strip-components=1 --no-same-owner "$t"/{bin,lib,include,share}
+rm "/tmp/${NODE_FILE}"
+[[ "$(/usr/local/bin/node --version)" == "v${NODE_VERSION}" ]]
 
 say "GitHub Actions runner (latest release, SHA-256 checked)"
 release="$(curl -fsSL https://api.github.com/repos/actions/runner/releases/latest)"

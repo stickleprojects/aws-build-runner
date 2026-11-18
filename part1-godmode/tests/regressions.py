@@ -676,19 +676,29 @@ def runner_image_node_is_22_or_later_from_nodejs_org():
     for m in re.finditer(r"apt(?:-get)?\s+install(?:[^\n]*\\\n)*[^\n]*", code):
         if re.search(r"(?<![\w-])(nodejs|npm)(?![\w-])", m.group(0)):
             problems.append("setup.sh installs nodejs/npm from apt (Ubuntu 24.04's is v18)")
-    major = re.search(r"^NODE_MAJOR=(\d+)\s*$", code, re.M)
-    if not major:
-        problems.append("setup.sh doesn't pin NODE_MAJOR")
-    elif int(major.group(1)) < 22:
-        problems.append(f"setup.sh pins NODE_MAJOR={major.group(1)}; make check needs 22 or later")
-    if major and "nodejs.org/dist" not in code:
-        problems.append("setup.sh doesn't install Node from nodejs.org")
-    if "SHASUMS256.txt" not in code or "sha256sum -c" not in code:
-        problems.append("setup.sh doesn't check the Node download against nodejs.org's SHASUMS256.txt")
-    # Until spellbound3d's runner-smoke checks make check's prerequisites, the image's own smoke test does.
-    smoke = (P2 / "ami" / "smoke-test.sh").read_text()
-    if not re.search(r'check "node >= 22\.13', smoke) and "prereqs" not in smoke:
-        problems.append("smoke-test.sh doesn't check the job's Node version (or spellbound3d's prereqs check)")
+    # Since 2026-11-18 the version comes from spellbound3d's machine-requirements.txt (their range follows
+    # renovate's engines), read by files/machine_requirements.py; the download is checked against its hash.
+    if "machine_requirements.py" not in code or "machine-requirements.txt" not in code:
+        problems.append("setup.sh doesn't take node's version from spellbound3d's machine-requirements.txt")
+    if "nodejs.org/dist" not in code or not re.search(r'NODE_SHA256\}?  .*\| sha256sum -c', code):
+        problems.append("setup.sh doesn't check the node download from nodejs.org against the file's sha256")
+    reader = P2 / "ami" / "files" / "machine_requirements.py"
+    if not reader.is_file():
+        problems.append("files/machine_requirements.py is missing")
+    else:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("mr_45", reader)
+        mr = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mr)
+        h = "0" * 64
+        for v in ("18.19.1", "22.12.0", "23.1.0"):  # v18 crashed renovate 42; the others are outside its range
+            text = (f"tool node 22.13 exact:{v}\nrange node ^22.13.0||^24.11.0 renovate@42.99.0\n"
+                    f"sha256 node node-v{v}-linux-x64.tar.xz {h}\n")
+            try:
+                mr.parse(text)
+                problems.append(f"the reader accepts node exact:{v}, which renovate 42.99.0 can't run on")
+            except mr.Bad:
+                pass
     return problems
 
 

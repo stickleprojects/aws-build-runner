@@ -28,7 +28,7 @@ every 5 min ──> launcher: catches missed webhooks; reaps runners > 90 min, o
 - [x] **Smoke test** (`ami/smoke-test.sh`): 23 checks (tools work, security, boot step), plus spellbound3d's Godot smoke test once it's on their main. A new AMI is only a
       *candidate* until it passes; then it becomes current (SSM `/build/runner/ami-id`). Current: `ami-0d1c0c1e4fbf2a0dd`.
 - [x] **Image contract**: [ami/IMAGE.md](ami/IMAGE.md) (and `/etc/build-runner/manifest.json` on every instance).
-- [ ] **Machine requirements from spellbound3d**: setup.sh installs Node and the OS tools listed in their `tools/runner-smoke/machine-requirements.txt` (format: [ami/MACHINE-REQUIREMENTS.md](ami/MACHINE-REQUIREMENTS.md)). Waits on [#48](https://github.com/stickleprojects/aws-build-runner/issues/48), the user-data limit.
+- [x] **Machine requirements from spellbound3d**: setup.sh installs Node and the OS tools listed in their `tools/runner-smoke/machine-requirements.txt` (format: [ami/MACHINE-REQUIREMENTS.md](ami/MACHINE-REQUIREMENTS.md); reader `ami/files/machine_requirements.py`); their prereqs check verifies each new image.
 - [x] **Weekly rebuild** (`.github/workflows/ami.yml`): Monday 08:30 Sydney (07:30 in winter: after the curfew), or by hand. Bake → smoke test → promote →
       prune (keep 3) → GitHub Release with IMAGE.md and manifest.json. Role `/claude/build-runner-ami-ci` via OIDC (`ci/ami-ci-role.sh`).
       **The latest image's contract is always the latest [release](https://github.com/stickleprojects/aws-build-runner/releases/latest).**

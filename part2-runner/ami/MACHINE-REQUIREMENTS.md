@@ -12,9 +12,14 @@ The format was agreed with spellbound3d on 2026-11-18 (Kieron asked for it to be
 spellbound3d's copy is in `tools/runner-smoke/README.md`, section "Machine requirements". **Keep the two the same.**
 A change to the format is agreed with spellbound3d first, then made in both places.
 
-Status (2026-11-18): agreed. setup.sh doesn't read the file yet, because the bake's user data is at its 16 KB limit:
-[#48](https://github.com/stickleprojects/aws-build-runner/issues/48) comes first. Until then, setup.sh pins
-`NODE_MAJOR=22` and `smoke-test.sh` checks Node ≥ 22.13 itself ([#45](https://github.com/stickleprojects/aws-build-runner/issues/45)).
+Status (2026-11-18): agreed. setup.sh reads the file with [files/machine_requirements.py](files/machine_requirements.py)
+(tests: [test_machine_requirements.py](test_machine_requirements.py)). It installs every `distro:` package and
+`node` at its `exact:` version from nodejs.org, checked against the file's `sha256`. spellbound3d's `prereqs` check,
+the first check of their `godot-smoke.sh`, which `smoke-test.sh` runs on each new image, verifies the result.
+
+**What's deliberately not on the list:** Godot, gitleaks, uv and the Python packages. spellbound3d's own scripts
+install their pinned versions in every job (`tools/godot/version.env`, `tools/gitleaks/version.env`,
+setup-stack's `UV_VERSION`, `uv.lock`). The image's copies of those are caches.
 
 ## The file
 
@@ -40,6 +45,7 @@ Status (2026-11-18): agreed. setup.sh doesn't read the file yet, because the bak
 
 **`tool`:**
 - `minimum` is a dotted version (`22.13`) or `-` for "present only". It's compared numerically, field by field.
+  The prereqs check reads a tool's version from the first dotted number that `<name> --version` prints.
 - `install` is one of:
   - `exact:<version>`: the bake installs exactly this version from the tool's official release. **Only `node` is supported today.**
   - `distro:<apt package>`: the bake installs it from Ubuntu 24.04's packages, unpinned (apt pins break on Ubuntu updates).
@@ -47,7 +53,10 @@ Status (2026-11-18): agreed. setup.sh doesn't read the file yet, because the bak
 
 **`range`:**
 - `range` is caret ranges joined by `||` with no spaces. `^22.13.0||^24.11.0` means 22.13.0 or later within 22.x, or 24.11.0 or later within 24.x.
-- `source` is what requires it, e.g. `renovate@42.99.0`. spellbound3d's test requires it to match the Makefile's `RENOVATE_VERSION`.
+- `source` is what requires it, e.g. `renovate@42.99.0`. spellbound3d's test
+  (`tools/standards/tests/test_machine_requirements.py`) requires it to match the Makefile's `RENOVATE_VERSION`,
+  so a renovate bump fails there until its `engines.node` is checked again.
+- The prereqs check needs the version it finds to be inside the range, and the `exact:` version must be inside it too.
 - It exists because a minimum alone isn't enough. Node 23.x and 24.0–24.10 pass "≥ 22.13" but crash renovate 42.
 - **For the bake, it installs nothing.** setup.sh checks that the `exact:` version is inside the range, and fails the bake if not.
 
