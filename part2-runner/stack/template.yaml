@@ -160,6 +160,17 @@ Resources:
       InvokedViaFunctionUrl: true
 
   # ------------------------------------------------------------------ launcher (and reaper)
+  # What the launcher's recent runs launched (#47): DescribeInstances lags RunInstances, so the next run counts
+  # these as booting until EC2 lists them. Written under the launcher's lock; entries last BOOT_GRACE (5 min).
+  RecentLaunches:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /build/runner/launches
+      Type: String
+      Value: "[]"
+      Description: build-runner launcher's recent launches (kept 5 min; see runner.py LAUNCHES)
+      Tags: {resource-group: build-runner}
+
   LauncherRole:
     Type: AWS::IAM::Role
     Properties:
@@ -232,6 +243,10 @@ Resources:
                 Effect: Allow
                 Action: [ssm:PutParameter, ssm:GetParameter, ssm:DeleteParameter]
                 Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/build/runner/launcher-lock"
+              - Sid: RecentLaunchesRecord
+                Effect: Allow
+                Action: [ssm:PutParameter, ssm:GetParameter]
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${RecentLaunches}"
               - Sid: OwnLogs
                 Effect: Allow
                 Action: [logs:CreateLogStream, logs:PutLogEvents]
