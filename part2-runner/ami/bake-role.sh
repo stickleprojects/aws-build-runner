@@ -5,6 +5,7 @@
 # The role can only:
 #   - report the bake's result: ssm:PutParameter on /build/bake/* (files/report.py)
 #   - read the bake's short-lived GitHub token: ssm:GetParameter on /build/bake/github-token only
+#   - read its bundle (setup.sh and files/): s3:GetObject on bake/* in the artifacts bucket only (fetch.py, #48)
 #   - register with Systems Manager, so a running bake instance can be inspected (Run Command, Session Manager)
 set -Eeuo pipefail
 cd "$(dirname "$0")"
@@ -17,13 +18,15 @@ BOUNDARY="arn:aws:iam::${ACCOUNT_ID}:policy/guardrails/claude-boundary"
 REGION="${AWS_REGION:-ap-southeast-2}"
 
 trust='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"ec2.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
-policy="$(jq -n --arg param "arn:aws:ssm:${REGION}:${ACCOUNT_ID}:parameter/build/bake/*" \
+BUCKET="$(aws ssm get-parameter --name /build/runner/artifacts-bucket --query Parameter.Value --output text)"
+policy="$(jq -n --arg bundles "arn:aws:s3:::${BUCKET}/bake/*" --arg param "arn:aws:ssm:${REGION}:${ACCOUNT_ID}:parameter/build/bake/*" \
   --arg token "arn:aws:ssm:${REGION}:${ACCOUNT_ID}:parameter/build/bake/github-token" \
   --arg via "ssm.${REGION}.amazonaws.com" '{
   Version: "2012-10-17",
   Statement: [
     {Sid: "ReportBakeResult", Effect: "Allow", Action: "ssm:PutParameter", Resource: $param},
     {Sid: "ReadBakeGitHubToken", Effect: "Allow", Action: "ssm:GetParameter", Resource: $token},
+    {Sid: "ReadBakeBundle", Effect: "Allow", Action: "s3:GetObject", Resource: $bundles},
     {Sid: "DecryptItThroughSsmOnly", Effect: "Allow", Action: "kms:Decrypt", Resource: "*",
      Condition: {StringEquals: {"kms:ViaService": $via}}},
     {Sid: "SystemsManagerAgent", Effect: "Allow", Resource: "*",

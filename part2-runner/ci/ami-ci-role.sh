@@ -26,7 +26,8 @@ trust="$(jq -n --arg acct "$ACCOUNT_ID" --arg sub "$SUB" '{Version: "2012-10-17"
                              "token.actions.githubusercontent.com:sub": $sub,
                              "token.actions.githubusercontent.com:ref": "refs/heads/main"}}}]}')"
 
-policy="$(jq -n --arg acct "$ACCOUNT_ID" --arg r "$REGION" '{Version: "2012-10-17", Statement: [
+BUCKET="$(aws ssm get-parameter --name /build/runner/artifacts-bucket --query Parameter.Value --output text)"
+policy="$(jq -n --arg acct "$ACCOUNT_ID" --arg r "$REGION" --arg bundles "arn:aws:s3:::${BUCKET}/bake/*" '{Version: "2012-10-17", Statement: [
   {Sid: "BakeTestAndPruneInSydney", Effect: "Allow", Resource: "*",
    Action: ["ec2:Describe*", "ec2:RunInstances", "ec2:TerminateInstances", "ec2:CreateImage",
             "ec2:DeregisterImage", "ec2:DeleteSnapshot", "ec2:CreateTags", "ec2:CreateSecurityGroup"],
@@ -43,6 +44,7 @@ policy="$(jq -n --arg acct "$ACCOUNT_ID" --arg r "$REGION" '{Version: "2012-10-1
   {Sid: "LaunchWithTheBakeRole", Effect: "Allow", Action: "iam:PassRole",
    Resource: "arn:aws:iam::\($acct):role/claude/build-runner-bake",
    Condition: {StringEquals: {"iam:PassedToService": "ec2.amazonaws.com"}}},
+  {Sid: "BakeBundle", Effect: "Allow", Action: ["s3:PutObject", "s3:DeleteObject"], Resource: $bundles},
   {Sid: "Identity", Effect: "Allow", Action: "sts:GetCallerIdentity", Resource: "*"}]}')"
 
 if aws iam get-role --role-name "$NAME" >/dev/null 2>&1; then
