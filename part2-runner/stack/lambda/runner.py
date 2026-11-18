@@ -56,6 +56,9 @@ LAUNCHER = os.environ.get("LAUNCHER_FUNCTION", "build-runner-launcher")
 CURFEW = {**curfew.DEFAULT, **json.loads(os.environ.get("CURFEW") or "{}")}
 LOCK = "/build/runner/launcher-lock"
 LOCK_STALE = 150      # longer than the launcher's 120 s timeout
+# What recent runs launched, written under the lock. DescribeInstances lags RunInstances, so the next run
+# counts these as booting until EC2 lists them (2026-11-18, #47: a second heavy instance for one job).
+LAUNCHES = "/build/runner/launches"
 TOKEN_PERMISSIONS = {"administration": "write", "actions": "read"}
 # Try the next type / subnet on these; anything else is a real error.
 CAPACITY_ERRORS = {"InsufficientInstanceCapacity", "InsufficientCapacity", "SpotMaxPriceTooLow",
@@ -190,6 +193,17 @@ def unclaimed(instances: list[dict], runners: list[dict], now: float) -> list[di
     return out
 
 
+def with_recent_launches(instances: list[dict], recent: list[dict], now: float) -> list[dict]:
+    """Live instances plus recent launches EC2 doesn't list yet (each counts until BOOT_GRACE)."""
+    seen = {i["id"] for i in instances}
+    return instances + [r for r in recent if r["id"] not in seen and now - r["launched"] < BOOT_GRACE]
+
+
+def recent_launches_to_keep(recent: list[dict], new: list[dict], now: float) -> list[dict]:
+    """The record to write back: this run's launches and earlier ones still inside BOOT_GRACE."""
+    return [r for r in recent + new if now - r["launched"] < BOOT_GRACE]
+
+
 def launches_needed(queued: list[dict], instances: list[dict], runners: list[dict], now: float,
                     cap: int = MAX_RUNNERS) -> dict[str, int]:
     """Launches per pool. Each pool covers only its own queue (a 2-vCPU runner can't take a check job);
@@ -319,7 +333,7 @@ def run_instance(name: str, runner_id, job_id, pool: str, jitconfig: str, run=No
     raise RuntimeError(f"no capacity for any instance type ({last})")
 
 
-def launch(gh: GitHub, job_id, pool: str) -> None:
+def launch(gh: GitHub, job_id, pool: str) -> dict:
     name = f"{NAME_PREFIX}{job_id}-{secrets.token_hex(3)}"
     _, jit = gh.call("POST", f"/repos/{REPO}/actions/runners/generate-jitconfig",
                      {"name": name, "runner_group_id": 1, "labels": [pool], "work_folder": "_work"})
@@ -330,6 +344,8 @@ def launch(gh: GitHub, job_id, pool: str) -> None:
         gh.call("DELETE", f"/repos/{REPO}/actions/runners/{runner_id}", ok=(204, 404))
         raise
     log("launched", instance=iid, pool=pool, type=itype, spot=spot, runner=name, job_id=job_id)
+    return {"id": iid, "name": name, "runner_id": str(runner_id), "job_id": str(job_id), "pool": pool,
+            "spot": spot, "type": itype, "launched": time.time()}
 
 
 def remove_runner(gh: GitHub, runner_id) -> bool:
@@ -341,6 +357,26 @@ def remove_runner(gh: GitHub, runner_id) -> bool:
 def terminate(ids: list[str]) -> None:
     if ids:
         aws("ec2").terminate_instances(InstanceIds=ids)
+
+
+def read_launches(ssm=None) -> list[dict]:
+    ssm = ssm or aws("ssm")
+    try:
+        value = ssm.get_parameter(Name=LAUNCHES)["Parameter"]["Value"]
+    except Exception as e:
+        if error_code(e) == "ParameterNotFound":
+            return []
+        raise
+    try:
+        recent = json.loads(value)
+        return [r for r in recent if isinstance(r, dict) and {"id", "launched", "pool"} <= r.keys()]
+    except (ValueError, TypeError):
+        log("ignoring an unreadable launch record", value=value[:200])
+        return []
+
+
+def write_launches(recent: list[dict], ssm=None) -> None:
+    (ssm or aws("ssm")).put_parameter(Name=LAUNCHES, Value=json.dumps(recent or []), Type="String", Overwrite=True)
 
 
 @contextlib.contextmanager
@@ -395,7 +431,8 @@ def launcher(event, context):
                 queued.append({"id": event["job_id"], "pool": event["pool"]})
             runners = [r for r in gh.paged(f"/repos/{REPO}/actions/runners", "runners")
                        if r["name"].startswith(NAME_PREFIX)]
-            instances = live_instances()
+            recent = read_launches()
+            instances = with_recent_launches(live_instances(), recent, now)
 
             if source == "schedule":
                 # Usage, for the daily report (part2-runner/usage/): one sample per live runner per 5-minute run.
@@ -438,11 +475,17 @@ def launcher(event, context):
             covered = {i["job_id"] for i in instances}
             log("reconcile", source=source, queued=len(queued), live=len(instances),
                 unclaimed=len(unclaimed(instances, runners, now)), launching=plan, cap=MAX_RUNNERS)
-            for pool, n in plan.items():
-                # Name each runner after a job it's likely to take: ones without an instance first.
-                todo = sorted((j for j in queued if j["pool"] == pool), key=lambda j: str(j["id"]) in covered)
-                for job in todo[:n]:
-                    launch(gh, job["id"], pool)
+            new = []
+            try:
+                for pool, n in plan.items():
+                    # Name each runner after a job it's likely to take: ones without an instance first.
+                    todo = sorted((j for j in queued if j["pool"] == pool), key=lambda j: str(j["id"]) in covered)
+                    for job in todo[:n]:
+                        new.append(launch(gh, job["id"], pool))
+            finally:
+                keep = recent_launches_to_keep(recent, new, time.time())
+                if keep != recent:
+                    write_launches(keep)  # still under the lock, so the next run sees these
         finally:
             ghapp.revoke(token)
     return {"ok": True}
