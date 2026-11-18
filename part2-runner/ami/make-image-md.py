@@ -51,6 +51,7 @@ def main():
         ("git, jq", f"{t['git']}, {t['jq']}", "Ubuntu packages; also curl, unzip, zip, build-essential, libfontconfig1"),
         # make's version changes how nested makes see the jobserver (4.3 here vs 4.4.1 on the laptop: spellbound3d #209)
         ("make", t.get("make", "(not recorded)"), "Ubuntu package"),
+        ("gh", t.get("gh", "(not recorded)"), "the `exact:` pin in the consumer's machine-requirements.txt, from cli/cli's release, SHA-256 checked"),
     ]
     for name, version, source in rows:
         w(f"| {name} | {version} | {source} |")
