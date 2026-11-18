@@ -48,7 +48,9 @@ def main():
         ("GitHub Actions runner", r["version"], "latest release at bake time, SHA-256 checked"),
         ("Node / npm", f"{t['node']} / {t['npm']}", "the `exact:` pin in spellbound3d's `tools/runner-smoke/machine-requirements.txt`, from nodejs.org, checked against that file's SHA-256"),
         ("Python", t["python"], "Ubuntu packages (with venv, pip)"),
-        ("git, jq, make", f"{t['git']}, {t['jq']}", "Ubuntu packages; also curl, unzip, zip, build-essential, libfontconfig1"),
+        ("git, jq", f"{t['git']}, {t['jq']}", "Ubuntu packages; also curl, unzip, zip, build-essential, libfontconfig1"),
+        # make's version changes how nested makes see the jobserver (4.3 here vs 4.4.1 on the laptop: spellbound3d #209)
+        ("make", t.get("make", "(not recorded)"), "Ubuntu package"),
     ]
     for name, version, source in rows:
         w(f"| {name} | {version} | {source} |")

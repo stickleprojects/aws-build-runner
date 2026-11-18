@@ -166,12 +166,13 @@ jq -n -c \
   --arg uv "$(v 'uv --version')" --arg gitleaks "$(v 'gitleaks version')" \
   --arg node "$(v 'node --version')" --arg npm "$(v 'npm --version')" \
   --arg python "$(v 'python3 --version')" --arg git "$(v 'git --version')" --arg jq "$(v 'jq --version')" \
+  --arg make "$(v 'make --version | head -1')" \
   '{built: $built, base_ami: $base, os: $os, spellbound3d_commit: $sb3d,
     godot_pinned: $godot_pinned, runner_smoke: $runner_smoke,
     runner: {version: $runner, dir: "/opt/github-runners/spellbound3d", user: "ghrunner",
              home: "/opt/github-runners/spellbound3d/home"},
     tools: {godot: $godot, claude_code: $claude, uv: $uv, gitleaks: $gitleaks, node: $node, npm: $npm,
-            python: $python, git: $git, jq: $jq},
+            python: $python, git: $git, jq: $jq, make: $make},
     on_path: ["godot", "claude", "uv", "uvx", "gitleaks", "node", "npm", "python3", "git", "jq", "make"],
     caches: ["~/.cache/godot (Godot zip)", "~/.local/opt/godot-<ver>", "~/.cache/uv (uv.lock)",
              "~/.cache/pip (uv wheel)", "~/.npm (Claude Code)"],
