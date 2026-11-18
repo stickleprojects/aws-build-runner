@@ -4,6 +4,8 @@
     machine_requirements.py FILE     print what setup.sh installs, as shell assignments it can eval:
                                        APT_PACKAGES='python3 git ...'   every distro: package
                                        NODE_VERSION=22.23.5 NODE_FILE=node-v22.23.5-linux-x64.tar.xz NODE_SHA256=...
+                                       GH_VERSION=2.103.3 GH_FILE=gh_2.103.3_linux_amd64.tar.gz GH_SHA256=...
+                                         (the GH_ lines only when the file pins gh; node is required)
 
 Fails (exit 1, the reason on stderr) on anything the agreed format doesn't allow, so the bake never
 guesses: a missing file, no node line, an unknown kind, an exact: tool other than node, an exact
@@ -17,7 +19,9 @@ import sys
 VERSION = re.compile(r"\d+(\.\d+)*")
 PACKAGE = re.compile(r"[a-z0-9][a-z0-9.+-]+")
 HASH = re.compile(r"[0-9a-f]{64}")
-EXACT_TOOLS = {"node": "node-v{v}-linux-x64.tar.xz"}  # the only exact: tool the bake installs (agreed 2026-11-18)
+# The exact: tools the bake knows how to install: each one's official release file name (node agreed 2026-11-18;
+# gh added 2026-11-18 because claude-sdlc's scripts need it and Ubuntu 24.04's is 2.45). A new one is a bake change first.
+EXACT_TOOLS = {"node": "node-v{v}-linux-x64.tar.xz", "gh": "gh_{v}_linux_amd64.tar.gz"}
 
 
 class Bad(Exception):
@@ -96,8 +100,13 @@ def parse(text: str) -> dict:
         if hashes.get(name, ("",))[0] != want:
             raise Bad(f"{name} needs 'sha256 {name} {want} <hash>'")
     packages = [t["what"] for t in tools.values() if t["how"] == "distro"] + modules
-    return {"APT_PACKAGES": " ".join(dict.fromkeys(packages)), "NODE_VERSION": node["what"],
-            "NODE_FILE": hashes["node"][0], "NODE_SHA256": hashes["node"][1]}
+    out = {"APT_PACKAGES": " ".join(dict.fromkeys(packages))}
+    for name in EXACT_TOOLS:
+        t = tools.get(name)
+        if t and t["how"] == "exact":
+            key = name.upper()
+            out.update({f"{key}_VERSION": t["what"], f"{key}_FILE": hashes[name][0], f"{key}_SHA256": hashes[name][1]})
+    return out
 
 
 def main(argv) -> int:

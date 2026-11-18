@@ -59,7 +59,7 @@ check("no node line fails", bad("tool git - distro:git\n") is not None)
 check("node not exact fails", bad(swap("tool node 22.13 exact:22.23.5", "tool node 22.13 distro:nodejs")) is not None)
 check("an unknown kind fails, naming the line", "line" in (bad(GOOD + "pin node 22\n") or ""))
 check("a malformed line fails", bad(GOOD + "tool git distro:git\n") is not None)
-check("exact: for a tool other than node fails", bad(GOOD + "tool git - exact:2.43.0\n") is not None)
+check("exact: for a tool the bake can't install fails", bad(GOOD + "tool git - exact:2.43.0\n") is not None)
 check("exact below its minimum fails", "minimum" in (bad(swap("tool node 22.13", "tool node 22.30")) or ""))
 check("exact outside its range fails (23.x passes >= 22.13 but not ^22.13||^24.11)",
       "range" in (bad(swap("exact:22.23.5", "exact:23.1.0").replace("node-v22.23.5", "node-v23.1.0")) or ""))
@@ -73,6 +73,18 @@ check("a malformed hash fails", bad(swap(H, H.upper())) is not None)
 check("a bad apt package name fails", bad(GOOD + "tool x - distro:Bad;rm\n") is not None)
 check("with: a tool that isn't listed fails", bad(GOOD + "tool npm - with:nothing\n") is not None)
 check("a 0.x caret range is refused, not guessed", bad(GOOD.replace("^22.13.0||^24.11.0", "^0.1.0")) is not None)
+
+GH = "4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d"
+withgh = GOOD + f"tool gh 2.46 exact:2.103.3\nsha256 gh gh_2.103.3_linux_amd64.tar.gz {GH}\n"
+o = mr.parse(withgh)
+check("gh exact: pinned with its release file and hash",
+      (o.get("GH_VERSION"), o.get("GH_FILE"), o.get("GH_SHA256")) == ("2.103.3", "gh_2.103.3_linux_amd64.tar.gz", GH), o)
+check("gh is optional: no GH_ lines without it", not any(k.startswith("GH_") for k in mr.parse(GOOD)))
+check("gh without its sha256 line fails", bad(GOOD + "tool gh 2.46 exact:2.103.3\n") is not None)
+check("gh with the wrong release file fails",
+      bad(GOOD + f"tool gh 2.46 exact:2.103.3\nsha256 gh gh_2.103.3_linux_arm64.tar.gz {GH}\n") is not None)
+check("gh below its minimum fails", "minimum" in (bad(GOOD + f"tool gh 2.200 exact:2.103.3\nsha256 gh gh_2.103.3_linux_amd64.tar.gz {GH}\n") or ""))
+check("another exact: tool is still refused", bad(GOOD + "tool jq - exact:1.7.1\n") is not None)
 
 # The CLI prints shell assignments that eval safely; a missing file exits 1.
 with tempfile.TemporaryDirectory() as d:

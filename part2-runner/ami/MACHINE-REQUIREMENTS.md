@@ -47,7 +47,7 @@ setup-stack's `UV_VERSION`, `uv.lock`). The image's copies of those are caches.
 - `minimum` is a dotted version (`22.13`) or `-` for "present only". It's compared numerically, field by field.
   The prereqs check reads a tool's version from the first dotted number that `<name> --version` prints.
 - `install` is one of:
-  - `exact:<version>`: the bake installs exactly this version from the tool's official release. **Only `node` is supported today.**
+  - `exact:<version>`: the bake installs exactly this version from the tool's official release. **Supported: `node` (required) and `gh` (optional; added 2026-11-18 for claude-sdlc's scripts).** Each has its official release file: `node-v<version>-linux-x64.tar.xz` from nodejs.org, `gh_<version>_linux_amd64.tar.gz` from cli/cli's releases.
   - `distro:<apt package>`: the bake installs it from Ubuntu 24.04's packages, unpinned (apt pins break on Ubuntu updates).
   - `with:<tool>`: it comes with another tool line, e.g. `npx` with `node`.
 
