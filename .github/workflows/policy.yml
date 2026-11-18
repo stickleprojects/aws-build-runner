@@ -137,6 +137,9 @@ jobs:
       - name: Per-job usage record tests (offline)
         run: python3 -I part2-runner/ami/test_job_usage.py
 
+      - name: Laptop daily AWS check tests (offline)
+        run: python3 -I part2-runner/laptop/test_daily_check.py
+
       - name: Machine requirements reader tests (offline)
         run: python3 -I part2-runner/ami/test_machine_requirements.py
 
