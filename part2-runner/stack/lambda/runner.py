@@ -41,6 +41,11 @@ DEFAULT_POOLS = {
     "aws-light": {"class": "light", "spot": ["c7i.large", "t3.large"], "on_demand": ["c7i.large"]},
     "aws-heavy": {"class": "heavy", "spot": ["c7i.xlarge", "c6i.xlarge", "m7i.xlarge"],
                                "on_demand": ["c7i.xlarge"]},
+    # Consumer-qualified labels (Kieron, 2026-11-18: chosen before the cut-over, so never a rename). The old
+    # aws-light/aws-heavy stay live alongside until spellbound3d's cut-over has settled; then they go.
+    "aws-spellbound3d-light": {"class": "light", "spot": ["c7i.large", "t3.large"], "on_demand": ["c7i.large"]},
+    "aws-spellbound3d-heavy": {"class": "heavy", "spot": ["c7i.xlarge", "c6i.xlarge", "m7i.xlarge"],
+                               "on_demand": ["c7i.xlarge"]},
 }
 POOLS = {k.lower(): v for k, v in json.loads(os.environ.get("POOLS") or json.dumps(DEFAULT_POOLS)).items()}
 NAME_PREFIX = "aws-"

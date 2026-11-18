@@ -75,6 +75,17 @@ t="${NODE_FILE%.tar.xz}"
 tar xJf "/tmp/${NODE_FILE}" -C /usr/local --strip-components=1 --no-same-owner "$t"/{bin,lib,include,share}
 rm "/tmp/${NODE_FILE}"
 [[ "$(/usr/local/bin/node --version)" == "v${NODE_VERSION}" ]]
+# gh, when the consumer pins it (claude-sdlc's scripts call it; Ubuntu 24.04's is 2.45): cli/cli's release,
+# checked against the file's SHA-256, the binary only, in /usr/local/bin.
+if [[ -n "${GH_VERSION:-}" ]]; then
+  say "  gh ${GH_VERSION}"
+  curl -fsSL --retry 3 -o "/tmp/${GH_FILE}" "https://github.com/cli/cli/releases/download/v${GH_VERSION}/${GH_FILE}"
+  echo "${GH_SHA256}  /tmp/${GH_FILE}" | sha256sum -c --quiet
+  tar xzf "/tmp/${GH_FILE}" -C /tmp "${GH_FILE%.tar.gz}/bin/gh"
+  install -m 755 "/tmp/${GH_FILE%.tar.gz}/bin/gh" /usr/local/bin/gh
+  rm -rf "/tmp/${GH_FILE}" "/tmp/${GH_FILE%.tar.gz}"
+  [[ "$(/usr/local/bin/gh --version | head -1)" == "gh version ${GH_VERSION} "* ]]
+fi
 
 say "GitHub Actions runner (latest release, SHA-256 checked)"
 release="$(curl -fsSL https://api.github.com/repos/actions/runner/releases/latest)"
@@ -167,12 +178,13 @@ jq -n -c \
   --arg node "$(v 'node --version')" --arg npm "$(v 'npm --version')" \
   --arg python "$(v 'python3 --version')" --arg git "$(v 'git --version')" --arg jq "$(v 'jq --version')" \
   --arg make "$(v 'make --version | head -1')" \
+  --arg gh "$(v 'gh --version | head -1')" \
   '{built: $built, base_ami: $base, os: $os, spellbound3d_commit: $sb3d,
     godot_pinned: $godot_pinned, runner_smoke: $runner_smoke,
     runner: {version: $runner, dir: "/opt/github-runners/spellbound3d", user: "ghrunner",
              home: "/opt/github-runners/spellbound3d/home"},
     tools: {godot: $godot, claude_code: $claude, uv: $uv, gitleaks: $gitleaks, node: $node, npm: $npm,
-            python: $python, git: $git, jq: $jq, make: $make},
+            python: $python, git: $git, jq: $jq, make: $make, gh: $gh},
     on_path: ["godot", "claude", "uv", "uvx", "gitleaks", "node", "npm", "python3", "git", "jq", "make"],
     caches: ["~/.cache/godot (Godot zip)", "~/.local/opt/godot-<ver>", "~/.cache/uv (uv.lock)",
              "~/.cache/pip (uv wheel)", "~/.npm (Claude Code)"],
