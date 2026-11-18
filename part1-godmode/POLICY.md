@@ -70,7 +70,7 @@ Global services (no region):
 
 Read-only, Sydney only (lists and metadata, no data, no changes):
 
-`ec2:Describe*`, `lambda:List*`, `lambda:GetFunction*`, `cloudformation:Describe*`, `cloudformation:List*`, `s3:ListAllMyBuckets`, `s3:GetBucketLocation`, `s3:GetBucketTagging`, `tag:GetResources`, `tag:GetTagKeys`, `tag:GetTagValues`, `logs:DescribeLogGroups`, `cloudtrail:LookupEvents`, `servicequotas:Get*`, `servicequotas:List*`, `access-analyzer:ValidatePolicy`, `access-analyzer:CheckNoNewAccess`, `access-analyzer:CheckAccessNotGranted`, `access-analyzer:CheckNoPublicAccess`
+`ec2:Describe*`, `lambda:List*`, `lambda:GetFunction*`, `cloudformation:Describe*`, `cloudformation:List*`, `s3:ListAllMyBuckets`, `s3:GetBucketLocation`, `s3:GetBucketTagging`, `tag:GetResources`, `tag:GetTagKeys`, `tag:GetTagValues`, `logs:DescribeLogGroups`, `cloudtrail:LookupEvents`, `servicequotas:Get*`, `servicequotas:List*`, `access-analyzer:ValidatePolicy`, `access-analyzer:CheckNoNewAccess`, `access-analyzer:CheckAccessNotGranted`, `access-analyzer:CheckNoPublicAccess`, `sns:ListTopics`, `sns:ListSubscriptionsByTopic`
 
 Read-only IAM (IAM has no regions; AWS evaluates every IAM request as us-east-1):
 
@@ -135,9 +135,10 @@ Each group also has an AWS Resource Group of the same name (a saved tag search) 
 | 2026-11-17 | Wider stop at the budget (#30 fix 3): the kill switch also throttles our Lambdas, deletes detached build disks, releases unused Elastic IPs and deletes interface VPC endpoints; the budget stop also blocks resizing disks, copying snapshots, changing Lambdas, creating or changing schedules and rules, and creating log groups | 2026-11-17 Kieron |
 | 2026-11-17 | More headroom (#30 fix 5): the budget stop fires at US$29, ≈£23 (was US$25); Cost Anomaly Detection emails Kieron about unusual daily spend of US$3 or more | 2026-11-17 Kieron |
 | 2026-11-17 | Cost boundary: the runners stay within a US$35 ceiling (stop at US$29; expected ≈US$13 typical, ≈US$25 busiest a month), at most 4 runners of at most 4 vCPU, spot first, 90-minute and 20-minute limits, a 9-hour curfew, 3 kept images, 30 GiB disks, a capped upload rate, and no scheduled Cost Explorer calls. CI fails any change past these; raising one needs Kieron's approval, whoever asks | 2026-11-17 Kieron |
+| 2026-11-18 | SNS read-only (Sydney): list topics and their subscriptions, so Claude can check the alert emails are confirmed and the budget and fast stops still reach the kill switch. Free; no publishing, subscribing or changes | 2026-11-18 Kieron |
 
 ## Policy sizes
 
-- `claude-assistant-policy.json`: 6038 of 6144 characters
+- `claude-assistant-policy.json`: 6086 of 6144 characters
 - `claude-assistant-iam.json`: 1814 of 6144 characters
 - `claude-boundary.json`: 5452 of 6144 characters
