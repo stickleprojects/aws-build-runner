@@ -720,6 +720,62 @@ def bake_user_data_is_small_and_the_bundle_is_checked():
     return problems
 
 
+@rule("2026-11-18 (#47): DescribeInstances lagged RunInstances, so the launcher's next run (after the lock) "
+      "didn't see a just-launched aws-heavy instance and launched a second one for the same job.")
+def launcher_sees_its_own_launches_before_ec2_does():
+    import contextlib
+    import importlib.util
+    import time as _time
+    lam = P2 / "stack" / "lambda"
+    sys.path.insert(0, str(lam))
+    try:
+        spec = importlib.util.spec_from_file_location("runner_47", lam / "runner.py")
+        r = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(r)
+    finally:
+        sys.path.remove(str(lam))
+    store, launched = {"/build/github/app-id": "1", "/build/github/app-private-key": "k"}, []
+
+    class NotFound(Exception):
+        response = {"Error": {"Code": "ParameterNotFound"}}
+
+    def get(Name, **_):
+        if Name not in store:
+            raise NotFound()
+        return {"Parameter": {"Value": store[Name]}}
+
+    ssm = type("SSM", (), {"get_parameter": lambda self, **k: get(**k),
+                           "put_parameter": lambda self, Name, Value, **k: store.__setitem__(Name, Value),
+                           "delete_parameter": lambda self, Name: store.pop(Name, None)})()
+
+    def launch(gh, job_id, pool):
+        launched.append(job_id)
+        return {"id": f"i-{job_id}-{len(launched)}", "name": f"aws-{job_id}-x", "runner_id": "1",
+                "job_id": str(job_id), "pool": pool, "spot": True, "type": "t", "launched": _time.time()}
+
+    r.aws = lambda service: ssm
+    r.lock = lambda *a, **k: contextlib.nullcontext()
+    r.parameter = lambda n: get(n)["Parameter"]["Value"]
+    r.curfew_override = lambda: {}
+    r.curfew.state = lambda *a, **k: {"active": False, "reason": "open"}
+    r.ghapp.installation_token = lambda *a, **k: "tok"
+    r.ghapp.revoke = lambda *a, **k: None
+    r.GitHub = lambda token: type("G", (), {"paged": lambda self, *a: []})()
+    heavy = next(p for p in r.POOLS if r.POOLS[p].get("class") == "heavy")
+    r.queued_jobs = lambda gh: [{"id": 548, "pool": heavy, "created_at": "2026-11-18T02:12:00Z"}]
+    r.live_instances = lambda: []  # EC2 doesn't list the first run's instance yet
+    r.launch = launch
+    r.terminate = lambda ids: None
+    try:
+        r.launcher({"source": "webhook", "job_id": 548, "pool": heavy}, None)
+        r.launcher({"source": "webhook", "job_id": 548, "pool": heavy}, None)
+    except Exception as e:
+        return [f"launcher() failed in the replay: {type(e).__name__}: {e}"]
+    if launched != [548]:
+        return [f"one queued job got {len(launched)} launches across two runs while EC2 lagged (want 1)"]
+    return []
+
+
 def main():
     failed = 0
     for name, incident, fn in RULES:

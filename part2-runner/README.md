@@ -28,6 +28,7 @@ every 5 min ──> launcher: catches missed webhooks; reaps runners > 90 min, o
 - [x] **Smoke test** (`ami/smoke-test.sh`): 23 checks (tools work, security, boot step), plus spellbound3d's Godot smoke test once it's on their main. A new AMI is only a
       *candidate* until it passes; then it becomes current (SSM `/build/runner/ami-id`). Current: `ami-0d1c0c1e4fbf2a0dd`.
 - [x] **Image contract**: [ami/IMAGE.md](ami/IMAGE.md) (and `/etc/build-runner/manifest.json` on every instance).
+- [ ] **Machine requirements from spellbound3d**: setup.sh installs Node and the OS tools listed in their `tools/runner-smoke/machine-requirements.txt` (format: [ami/MACHINE-REQUIREMENTS.md](ami/MACHINE-REQUIREMENTS.md)). Waits on [#48](https://github.com/stickleprojects/aws-build-runner/issues/48), the user-data limit.
 - [x] **Weekly rebuild** (`.github/workflows/ami.yml`): Monday 08:30 Sydney (07:30 in winter: after the curfew), or by hand. Bake → smoke test → promote →
       prune (keep 3) → GitHub Release with IMAGE.md and manifest.json. Role `/claude/build-runner-ami-ci` via OIDC (`ci/ami-ci-role.sh`).
       **The latest image's contract is always the latest [release](https://github.com/stickleprojects/aws-build-runner/releases/latest).**
@@ -54,6 +55,7 @@ every 5 min ──> launcher: catches missed webhooks; reaps runners > 90 min, o
 | [PLAN.md](PLAN.md) | Design, instance types per job, steps |
 | [ami/IMAGE.md](ami/IMAGE.md) | **What the image comes with** (generated from `ami/manifest.json`) |
 | `ami/setup.sh` | How the image is built (runs on the bake instance) |
+| [ami/MACHINE-REQUIREMENTS.md](ami/MACHINE-REQUIREMENTS.md) | The format of spellbound3d's `machine-requirements.txt` (what `make check` needs from the machine), agreed with spellbound3d |
 | `ami/files/` | The local runner's hook and allowlists; our job-completed hook and `job-usage.py` (one usage line per job); the boot step (instance info, job registration, IMDS block, upload cap); the one-job service; the bake reporter |
 | `ami/bake.sh`, `ami/bake-role.sh` | Bake an AMI as Claude's user; the bake instance's role can only report, read its one GitHub token, and talk to Systems Manager |
 | `ami/smoke-test.sh` | Check a baked AMI; promote the candidate if it passes |

@@ -312,7 +312,13 @@ runner.live_instances = lambda: [{"id": "i-1", "name": "aws-1-x", "runner_id": 3
                                   "spot": True, "type": "c7i.large", "launched": time.time() - 60}]
 runner.terminate = lambda ids: calls["terminated"].extend(ids)
 runner.remove_runner = lambda gh, rid: calls["removed"].append(rid) or False
-runner.launch = lambda gh, job_id, pool: calls["launched"].append(job_id)
+def fake_launch(gh, job_id, pool):
+    calls["launched"].append(job_id)
+    return {"id": f"i-new{len(calls['launched'])}", "name": f"aws-{job_id}-n", "runner_id": "7", "job_id": str(job_id),
+            "pool": pool, "spot": True, "type": "c7i.large", "launched": runner.time.time()}
+
+
+runner.launch = fake_launch
 params = {"/build/github/app-id": "1", "/build/github/app-private-key": "k"}
 def fresh(n):
     return params[n] if n in params else (_ for _ in ()).throw(ClientError("ParameterNotFound"))
@@ -321,7 +327,8 @@ def fresh(n):
 runner.parameter = lambda n: fresh(n) if n != curfew_mod.PARAMETER else (_ for _ in ()).throw(
     AssertionError("the curfew must be read fresh, not through the cached parameter()"))
 runner.aws = lambda service: type("FreshSSM", (), {
-    "get_parameter": lambda self, Name, **k: {"Parameter": {"Value": fresh(Name)}}})()
+    "get_parameter": lambda self, Name, **k: {"Parameter": {"Value": fresh(Name)}},
+    "put_parameter": lambda self, Name, Value, **k: params.__setitem__(Name, Value)})()
 real_time = runner.time.time
 
 
@@ -350,9 +357,50 @@ params[curfew_mod.PARAMETER] = json.dumps(curfew_mod.stop(at_sydney(15)))
 for k in calls:
     calls[k].clear()
 runner.launcher({"source": "schedule"}, None)
-check("curfew: /stop in the afternoon terminates and launches nothing",
-      calls["terminated"] == ["i-1"] and calls["launched"] == [], str(calls))
+# i-new1 was launched by the afternoon run above and EC2 doesn't list it yet (#47): /stop must catch it too.
+check("curfew: /stop in the afternoon terminates (even a just-launched one) and launches nothing",
+      calls["terminated"] == ["i-1", "i-new1"] and calls["launched"] == [], str(calls))
 runner.time.time = real_time
+
+# --- #47 (2026-11-18): DescribeInstances lags RunInstances, so a second run must still see the first's launch
+params.pop(runner.LAUNCHES, None)
+H = "aws-heavy"
+runner.GitHub = lambda token: type("G", (), {"paged": lambda self, *a: []})()  # no registrations listed yet
+runner.queued_jobs = lambda gh: [{"id": 548, "pool": H, "created_at": "2026-11-18T02:12:00Z"},
+                                 {"id": 237, "pool": L, "created_at": "2026-11-18T02:12:00Z"}]
+runner.live_instances = lambda: []  # EC2 lists nothing yet: the lag
+for k in calls:
+    calls[k].clear()
+runner.launcher({"source": "webhook", "job_id": 237, "pool": L}, None)
+check("#47: the first run launches one runner per queued job", sorted(calls["launched"]) == [237, 548], str(calls))
+check("#47: ...and records them under the lock",
+      sorted(r["job_id"] for r in json.loads(params.get(runner.LAUNCHES, "[]"))) == ["237", "548"], params.get(runner.LAUNCHES))
+calls["launched"].clear()
+runner.launcher({"source": "webhook", "job_id": 548, "pool": H}, None)
+check("#47: a second run, with EC2 still listing nothing, launches no duplicates", calls["launched"] == [], str(calls))
+real = runner.time.time
+runner.time.time = lambda: real() + runner.BOOT_GRACE + 1
+runner.launcher({"source": "schedule"}, None)
+check("#47: after the boot grace, a job still queued with no runner gets a new one",
+      sorted(calls["launched"]) == [237, 548], str(calls))
+runner.time.time = real
+
+now2 = time.time()
+rec = {"id": "i-r", "name": "aws-9-r", "job_id": "9", "pool": L, "launched": now2 - 10}
+check("#47: a recent launch EC2 doesn't list counts as live", runner.with_recent_launches([], [rec], now2) == [rec])
+check("#47: ...once listed it isn't counted twice",
+      runner.with_recent_launches([{**rec, "type": "x"}], [rec], now2) == [{**rec, "type": "x"}])
+check("#47: ...and it stops counting after the boot grace",
+      runner.with_recent_launches([], [{**rec, "launched": now2 - runner.BOOT_GRACE - 1}], now2) == [])
+check("#47: a fresh registration whose instance EC2 doesn't list yet isn't reaped as stale",
+      runner.reap_plan([], runner.with_recent_launches([], [rec], now2),
+                       [run_("aws-9-r", status="offline")], now2)["stale_runners"] == [])
+check("#47: the record keeps only launches inside the boot grace",
+      runner.recent_launches_to_keep([{**rec, "launched": now2 - 400}], [rec], now2) == [rec])
+bad = FakeSSM()
+bad.params[runner.LAUNCHES] = "not json"
+check("#47: an unreadable record is ignored, not fatal", runner.read_launches(bad) == [])
+check("#47: no record yet is an empty list", runner.read_launches(FakeSSM()) == [])
 
 print(f"\n{failed} failed")
 sys.exit(1 if failed else 0)
