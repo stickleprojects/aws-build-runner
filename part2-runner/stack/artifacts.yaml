@@ -1,7 +1,8 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
   build-runner-artifacts: a private bucket for the build-runner Lambda zips (deploy.sh uploads them;
-  Lambda copies the code at deploy time, so old zips expire after 30 days).
+  Lambda copies the code at deploy time, so old zips expire after 30 days) and the AMI bake's bundle
+  (bake.sh uploads it under bake/ and deletes it when the bake ends; bake/ expires after 1 day anyway).
 Resources:
   Bucket:
     Type: AWS::S3::Bucket
@@ -14,7 +15,8 @@ Resources:
       OwnershipControls: {Rules: [{ObjectOwnership: BucketOwnerEnforced}]}
       LifecycleConfiguration:
         Rules: [{Id: expire-old-zips, Status: Enabled, ExpirationInDays: 30,
-                 AbortIncompleteMultipartUpload: {DaysAfterInitiation: 1}}]
+                 AbortIncompleteMultipartUpload: {DaysAfterInitiation: 1}},
+                {Id: expire-bake-bundles, Status: Enabled, Prefix: bake/, ExpirationInDays: 1}]
       Tags: [{Key: resource-group, Value: build-runner}]
   TlsOnly:
     Type: AWS::S3::BucketPolicy
@@ -29,6 +31,15 @@ Resources:
             Action: s3:*
             Resource: [!GetAtt Bucket.Arn, !Sub "${Bucket.Arn}/*"]
             Condition: {Bool: {"aws:SecureTransport": "false"}}
+  # bake.sh finds the bucket here: the AMI pipeline's role reads /build/* but not CloudFormation.
+  BucketName:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /build/runner/artifacts-bucket
+      Type: String
+      Value: !Ref Bucket
+      Description: build-runner-artifacts bucket (Lambda zips; the AMI bake's bundle under bake/)
+      Tags: {resource-group: build-runner}
 Outputs:
   Bucket:
     Value: !Ref Bucket

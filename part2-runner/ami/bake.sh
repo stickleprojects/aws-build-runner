@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Bakes the build-runner AMI in Sydney, as Claude's IAM user (all within the approved policy):
-#   1. launches a t3.large from the current Ubuntu 24.04 image, with setup.sh as cloud-init user data
+#   1. uploads setup.sh and files/ (one xz tar) to the artifacts bucket under bake/<sha256>.txz, and launches a
+#      t3.large from the current Ubuntu 24.04 image whose user data fetches and checks it (fetch.py, #48)
 #   2. waits for it to power off, and reads setup.sh's result from SSM (/build/bake/result/<instance>)
 #   3. makes an AMI from it, then terminates the instance (also on any failure)
 #   4. records the AMI as the CANDIDATE in SSM (/build/runner/ami-candidate); smoke-test.sh promotes it to
@@ -24,6 +25,8 @@ TAGS="{Key=resource-group,Value=${GROUP}},{Key=Name,Value=build-runner-bake-${ST
 work="$(mktemp -d)"
 instance=""
 token=""
+bundle_key=""
+BUCKET="$(aws ssm get-parameter --name /build/runner/artifacts-bucket --query Parameter.Value --output text)"
 cleanup() {
   if [[ -n "$instance" ]]; then
     aws ec2 terminate-instances --instance-ids "$instance" >/dev/null && echo "terminated bake instance ${instance}"
@@ -31,6 +34,7 @@ cleanup() {
   # The bake's GitHub token: out of SSM and revoked, whatever happened.
   aws ssm delete-parameter --name /build/bake/github-token >/dev/null 2>&1 || true
   if [[ -n "$token" ]]; then github_app_revoke "$token" && echo "revoked the bake's GitHub token"; fi
+  if [[ -n "$bundle_key" ]]; then aws s3 rm --only-show-errors "s3://${BUCKET}/${bundle_key}" || true; fi
   rm -rf "$work"
 }
 trap cleanup EXIT
@@ -60,7 +64,10 @@ token="$(github_app_token)"
 aws ssm put-parameter --name /build/bake/github-token --type SecureString --value "$token" --overwrite \
   --description "Short-lived token for the running AMI bake; deleted when it ends" >/dev/null
 
-python3 -I make-user-data.py > "$work/user-data"
+sha="$(python3 -I make-user-data.py --bundle "$work/bundle.txz")"
+bundle_key="bake/${sha}.txz"
+aws s3 cp --only-show-errors "$work/bundle.txz" "s3://${BUCKET}/${bundle_key}"
+python3 -I make-user-data.py "$BUCKET" "$bundle_key" "$sha" > "$work/user-data"
 instance="$(aws ec2 run-instances --image-id "$base" --instance-type "$TYPE" --security-group-ids "$sg" \
   --user-data "file://$work/user-data" --instance-initiated-shutdown-behavior stop \
   --iam-instance-profile Name=build-runner-bake \

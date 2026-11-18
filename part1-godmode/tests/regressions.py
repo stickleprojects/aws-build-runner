@@ -263,21 +263,25 @@ def curfew_override_is_read_fresh():
       "(readable via DescribeInstanceAttribute) and must be deleted from SSM and revoked when the bake ends.")
 def bake_token_stays_out_of_user_data_and_is_revoked():
     problems = []
-    r = subprocess.run([sys.executable, "-I", str(P2 / "ami" / "make-user-data.py")], capture_output=True, text=True)
-    if r.returncode:
-        problems.append(f"make-user-data.py failed: {r.stderr.strip()[:200]}")
-    else:
-        # The files travel compressed (one xz tar since 2026-11-16), so look inside the bundle, not just the text.
-        import base64, io, lzma, tarfile
-        texts = [r.stdout]
-        m = re.search(r"^    content: (\S+)$", r.stdout, re.M)
-        if not m:
-            problems.append("can't find the bundle in the user data to check it")
+    # Since #48 the bundle goes through S3 and the user data carries only fetch.py: check both, inside out.
+    import base64, io, lzma, tarfile, tempfile
+    with tempfile.TemporaryDirectory() as d:
+        out = Path(d) / "bundle.txz"
+        b = subprocess.run([sys.executable, "-I", str(P2 / "ami" / "make-user-data.py"), "--bundle", str(out)],
+                           capture_output=True, text=True)
+        sha = b.stdout.strip()
+        r = subprocess.run([sys.executable, "-I", str(P2 / "ami" / "make-user-data.py"), "example-bucket",
+                            f"bake/{sha}.txz", sha], capture_output=True, text=True)
+        if b.returncode or r.returncode or not out.is_file() or not re.fullmatch(r"[0-9a-f]{64}", sha):
+            problems.append(f"make-user-data.py --bundle / BUCKET KEY SHA256 failed: {(b.stderr or r.stderr).strip()[:200]}")
         else:
-            with tarfile.open(fileobj=io.BytesIO(lzma.decompress(base64.b64decode(m.group(1))))) as tar:
+            texts = [r.stdout]
+            with tarfile.open(fileobj=io.BytesIO(lzma.decompress(out.read_bytes()))) as tar:
                 texts += [tar.extractfile(x).read().decode(errors="replace") for x in tar.getmembers() if x.isfile()]
-        if any(re.search(r"gh[sp]_[A-Za-z0-9]{20,}|github_pat_", x) for x in texts):
-            problems.append("the user data contains a GitHub token")
+            for m in re.finditer(r"^    content: (\S+)$", r.stdout, re.M):
+                texts.append(lzma.decompress(base64.b64decode(m.group(1))).decode(errors="replace"))
+            if any(re.search(r"gh[sp]_[A-Za-z0-9]{20,}|github_pat_", x) for x in texts):
+                problems.append("the user data or the bake bundle contains a GitHub token")
     bake = (P2 / "ami" / "bake.sh").read_text()
     cleanup = bake[bake.find("cleanup() {"):bake.find("trap cleanup EXIT")]
     if "github_app_revoke" not in cleanup or "/build/bake/github-token" not in cleanup:
@@ -685,6 +689,34 @@ def runner_image_node_is_22_or_later_from_nodejs_org():
     smoke = (P2 / "ami" / "smoke-test.sh").read_text()
     if not re.search(r'check "node >= 22\.13', smoke) and "prereqs" not in smoke:
         problems.append("smoke-test.sh doesn't check the job's Node version (or spellbound3d's prereqs check)")
+    return problems
+
+
+@rule("2026-11-18 (#48): the bake's bundle travelled inside its EC2 user data and reached 16,364 of 16,384 bytes; "
+      "the Node 22 change first overflowed it. The bundle now comes from S3, checked by SHA-256.")
+def bake_user_data_is_small_and_the_bundle_is_checked():
+    problems = []
+    mud = P2 / "ami" / "make-user-data.py"
+    sha = "0" * 64
+    r = subprocess.run([sys.executable, "-I", str(mud), "example-bucket", f"bake/{sha}.txz", sha],
+                       capture_output=True, text=True)
+    if r.returncode:
+        return [f"make-user-data.py BUCKET KEY SHA256 failed: {r.stderr.strip()[:200]}"]
+    if len(r.stdout.encode()) > 4096:
+        problems.append(f"the bake's user data is {len(r.stdout.encode())} bytes; keep it under 4 KB (the bundle goes via S3)")
+    fetch = (P2 / "ami" / "fetch.py").read_text() if (P2 / "ami" / "fetch.py").is_file() else ""
+    if "hashlib.sha256(data).hexdigest()" not in fetch or "!= want" not in fetch:
+        problems.append("fetch.py doesn't check the bundle's SHA-256 before writing it")
+    if "poweroff" not in r.stdout:
+        problems.append("the user data doesn't power off when the fetch fails (bake.sh would wait 30 min)")
+    role = (P2 / "ami" / "bake-role.sh").read_text()
+    grants = re.findall(r'Action: "?\[?"?(s3:[A-Za-z*"]+[^}]*)', role)
+    if 'arn:aws:s3:::${BUCKET}/bake/*' not in role or any(g.split('"')[0] != "s3:GetObject" for g in grants):
+        problems.append("the bake role's S3 access must be s3:GetObject on the artifacts bucket's bake/* only")
+    bake = (P2 / "ami" / "bake.sh").read_text()
+    cleanup = bake[bake.find("cleanup() {"):bake.find("trap cleanup EXIT")]
+    if "aws s3 rm" not in cleanup:
+        problems.append("bake.sh's cleanup doesn't delete the bundle from S3")
     return problems
 
 
