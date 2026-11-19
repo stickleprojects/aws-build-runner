@@ -1,0 +1,20 @@
+[Unit]
+Description=build-runner prewarm: read the tools a job needs first, so EBS fetches them before the job does
+# Beside the runner, not before it: nothing waits for this, so a job's start is never delayed.
+After=local-fs.target
+DefaultDependencies=yes
+
+[Service]
+# simple, not oneshot: multi-user.target would otherwise wait for it (targets order after what they want).
+Type=simple
+ExecStart=/usr/bin/python3 -I /opt/github-runners/prewarm.py
+# A job that starts meanwhile reads the same files; this stops after 3 minutes whatever happens.
+TimeoutStartSec=180
+RuntimeMaxSec=180
+Nice=5
+NoNewPrivileges=yes
+ProtectSystem=full
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
