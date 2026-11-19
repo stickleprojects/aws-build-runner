@@ -56,7 +56,7 @@ every 5 min ──> launcher: catches missed webhooks; reaps runners > 90 min, o
 | [ami/IMAGE.md](ami/IMAGE.md) | **What the image comes with** (generated from `ami/manifest.json`) |
 | `ami/setup.sh` | How the image is built (runs on the bake instance) |
 | [ami/MACHINE-REQUIREMENTS.md](ami/MACHINE-REQUIREMENTS.md) | The format of spellbound3d's `machine-requirements.txt` (what `make check` needs from the machine), agreed with spellbound3d |
-| `ami/files/` | The local runner's hook and allowlists; our job-completed hook and `job-usage.py` (one usage line per job); the boot step (instance info, job registration, IMDS block, upload cap); the one-job service; the bake reporter |
+| `ami/files/` | The local runner's hook and allowlists; our job-completed hook and `job-usage.py` (one usage line per job); the boot step (instance info, job registration, IMDS block, upload cap); the boot prewarm (`prewarm.py`: reads the tools at boot so a new disk has fetched them before the job needs them, and records how long it took in each job's usage line as `prewarm_s`, `prewarm_mb` and `prewarm_lead_s`); the one-job service; the bake reporter |
 | `ami/bake.sh`, `ami/bake-role.sh` | Bake an AMI as Claude's user; the bake instance's role can only report, read its one GitHub token, and talk to Systems Manager |
 | `ami/smoke-test.sh` | Check a baked AMI; promote the candidate if it passes |
 | `lib/github-app.sh` | Short-lived GitHub App tokens (the key stays in SSM) |

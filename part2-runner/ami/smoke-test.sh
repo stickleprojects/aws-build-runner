@@ -72,6 +72,8 @@ CLAUDE_VER="$(jq -r '.tools.claude_code' $M | cut -d' ' -f1)"
 # The boot step and the services. They start after boot, possibly after Systems Manager is online.
 for _ in $(seq 1 36); do journalctl -u github-runner-jit.service --no-pager | grep -q 'No jitconfig in user data' && break; sleep 5; done
 check "boot step ran"           "systemctl is-active build-runner-boot.service"
+for _ in $(seq 1 36); do test -s /run/build-runner-prewarm.json && break; sleep 5; done
+check "prewarm read the tools"  "jq -e '.files > 100 and .mb > 100 and .unreadable == 0 and any(.roots[]; . == \"$H/.local/opt\")' /run/build-runner-prewarm.json"
 check "instance.json"           "jq -e '.instance_type == \"c7i.large\" and .nproc == 2' /etc/build-runner/instance.json"
 check "no job, no runner"       "journalctl -u github-runner-jit.service --no-pager | grep -m1 'No jitconfig in user data' || { systemctl status github-runner-jit.service --no-pager; false; }"
 check "no runner process"       "! pgrep -f Runner.Listener && echo none"

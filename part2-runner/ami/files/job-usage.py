@@ -27,6 +27,7 @@ SERVICE = CGROUP / "system.slice/github-runner-jit.service"
 SYSTEM = CGROUP / "system.slice"
 JOB_INFO = Path("/run/build-runner/job-info.json")
 INSTANCE = Path("/etc/build-runner/instance.json")
+PREWARM = Path("/run/build-runner-prewarm.json")  # prewarm.py's result (root's)
 LOG_GROUP = "/build/runner/jobs"
 # job-info.json is written by the job user, so only these fields, as short strings, are kept.
 JOB_FIELDS = ("repository", "workflow", "job", "run_id", "run_attempt", "event", "started", "ended")
@@ -97,6 +98,21 @@ def record(service: dict, system: dict, instance: dict, job: dict, wall_s: float
     return rec
 
 
+def prewarm_fields(raw: str, job: dict) -> dict:
+    """The boot prewarm's time and size, and how long before the job started it finished (negative: it
+    was still reading when the job began). Empty if it didn't run or hasn't finished."""
+    try:
+        p = json.loads(raw)
+        out = {"prewarm_s": float(p["seconds"]), "prewarm_mb": float(p["mb"])}
+    except (ValueError, KeyError, TypeError):
+        return {}
+    try:
+        out["prewarm_lead_s"] = round(float(job["started"]) - float(p["ended"]), 1)
+    except (ValueError, KeyError, TypeError):
+        pass
+    return out
+
+
 def wall_seconds(job: dict) -> float | None:
     try:
         return max(0.0, float(job["ended"]) - float(job["started"]))
@@ -117,7 +133,8 @@ def collect() -> dict:
             pass
     if "ended" not in job:
         job["ended"] = str(int(time.time()))  # the hook didn't run (e.g. the job was cancelled)
-    return record(cgroup_stats(SERVICE), cgroup_stats(SYSTEM), instance, job, wall_seconds(job))
+    rec = record(cgroup_stats(SERVICE), cgroup_stats(SYSTEM), instance, job, wall_seconds(job))
+    return {**rec, **prewarm_fields(read(PREWARM), job)}
 
 
 # ---------------------------------------------------------------------------- sending

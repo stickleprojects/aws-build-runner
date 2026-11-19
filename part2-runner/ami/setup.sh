@@ -155,10 +155,13 @@ say "boot step and one-job service"
 install -m 755 "$FILES/build-runner-boot.sh" /opt/github-runners/build-runner-boot.sh
 install -m 755 "$FILES/start-jit.sh" /opt/github-runners/start-jit.sh
 install -m 755 "$FILES/job-usage.py" /opt/github-runners/job-usage.py
+install -m 755 "$FILES/prewarm.py" /opt/github-runners/prewarm.py
 install -m 644 "$FILES/report.py" /opt/github-runners/report.py   # job-usage.py signs its request with it
 install -m 644 "$FILES/build-runner-boot.service" /etc/systemd/system/build-runner-boot.service
 install -m 644 "$FILES/github-runner-jit.service" /etc/systemd/system/github-runner-jit.service
-[[ -n "$IN_CONTAINER" ]] || systemctl enable build-runner-boot.service github-runner-jit.service
+# Reads the tools at boot so EBS fetches them before the job does (first touch was 10-40 s per job).
+install -m 644 "$FILES/build-runner-prewarm.service" /etc/systemd/system/build-runner-prewarm.service
+[[ -n "$IN_CONTAINER" ]] || systemctl enable build-runner-boot.service github-runner-jit.service build-runner-prewarm.service
 
 chown -R ghrunner:ghrunner "$H"
 

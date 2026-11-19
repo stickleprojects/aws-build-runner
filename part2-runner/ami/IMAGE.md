@@ -25,6 +25,7 @@ Built **2026-11-16T04:39:24Z** from Ubuntu 24.04.5 LTS (`ami-081307e05c61a3854`)
 - The local runner's `job-started.sh` hook and allowlists run first: same repos, same actors, no forks.
 - systemd: `NoNewPrivileges`, `ProtectSystem=full` (`/usr`, `/boot`, `/etc` read-only), private `/tmp`.
 - Uploads are capped at about 20 Mbps (2,500 KiB/s) for everything ghrunner sends off the machine, so a job can't run up a data-transfer bill (#30). Downloads aren't capped.
+- At boot, beside the runner (never delaying it), `prewarm.py` reads the runner, Godot, uv and the tool caches, so the new disk has fetched them from the snapshot before the job's first use. A job that starts while it's still reading may find its first tool launch a little slower; each job's usage line has `prewarm_s` and `prewarm_lead_s`.
 
 ## Not included, on purpose
 
