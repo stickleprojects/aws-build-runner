@@ -101,8 +101,14 @@ How it would be built (claude-sdlc's proposal, 21 Nov):
 A Godot pass should never be thrown away over paperwork. Paperwork runs first, so it fails in seconds, before any Godot
 spend. A Godot pass then counts for that game code, whatever happens to the title, the docs or the PR around it.
 
+**Do first, effort S (claude-sdlc):** spellbound3d already lets a build PR carry plan or spec changes if its body lists
+them under `## Plan changes`. That fix is a body edit, which needs no new commit and no Godot run. But pr-title's error
+ends "...or move them to a plan or spec PR", which reads as "split the docs out". Rewording it, so the body edit is the
+first fix offered, removes most "3 docs into a new PR" cases on its own.
+
 1. **Paperwork in stage A.** pr-title, spec and descopes run beside the review and the static checks. Godot never starts
-   while any of them is failing.
+   while any of them is failing. Today's after-review gate waits on claude-review only; it must also wait on pr-title
+   and descopes.
 2. **A title edit is not a commit.** pr-title re-runs on the PR's edited event alone. `check` belongs to the commit, so
    it stays green; nothing heavy re-runs.
 3. **Reuse a pass for the same game code.** Stage B hashes the files Godot reads (the game tree, addons, project
@@ -114,15 +120,23 @@ spend. A Godot pass then counts for that game code, whatever happens to the titl
 
 Open points for the build:
 
-- **The hash's inputs** are settled (spellbound3d, 21 Nov): exclude a known list, never list what's included, so a
-  missed file costs an extra run, not a hidden failure. The hash is the tested commit's tree (for a PR, the merge with
-  main) minus the untested docs that check_scope.py's `godot` scope already skips (docs/, changes/, templates, top-level
-  *.md). It adds the runner image (AMI) and the tier name. If main moves or the image is rebuilt, Godot runs again.
-  spellbound3d effort: half a day for `check_scope --hash godot`.
-- **Where passes are recorded:** the GitHub Actions cache is free but scoped by branch, so a new PR can't see another
-  PR's pass. A small record in the AWS artifacts bucket, keyed by hash, works across PRs for well under US$0.10 a month.
-  claude-sdlc to choose.
-- **Effort:** claude-sdlc about S–M on top of the staged check; spellbound3d about half a day for the hash command.
+- **Trusted key, never PR code:** the hash and the pass/fail result must never come from anything the PR's code wrote.
+  A same-repo PR (an agent steered into it, say) could forge a pass and poison other PRs. So a separate job that
+  `needs:` the Godot job computes the key from git objects and records the pass from `needs.<job>.result`. Only that
+  job holds the write credentials (the #163 care).
+- **The hash's inputs:** two views to reconcile. spellbound3d prefers excluding a known list (the untested docs in
+  check_scope.py's `godot` scope), so a missed file costs an extra run, not a hidden failure. claude-sdlc prefers
+  listing the input paths. Both add the Godot version, the runner image (AMI) and the tier. The exclude list is safer.
+  It can't be read by running the PR's check_scope.py, so the trusted job needs main's copy or a framework variable.
+  If main moves or the image is rebuilt, Godot runs again.
+- **Where passes are recorded:** the AWS artifacts bucket, keyed by hash. The Actions cache doesn't fit, because
+  another PR can't see a PR's cache. The framework calls two consumer make targets, `heavy-pass-lookup` and
+  `heavy-pass-record`, and only the AWS side knows about S3. Writing needs a new least-privilege OIDC role for that S3
+  prefix: a policy change, so `approved: pending` until Kieron says yes. Under US$0.10 a month.
+- **Effort:** claude-sdlc about a day (S–M) on top of the staged check, plus the S message fix. spellbound3d about half
+  a day for the exclude list and hash. AWS about half a day for the role and the two targets' S3 side.
+- **Under "light PR, heavy main"** this matters much less: no Godot editor stage runs on a PR, so a paperwork slip costs
+  one check-pr re-run (about 2–3 minutes). Reuse is worth building only if Kieron keeps stage B on PRs.
 
 ## Machine sizes and parallelism on heavy
 
@@ -240,6 +254,8 @@ For Kieron:
   cheap and fast. The alternative: everything waits for the review, as today.
 - [ ] Stage B on PRs, or claude-sdlc's "light PR, heavy main"? It hinges on how often an editor-only Godot failure gets
   past check-pr.
+- [ ] Reword pr-title's error so a `## Plan changes` body edit is the first fix (claude-sdlc, effort S)? It's
+  independent of everything else and could go first.
 - [ ] Should main pushes get the split too, or stay one `make check FULL=1` job?
 - [ ] Should the laptop keep the Claude review, or move it to AWS (the add-on row)?
 - [ ] Should claude-sdlc decide #225 (who picks runners) together with this? Are GitHub-hosted minutes acceptable for
@@ -273,6 +289,7 @@ Risks:
 
 | Date | Change |
 | --- | --- |
+| 21 Nov 2026 | claude-sdlc on reuse: the pr-title message fix first; the gate also waits on pr-title and descopes; a trusted job computes the key and records passes; S3 via two make targets and a new OIDC role (policy change) |
 | 21 Nov 2026 | Reuse hash settled: the tested tree minus check_scope's untested docs, plus the AMI and tier (spellbound3d) |
 | 21 Nov 2026 | Paperwork (pr-title, spec, descopes) joins stage A; Godot passes are reused for the same game code, so a paperwork fix never costs a Godot run (Kieron) |
 | 21 Nov 2026 | Diagram: the "game files changed?" choice is its own decision; docs-only goes straight to the check |
