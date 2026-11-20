@@ -53,31 +53,36 @@ The heavy check is mostly single-threaded, so most of the machine sits idle.
 
 ## Proposed design
 
-Split the check in two. Stage A runs the Claude review and the fast checks side by side. Stage B runs Godot on AWS heavy,
-only once A passes and only when game files changed. GitHub still sees one required `check`.
+Split the check in two. Stage A runs the Claude review, the fast checks and the paperwork side by side. Stage B runs
+Godot on AWS heavy only once all of A passes, and only for game code that hasn't already passed. GitHub still sees one
+required `check`.
 
 ```mermaid
 flowchart LR
   push[PR pushed] --> review[Claude review<br/>laptop]
   push --> static[Static checks<br/>AWS light: lint, SAST, coverage]
-  review --> pass{Both pass?}
+  push --> paper[Paperwork<br/>laptop: pr-title, spec, descopes]
+  review --> pass{All pass?}
   static --> pass
+  paper --> pass
   pass -- no --> fail[check fails]
-  pass -- yes --> game{Game files changed?}
-  game -- no: docs only --> check[check posted<br/>one required status]
-  game -- yes --> godot[Godot on AWS heavy<br/>gdUnit, editor-test, smoke]
+  pass -- yes --> game{Game code passed before?}
+  game -- yes: reuse it --> check[check posted<br/>one required status]
+  game -- no --> godot[Godot on AWS heavy<br/>gdUnit, editor-test, smoke]
   godot --> check
 ```
 
-The review and the static checks run side by side. Godot waits for both and runs only when game files changed; a docs-only PR goes straight to the check.
+The review, the static checks and the paperwork run side by side. Godot waits for all three, and runs only for game code
+that hasn't passed before; otherwise the earlier pass is reused.
 
 | Stage | Job | Runs on | Software it needs | What it runs |
 | --- | --- | --- | --- | --- |
 | A | Claude review | laptop | node, Claude Code, gh | the review of intent and code |
 | A | static | AWS light, c7i.large spot | uv and Python, gitleaks, the pinned linters; no Godot | validate, standards, coverage, security (gitleaks, ruff, shellcheck, zizmor, actionlint), gdlint, gdformat --check |
+| A | paperwork | laptop (seconds of work) | gh, the sdlc scripts; no Godot | pr-title, spec, descopes |
 | B | godot | AWS heavy (size: next section) | Godot 4.7.2 plus the stack | runner-smoke, project_check, test (gdUnit), editor-test |
-| — | check (aggregator) | AWS light or laptop | none | passes when A passed, and B passed or was skipped by design |
-| — | gate, pr-title, descopes, spec | laptop | as today | unchanged: on AWS, about 80% of their cost would be boot time |
+| — | check (aggregator) | AWS light or laptop | none | passes when A passed, and B passed, was reused, or was skipped by design |
+| — | gate | laptop | as today | unchanged: on AWS, about 80% of its cost would be boot time |
 
 How it would be built (claude-sdlc's proposal, 21 Nov):
 
@@ -90,6 +95,31 @@ How it would be built (claude-sdlc's proposal, 21 Nov):
 - **One required status:** `check` is posted after the last stage, with pending descriptions in between. The gate's
   queued and running descriptions must stay word for word (#237).
 - **Main pushes:** the same split, or keep `make check FULL=1` as one heavy job, since main pushes are few.
+
+## Keep Godot results through paperwork fixes (Kieron, 21 Nov)
+
+A Godot pass should never be thrown away over paperwork. Paperwork runs first, so it fails in seconds, before any Godot
+spend. A Godot pass then counts for that game code, whatever happens to the title, the docs or the PR around it.
+
+1. **Paperwork in stage A.** pr-title, spec and descopes run beside the review and the static checks. Godot never starts
+   while any of them is failing.
+2. **A title edit is not a commit.** pr-title re-runs on the PR's edited event alone. `check` belongs to the commit, so
+   it stays green; nothing heavy re-runs.
+3. **Reuse a pass for the same game code.** Stage B hashes the files Godot reads (the game tree, addons, project
+   settings, version pins, the Godot tier's own scripts). If a same-repo run already passed for that hash, B posts
+   "passed for this game code in run N" and skips. This covers a docs-only follow-up commit, a rebase that doesn't touch
+   the game, and the case Kieron named: moving 3 docs out into a new PR.
+4. **The release gate uses main's results.** It checks the commit being released, not a PR's paperwork, so a paperwork
+   fix never costs a release its Godot run.
+
+Open points for the build:
+
+- **The hash's inputs** must cover everything Godot reads, or a reused pass could hide a failure. spellbound3d would list
+  them in tools/ci/check_tiers.json, beside the Godot tier.
+- **Where passes are recorded:** the GitHub Actions cache is free but scoped by branch, so a new PR can't see another
+  PR's pass. A small record in the AWS artifacts bucket, keyed by hash, works across PRs for well under US$0.10 a month.
+  claude-sdlc to choose.
+- **Effort:** claude-sdlc about S–M on top of the staged check; spellbound3d about S for the input list.
 
 ## Machine sizes and parallelism on heavy
 
@@ -240,6 +270,7 @@ Risks:
 
 | Date | Change |
 | --- | --- |
+| 21 Nov 2026 | Paperwork (pr-title, spec, descopes) joins stage A; Godot passes are reused for the same game code, so a paperwork fix never costs a Godot run (Kieron) |
 | 21 Nov 2026 | Diagram: the "game files changed?" choice is its own decision; docs-only goes straight to the check |
 | 21 Nov 2026 | Tracked copy added to the repo (part2-runner/PIPELINE-SPLIT.md) |
 | 21 Nov 2026 | Added spellbound3d's answers (gdUnit 10 of 18 min, single-threaded; stage A needs its own Godot-free tier; 0048 lands today); leading option updated |
