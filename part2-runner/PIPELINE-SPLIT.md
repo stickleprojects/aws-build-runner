@@ -126,8 +126,10 @@ Open points for the build:
   job holds the write credentials (the #163 care).
 - **The hash's inputs:** two views to reconcile. spellbound3d prefers excluding a known list (the untested docs in
   check_scope.py's `godot` scope), so a missed file costs an extra run, not a hidden failure. claude-sdlc prefers
-  listing the input paths. Both add the Godot version, the runner image (AMI) and the tier. The exclude list is safer.
-  It can't be read by running the PR's check_scope.py, so the trusted job needs main's copy or a framework variable.
+  listing the input paths. Both add the Godot version, the runner image (AMI) and the tier. Settled on the exclude list,
+  as a plain data file (spellbound3d, 21 Nov): tools/ci/untested_docs.json, read from main by the trusted job, which runs
+  no project code. check_scope.py reads the same file, so the docs-only skip and the key can't drift. A PR that widens
+  the list doesn't change its own key until it merges.
   If main moves or the image is rebuilt, Godot runs again.
 - **Where passes are recorded:** the AWS artifacts bucket, keyed by hash. The Actions cache doesn't fit, because
   another PR can't see a PR's cache. The framework calls two consumer make targets, `heavy-pass-lookup` and
@@ -289,6 +291,7 @@ Risks:
 
 | Date | Change |
 | --- | --- |
+| 21 Nov 2026 | Reuse key's exclude list: a data file (tools/ci/untested_docs.json) read from main; no project code runs in the trusted job (spellbound3d) |
 | 21 Nov 2026 | claude-sdlc on reuse: the pr-title message fix first; the gate also waits on pr-title and descopes; a trusted job computes the key and records passes; S3 via two make targets and a new OIDC role (policy change) |
 | 21 Nov 2026 | Reuse hash settled: the tested tree minus check_scope's untested docs, plus the AMI and tier (spellbound3d) |
 | 21 Nov 2026 | Paperwork (pr-title, spec, descopes) joins stage A; Godot passes are reused for the same game code, so a paperwork fix never costs a Godot run (Kieron) |
