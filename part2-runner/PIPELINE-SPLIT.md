@@ -139,6 +139,11 @@ Open points for the build:
   a day for the exclude list and hash. AWS about half a day for the role and the two targets' S3 side.
 - **Under "light PR, heavy main"** this matters much less: no Godot editor stage runs on a PR, so a paperwork slip costs
   one check-pr re-run (about 2–3 minutes). Reuse is worth building only if Kieron keeps stage B on PRs.
+- **A reused pass never counts for a release** (spellbound3d's review, 21 Nov). release_gate and the periodic skip
+  count only a real full run on main: a push run's `make check FULL=1` or a full-tier periodic run. So a release always
+  has a full run on its exact commit. No conflict with 0048.
+- **Is it needed under 0048?** That's unknown until check-pr's real time on AWS is measured: 0048's AC10 takes the
+  median of 10 runs after it merges. Until then, reuse on the PR tier isn't justified.
 
 ## Machine sizes and parallelism on heavy
 
@@ -256,6 +261,8 @@ For Kieron:
   cheap and fast. The alternative: everything waits for the review, as today.
 - [ ] Stage B on PRs, or claude-sdlc's "light PR, heavy main"? It hinges on how often an editor-only Godot failure gets
   past check-pr.
+- [ ] Which PR hit the paperwork problem? Its number tells us whether the `## Plan changes` message is the cause
+  (spellbound3d can't tell from #226 or #208).
 - [ ] Reword pr-title's error so a `## Plan changes` body edit is the first fix (claude-sdlc, effort S)? It's
   independent of everything else and could go first.
 - [ ] Should main pushes get the split too, or stay one `make check FULL=1` job?
@@ -291,6 +298,7 @@ Risks:
 
 | Date | Change |
 | --- | --- |
+| 21 Nov 2026 | spellbound3d's review of the reuse design: a reused pass never counts for a release; reuse waits on check-pr's AWS timing (0048 AC10); which PR Kieron hit is a question for him |
 | 21 Nov 2026 | Reuse key's exclude list: a data file (tools/ci/untested_docs.json) read from main; no project code runs in the trusted job (spellbound3d) |
 | 21 Nov 2026 | claude-sdlc on reuse: the pr-title message fix first; the gate also waits on pr-title and descopes; a trusted job computes the key and records passes; S3 via two make targets and a new OIDC role (policy change) |
 | 21 Nov 2026 | Reuse hash settled: the tested tree minus check_scope's untested docs, plus the AMI and tier (spellbound3d) |
