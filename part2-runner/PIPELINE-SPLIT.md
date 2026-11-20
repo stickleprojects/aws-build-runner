@@ -114,12 +114,15 @@ spend. A Godot pass then counts for that game code, whatever happens to the titl
 
 Open points for the build:
 
-- **The hash's inputs** must cover everything Godot reads, or a reused pass could hide a failure. spellbound3d would list
-  them in tools/ci/check_tiers.json, beside the Godot tier.
+- **The hash's inputs** are settled (spellbound3d, 21 Nov): exclude a known list, never list what's included, so a
+  missed file costs an extra run, not a hidden failure. The hash is the tested commit's tree (for a PR, the merge with
+  main) minus the untested docs that check_scope.py's `godot` scope already skips (docs/, changes/, templates, top-level
+  *.md). It adds the runner image (AMI) and the tier name. If main moves or the image is rebuilt, Godot runs again.
+  spellbound3d effort: half a day for `check_scope --hash godot`.
 - **Where passes are recorded:** the GitHub Actions cache is free but scoped by branch, so a new PR can't see another
   PR's pass. A small record in the AWS artifacts bucket, keyed by hash, works across PRs for well under US$0.10 a month.
   claude-sdlc to choose.
-- **Effort:** claude-sdlc about S–M on top of the staged check; spellbound3d about S for the input list.
+- **Effort:** claude-sdlc about S–M on top of the staged check; spellbound3d about half a day for the hash command.
 
 ## Machine sizes and parallelism on heavy
 
@@ -270,6 +273,7 @@ Risks:
 
 | Date | Change |
 | --- | --- |
+| 21 Nov 2026 | Reuse hash settled: the tested tree minus check_scope's untested docs, plus the AMI and tier (spellbound3d) |
 | 21 Nov 2026 | Paperwork (pr-title, spec, descopes) joins stage A; Godot passes are reused for the same game code, so a paperwork fix never costs a Godot run (Kieron) |
 | 21 Nov 2026 | Diagram: the "game files changed?" choice is its own decision; docs-only goes straight to the check |
 | 21 Nov 2026 | Tracked copy added to the repo (part2-runner/PIPELINE-SPLIT.md) |
