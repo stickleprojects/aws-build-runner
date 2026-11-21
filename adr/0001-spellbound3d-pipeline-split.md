@@ -1,6 +1,6 @@
 # ADR-0001: How spellbound3d's pipelines use the laptop and AWS
 
-- **Status:** Proposed
+- **Status:** Accepted (Kieron, 21 Nov 2026)
 - **Date:** 21 Nov 2026
 - **Deciders:** Kieron (all decisions). aws-build-machine, spellbound3d and claude-sdlc propose and build.
 - **Supporting research:** [support/0001-pipeline-split-research.md](support/0001-pipeline-split-research.md) has the
@@ -36,7 +36,7 @@ Constraints:
 - Approved instance types only.
 - Kieron's rule: a Godot pass is never thrown away over paperwork (the PR title, spec or descopes).
 
-## Decision (proposed)
+## Decision
 
 Keep 0048's pipelines as they are, and change only these two things now:
 
@@ -222,7 +222,7 @@ All of these exist today, at no cost or nearly none. Cost Explorer is used by ha
 
 ## Action items
 
-1. [ ] Kieron: accept, change or reject this ADR.
+1. [x] Kieron: accept, change or reject this ADR. Accepted 21 Nov 2026.
 2. [ ] aws-build-machine: read check-pr's AWS timing and Godot memory from the AC10 runs (job ids from spellbound3d);
    add them to the research page.
 3. [ ] spellbound3d, with aws-build-machine: trial m7i.large for heavy, and compare its time and memory with c7i.xlarge.

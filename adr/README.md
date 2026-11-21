@@ -5,7 +5,7 @@ behind a decision goes in [support/](support/), named after the ADR's number.
 
 | ADR | Title | Status |
 | --- | --- | --- |
-| [0001](0001-spellbound3d-pipeline-split.md) | How spellbound3d's pipelines use the laptop and AWS | Proposed |
+| [0001](0001-spellbound3d-pipeline-split.md) | How spellbound3d's pipelines use the laptop and AWS | Accepted |
 
 ## How it works
 

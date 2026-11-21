@@ -11,7 +11,7 @@ As of 21 Nov 2026.
 
 ## Status
 
-All answers are in. The proposed decision is [ADR-0001](../0001-spellbound3d-pipeline-split.md): keep spellbound3d's
+All answers are in. The decision, accepted by Kieron on 21 Nov, is [ADR-0001](../0001-spellbound3d-pipeline-split.md): keep spellbound3d's
 change 0048 (merged 21 Nov), trial m7i.large for heavy, reword pr-title's error, and defer the rest until measurements
 say it's needed.
 
@@ -21,7 +21,7 @@ say it's needed.
 | Answers: per-target times, what needs Godot, gdUnit cores, effort | spellbound3d | Done | Received 21 Nov |
 | Answers: staged checks, counter-proposal, constraints | claude-sdlc | Done | Received 21 Nov |
 | Usage data: job counts, CPU and memory profile | aws-build-machine | Done | 19–20 Nov, and 55 heavy make checks |
-| Decisions: the questions for Kieron below | Kieron | In progress | Condensed into ADR-0001 (Proposed) |
+| Decisions: the questions for Kieron below | Kieron | In progress | Accepted 21 Nov as ADR-0001 |
 | Change 0048, check tiers (check-pr, FULL on main, 3-hourly full check, release gate) | spellbound3d | Done | [PR #234](https://github.com/stickleprojects/spellbound3d/pull/234) merged 21 Nov; check-pr took 3 min 11 s on the laptop, with every coverage module running |
 | Measure check-pr on AWS, and one Godot process's peak memory | aws-build-machine | Waiting | Now #234 has merged: 10 pr-tier dispatches of "Periodic full check" (AC10); spellbound3d sends the job ids |
 | Trial m7i.large for the heavy pool | aws-build-machine | Not started | A pools.json change; spellbound3d owns its machine definitions |
@@ -302,6 +302,7 @@ Risks:
 
 | Date | Change |
 | --- | --- |
+| 21 Nov 2026 | ADR-0001 accepted by Kieron |
 | 21 Nov 2026 | Kieron agreed the goal (the lowest cost, light on the laptop) and ADR-0001's triggers; the paperwork PR was spellbound3d #221, so the pr-title wording is the cause |
 | 21 Nov 2026 | Moved to adr/support/ as ADR-0001's research; the decision is condensed into ADR-0001 (Proposed); #234 and #250 merged |
 | 21 Nov 2026 | 0048 open as spellbound3d PR #234; check-pr 3 min 11 s on the laptop; AWS timing and memory come from the AC10 dispatches after merge |
