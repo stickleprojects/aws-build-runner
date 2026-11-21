@@ -6,7 +6,8 @@
 # The job is allowed only when ALL of these hold:
 #   - its repository is on the allowed repos list;
 #   - the user who started it (GITHUB_ACTOR) and the user who triggered this run,
-#     e.g. a re-run (GITHUB_TRIGGERING_ACTOR), are both on the allowlist;
+#     e.g. a re-run (GITHUB_TRIGGERING_ACTOR), are both on the allowlist (on a
+#     schedule run, an App's bare login counts when its "[bot]" form is listed);
 #   - for an event with a pull request, the PR's head branch is in this
 #     repository, not in a fork.
 # Anything missing or unreadable fails closed.
@@ -47,6 +48,14 @@ in_array() { # in_array VALUE ITEM...
 	return 1
 }
 is_allowed_actor() { in_array "$1" "${ALLOWED_ACTORS[@]}"; }
+# On schedule runs GitHub drops "[bot]" from the actor: an App's run carries
+# "name", not "name[bot]" (2026-11-22, spellbound3d run 44949388553). Only a
+# push to the default branch sets a schedule's actor, so there, and only there,
+# a bare login passes when its "[bot]" form is on the allowlist.
+is_allowed_for_event() { # is_allowed_for_event LOGIN
+	is_allowed_actor "$1" && return 0
+	[ "$event" = "schedule" ] && [[ "$1" != *"[bot]" ]] && is_allowed_actor "$1[bot]"
+}
 
 repo="${GITHUB_REPOSITORY:-}"
 actor="${GITHUB_ACTOR:-}"
@@ -58,8 +67,8 @@ payload="${GITHUB_EVENT_PATH:-}"
 [ -n "$actor" ] || deny "GITHUB_ACTOR is not set"
 [ -n "$event" ] || deny "GITHUB_EVENT_NAME is not set"
 in_array "$repo" "${ALLOWED_REPOS[@]}" || deny "repository '$repo' is not on the allowed repos list"
-is_allowed_actor "$actor" || deny "actor '$actor' is not allowed"
-is_allowed_actor "$triggering" || deny "triggering actor '$triggering' is not allowed"
+is_allowed_for_event "$actor" || deny "actor '$actor' is not allowed"
+is_allowed_for_event "$triggering" || deny "triggering actor '$triggering' is not allowed"
 
 [ -n "$payload" ] && [ -r "$payload" ] || deny "event payload GITHUB_EVENT_PATH is not readable"
 command -v jq >/dev/null || deny "jq is not installed"

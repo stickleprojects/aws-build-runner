@@ -62,7 +62,7 @@ def main():
       "`NPM_CONFIG_PREFIX=$HOME/.local`; the same layout as the local runner.")
     w("- **One job per instance**: a just-in-time runner registration, then the instance powers off and is deleted "
       "(2-hour hard limit). Every job starts on a clean machine.")
-    w("- The local runner's `job-started.sh` hook and allowlists run first: same repos, same actors, no forks.")
+    w("- The local runner's `job-started.sh` hook and allowlists run first: same repos, same actors, no forks. One difference: on schedule runs an App's bare login passes when its `[bot]` form is listed, since GitHub drops the `[bot]` there.")
     w("- systemd: `NoNewPrivileges`, `ProtectSystem=full` (`/usr`, `/boot`, `/etc` read-only), private `/tmp`.")
     w("- Uploads are capped at about 20 Mbps (2,500 KiB/s) for everything ghrunner sends off the machine, "
       "so a job can't run up a data-transfer bill (#30). Downloads aren't capped.")
