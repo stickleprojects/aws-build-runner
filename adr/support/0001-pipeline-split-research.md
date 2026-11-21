@@ -1,16 +1,19 @@
 # Spellbound3d pipelines: laptop vs AWS plan
 
+Supporting research for [ADR-0001](../0001-spellbound3d-pipeline-split.md), which records the decision. This page
+keeps the evidence, the options and the open questions.
+
 The tracked copy of the live plan doc, which is where Kieron edits and comments:
 https://claude.ai/artifact/4Qz2sZifCSyJTwPvz8sV6L (private to Kieron). aws-build-machine's Claude updates both
-together. If they differ, the doc is newer. Copy the change here in the same PR as anything that acts on it.
+together. If they differ, the doc is newer. Copy the change here in the same PR as anything that acts on it. A change to the decision itself goes in the ADR.
 
 As of 21 Nov 2026.
 
 ## Status
 
-All answers are in, and nothing is decided. The leading option: spellbound3d's change 0048 (check-pr on PRs, the full
-check on main and every 3 hours), with the heavy pool on m7i.large. Add a Godot-free static job on light only if faster
-failure is worth half a day.
+All answers are in. The decision, accepted by Kieron on 21 Nov, is [ADR-0001](../0001-spellbound3d-pipeline-split.md): keep spellbound3d's
+change 0048 (merged 21 Nov), trial m7i.large for heavy, reword pr-title's error, and defer the rest until measurements
+say it's needed.
 
 | Item | Owner | Status | Notes |
 | --- | --- | --- | --- |
@@ -18,12 +21,12 @@ failure is worth half a day.
 | Answers: per-target times, what needs Godot, gdUnit cores, effort | spellbound3d | Done | Received 21 Nov |
 | Answers: staged checks, counter-proposal, constraints | claude-sdlc | Done | Received 21 Nov |
 | Usage data: job counts, CPU and memory profile | aws-build-machine | Done | 19–20 Nov, and 55 heavy make checks |
-| Decisions: the questions for Kieron below | Kieron | Not started | |
-| Change 0048, check tiers (check-pr, FULL on main, 3-hourly full check, release gate) | spellbound3d | Waiting | [PR #234](https://github.com/stickleprojects/spellbound3d/pull/234) open, waiting for Kieron's approval; check-pr took 3 min 11 s on the laptop, with every coverage module running |
-| Measure check-pr on AWS, and one Godot process's peak memory | aws-build-machine | Waiting | After #234 merges: 10 pr-tier dispatches of "Periodic full check" (AC10); spellbound3d sends the job ids |
+| Decisions: the questions for Kieron below | Kieron | In progress | Accepted 21 Nov as ADR-0001 |
+| Change 0048, check tiers (check-pr, FULL on main, 3-hourly full check, release gate) | spellbound3d | Done | [PR #234](https://github.com/stickleprojects/spellbound3d/pull/234) merged 21 Nov; check-pr took 3 min 11 s on the laptop, with every coverage module running |
+| Measure check-pr on AWS, and one Godot process's peak memory | aws-build-machine | Waiting | Now #234 has merged: 10 pr-tier dispatches of "Periodic full check" (AC10); spellbound3d sends the job ids |
 | Trial m7i.large for the heavy pool | aws-build-machine | Not started | A pools.json change; spellbound3d owns its machine definitions |
 | Staged check feature (with #190 and #225) | claude-sdlc | Not started | Only if Kieron picks stage B |
-| SDLC_STACK_NEEDS, so light jobs skip Godot (PR #250) | claude-sdlc | In progress | In review |
+| SDLC_STACK_NEEDS, so light jobs skip Godot (PR #250) | claude-sdlc | Done | Merged 21 Nov |
 
 ## Today
 
@@ -167,7 +170,7 @@ There are two ways to run more in parallel (Kieron, 21 Nov):
    editor-test and runner-smoke alongside. This uses c7i.xlarge's idle cores and cuts the wall time. Memory is the
    limit: it depends on each Godot process's peak.
 2. **Shards across machines.** A matrix of 2–3 heavy jobs, each running a slice of the suites. It gives the fastest
-   result, but each shard pays its own boot of about 40 s, uses more of the 8-runner limit, and the warnings summary,
+   result, but each shard pays its own boot of about 40 s, uses more of the 4-runner limit, and the warnings summary,
    slow_suites and reports need merging.
 
 Which wins depends on how long gdUnit itself takes (about 10 of 18 minutes in spellbound3d's laptop run) and on one
@@ -184,7 +187,7 @@ rough.
 | 1. Split, heavy stays c7i.xlarge | static on light beside the review; Godot after both | about 9–14 | static fails in about 1–2 min; Godot skipped on docs-only PRs | one extra light boot per push, about US$0.001 |
 | 2. Split + m7i.large for Godot | as 1, the heavy machine 40% cheaper | about 7–11 | Godot about the same, if it stays single-threaded | the cheapest |
 | 3. Split + parallel Godot on one c7i.xlarge | as 1, gdUnit in 2–3 processes | about 8–13 | Godot stage maybe 30–50% shorter | memory limits it; needs gdUnit split into groups |
-| 4. Split + 2–3 shards on m7i.large | as 1, the suites across machines | about 9–14 | the fastest | uses more of the 8 runners; reports need merging |
+| 4. Split + 2–3 shards on m7i.large | as 1, the suites across machines | about 9–14 | the fastest | uses more of the 4 runners; reports need merging |
 | Add-on: Claude `review` on AWS | moves the review off the laptop (the subscription token costs the same anywhere; a reclaim only re-runs it) | +4–5 | | only if the laptop is the bottleneck |
 
 Basis:
@@ -257,12 +260,12 @@ The 3-hourly full check adds about US$2–3 a month on heavy (5 runs a day of ab
 
 For Kieron:
 
-- [ ] Is faster feedback the goal, or lower cost, or keeping the laptop free? This decides between options 2, 3 and 4.
+- [x] Is faster feedback the goal, or lower cost, or keeping the laptop free? **Answered:** the lowest cost, with as little load on the laptop as possible (Kieron, 21 Nov). This decides between options 2, 3 and 4.
 - [ ] Should the static stage start before the Claude review is clean? It runs same-repo PR code before review, and is
   cheap and fast. The alternative: everything waits for the review, as today.
 - [ ] Stage B on PRs, or claude-sdlc's "light PR, heavy main"? It hinges on how often an editor-only Godot failure gets
   past check-pr.
-- [ ] Which PR hit the paperwork problem? Its number tells us whether the `## Plan changes` message is the cause
+- [x] Which PR hit the paperwork problem? **Answered:** spellbound3d #221 (0032, the Ledge), whose pr-title check failed on 20 Nov; see ADR-0001. Its number tells us whether the `## Plan changes` message is the cause
   (spellbound3d can't tell from #226 or #208).
 - [ ] Reword pr-title's error so a `## Plan changes` body edit is the first fix (claude-sdlc, effort S)? It's
   independent of everything else and could go first.
@@ -293,12 +296,15 @@ Risks:
   feature, not a local edit.
 - **Paths filter:** a required check skipped by a `paths:` filter never reports, and the PR blocks. The heavy job must
   always run and exit early.
-- **Runner limit:** shards and the extra light job use more of the 8-runner limit at busy times.
+- **Runner limit:** shards and the extra light job use more of the 4-runner limit at busy times.
 
 ## Change log
 
 | Date | Change |
 | --- | --- |
+| 21 Nov 2026 | ADR-0001 accepted by Kieron |
+| 21 Nov 2026 | Kieron agreed the goal (the lowest cost, light on the laptop) and ADR-0001's triggers; the paperwork PR was spellbound3d #221, so the pr-title wording is the cause |
+| 21 Nov 2026 | Moved to adr/support/ as ADR-0001's research; the decision is condensed into ADR-0001 (Proposed); #234 and #250 merged |
 | 21 Nov 2026 | 0048 open as spellbound3d PR #234; check-pr 3 min 11 s on the laptop; AWS timing and memory come from the AC10 dispatches after merge |
 | 21 Nov 2026 | spellbound3d's review of the reuse design: a reused pass never counts for a release; reuse waits on check-pr's AWS timing (0048 AC10); which PR Kieron hit is a question for him |
 | 21 Nov 2026 | Reuse key's exclude list: a data file (tools/ci/untested_docs.json) read from main; no project code runs in the trusted job (spellbound3d) |
