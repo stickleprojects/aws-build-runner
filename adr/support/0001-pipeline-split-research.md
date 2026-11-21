@@ -260,12 +260,12 @@ The 3-hourly full check adds about US$2–3 a month on heavy (5 runs a day of ab
 
 For Kieron:
 
-- [ ] Is faster feedback the goal, or lower cost, or keeping the laptop free? This decides between options 2, 3 and 4.
+- [x] Is faster feedback the goal, or lower cost, or keeping the laptop free? **Answered:** the lowest cost, with as little load on the laptop as possible (Kieron, 21 Nov). This decides between options 2, 3 and 4.
 - [ ] Should the static stage start before the Claude review is clean? It runs same-repo PR code before review, and is
   cheap and fast. The alternative: everything waits for the review, as today.
 - [ ] Stage B on PRs, or claude-sdlc's "light PR, heavy main"? It hinges on how often an editor-only Godot failure gets
   past check-pr.
-- [ ] Which PR hit the paperwork problem? Its number tells us whether the `## Plan changes` message is the cause
+- [x] Which PR hit the paperwork problem? **Answered:** spellbound3d #221 (0032, the Ledge), whose pr-title check failed on 20 Nov; see ADR-0001. Its number tells us whether the `## Plan changes` message is the cause
   (spellbound3d can't tell from #226 or #208).
 - [ ] Reword pr-title's error so a `## Plan changes` body edit is the first fix (claude-sdlc, effort S)? It's
   independent of everything else and could go first.
@@ -302,6 +302,7 @@ Risks:
 
 | Date | Change |
 | --- | --- |
+| 21 Nov 2026 | Kieron agreed the goal (the lowest cost, light on the laptop) and ADR-0001's triggers; the paperwork PR was spellbound3d #221, so the pr-title wording is the cause |
 | 21 Nov 2026 | Moved to adr/support/ as ADR-0001's research; the decision is condensed into ADR-0001 (Proposed); #234 and #250 merged |
 | 21 Nov 2026 | 0048 open as spellbound3d PR #234; check-pr 3 min 11 s on the laptop; AWS timing and memory come from the AC10 dispatches after merge |
 | 21 Nov 2026 | spellbound3d's review of the reuse design: a reused pass never counts for a release; reuse waits on check-pr's AWS timing (0048 AC10); which PR Kieron hit is a question for him |
