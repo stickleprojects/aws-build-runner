@@ -180,7 +180,7 @@ The estimates are replaced by measured figures from:
 3. **Monthly, in the cost review.** aws-build-machine checks every trigger below and reports the numbers to Kieron.
    If one fires, it proposes a new ADR that supersedes or amends this one, with a price for each option.
 
-**Triggers** (the numbers are proposals; Kieron to confirm):
+**Triggers** (numbers agreed by Kieron, 21 Nov):
 
 | Trigger | Then consider |
 | --- | --- |
@@ -208,12 +208,17 @@ All of these exist today, at no cost or nearly none. Cost Explorer is used by ha
 | Heavy jobs a day, and jobs waiting at the 8-runner limit | volume doubled | `/build/runner/jobs` job counts; the launcher's logs |
 | Month-to-date and projected runner cost | cost above US$20, or nearing the stop | AWS Budgets `guardrail-monthly` (free); the monthly cost review |
 
-## Open for Kieron
+## Answered by Kieron (21 Nov)
 
-1. **The goal:** lowest cost, fastest feedback, or keeping the laptop free. The proposal assumes lowest cost at today's
-   speed.
-2. **The trigger numbers** under When to re-evaluate.
-3. **Which PR hit the paperwork problem**, to confirm the pr-title message is the cause.
+1. **The goal:** the lowest cost, with as little load on the laptop as possible. Agreed.
+2. **The trigger numbers** under When to re-evaluate. Agreed.
+3. **The PR that hit the paperwork problem:** spellbound3d's own
+   [PR #221](https://github.com/stickleprojects/spellbound3d/pull/221) (0032, the Ledge). Its pr-title check failed on
+   20 Nov at 00:07 Sydney time with: "This PR amends 0032-the-ledge-and-placed-doorways's plan or spec with its code.
+   List each amendment under a '## Plan changes' heading in the PR body, or move them to a plan or spec PR."
+   spellbound3d fixed it by adding `## Plan changes` to the PR body (its comment on #221, 20 Nov 13:57 Sydney time).
+   That confirms the cause, and that rewording the message is the fix. spellbound3d later checked #226 and #208 for
+   this, missed #221, and said it couldn't tell which PR it was.
 
 ## Action items
 
