@@ -848,6 +848,51 @@ def finished_recent_launches_dont_hold_back_new_jobs():
     return [] if plan == {pool: 1} else [f"a finished recent launch held back a new job's launch (plan {plan})"]
 
 
+HOOK = P2 / "ami" / "files" / "job-started.sh"
+
+
+def run_hook(hook, tmp, event, actor, triggering=None):
+    """Run the job-started hook on a stand-in allowlist; True when it allows the job."""
+    actors, repos, payload = tmp / "actors.txt", tmp / "repos.txt", tmp / "event.json"
+    actors.write_text("# test list\nstickleprojects\nspellbound3d-claude[bot]\n")
+    repos.write_text("stickleprojects/spellbound3d\n")
+    payload.write_text("{}")
+    env = {"PATH": "/usr/bin:/bin", "RUNNER_HOOK_ACTORS_FILE": str(actors), "RUNNER_HOOK_REPOS_FILE": str(repos),
+           "GITHUB_REPOSITORY": "stickleprojects/spellbound3d", "GITHUB_ACTOR": actor,
+           "GITHUB_TRIGGERING_ACTOR": triggering or actor, "GITHUB_EVENT_NAME": event,
+           "GITHUB_EVENT_PATH": str(payload)}
+    return subprocess.run(["bash", str(hook)], env=env, capture_output=True, text=True, cwd=tmp).returncode == 0
+
+
+@rule("2026-11-22: spellbound3d's scheduled periodic check (run 44949388553) reached an AWS runner, but the hook "
+      "refused it: on schedule runs GitHub gives the App's actor as 'spellbound3d-claude', without '[bot]'. Kieron "
+      "chose option A: accept the bare login on schedule runs only, and only when its '[bot]' form is listed.")
+def hook_accepts_an_apps_bare_login_on_schedule_runs_only(hook=HOOK):
+    import tempfile
+    cases = [  # (event, actor, triggering actor, should be allowed)
+        ("schedule", "spellbound3d-claude", None, True),
+        ("schedule", "spellbound3d-claude[bot]", None, True),
+        ("schedule", "stickleprojects", None, True),
+        ("push", "spellbound3d-claude[bot]", None, True),
+        ("workflow_dispatch", "spellbound3d-claude[bot]", None, True),
+        ("push", "spellbound3d-claude", None, False),               # bare login is not the App elsewhere
+        ("workflow_dispatch", "spellbound3d-claude", None, False),
+        ("issue_comment", "spellbound3d-claude", None, False),
+        ("schedule", "someone-else", None, False),
+        ("schedule", "stickleprojects[bot]", None, False),          # no stripping the other way round
+        ("schedule", "spellbound3d-claude", "someone-else", False),  # a re-run by a stranger
+        ("workflow_dispatch", "stickleprojects", "spellbound3d-claude", False),
+    ]
+    problems = []
+    with tempfile.TemporaryDirectory() as d:
+        for event, actor, trig, want in cases:
+            got = run_hook(hook, Path(d), event, actor, trig)
+            if got != want:
+                problems.append(f"{event} by {actor} (triggered by {trig or actor}): "
+                                f"{'allowed' if got else 'refused'}, should be {'allowed' if want else 'refused'}")
+    return problems
+
+
 def main():
     failed = 0
     for name, incident, fn in RULES:
