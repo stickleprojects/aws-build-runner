@@ -142,21 +142,77 @@ A is the cheapest and the least work, and it leaves B and C open.
   - The laptop keeps the review, the gate and the paperwork.
   - pr-title and claude-review still need the laptop to be on.
 
-## Revisit when
+## What this decision gives: cost, laptop load and speed
 
-| Trigger (proposed numbers, Kieron to confirm) | Then consider |
+The decision aims for the lowest cost while keeping the laptop's load small. Those two goals only conflict on the
+Claude review: moving it to AWS (D) would take about two-thirds of the laptop's load off it, for about US$4–5 a month.
+The gate and the paperwork stay on the laptop, because on a fresh AWS machine most of their cost would be boot time.
+
+| Measure | Expected under this decision | Source of the figure |
+| --- | --- | --- |
+| Runner cost | about US$7–11 a month | the research's options table |
+| Laptop load | about 1.9 h of small jobs a day: review about 65 min, gate about 31 min, paperwork about 19 min | 19–20 Nov job counts |
+| First PR response: paperwork | 15–30 s after the push (laptop) | 19–20 Nov |
+| First PR response: Claude review verdict | about 2.6 min typical, 6.5 min slow (laptop) | 19–20 Nov |
+| PR complete (`check` green): review, gate, AWS boot (about 1 min), `check-pr` | about 7 min typical, 11–12 min slow | estimate: `check-pr` took 3 min 11 s on the laptop; its AWS time isn't measured yet |
+| Release: the full `make check FULL=1` on main | about 10–15 min on c7i.xlarge; possibly 12–18 min on m7i.large | estimate: today's 478 s median check, plus FULL's Godot coverage modules |
+| Release gate when you release | immediate, if main's full run on that commit has passed | 0048's release gate reads main's existing result |
+
+The full run starts on main when a PR merges, and the 3-hourly full check covers anything the push run missed. So a
+release normally waits for nothing.
+
+m7i.large shouldn't slow the Godot tests, which use one core. The steps that run in parallel, coverage among them,
+get 2 cores instead of 4. That's where any slowdown in the full run would show.
+
+The estimates are replaced by measured figures from:
+
+- the AC10 runs: 10 PR-tier dispatches of "Periodic full check" after #234's merge;
+- the m7i.large trial.
+
+## When to re-evaluate
+
+**Scheduled checkpoints:**
+
+1. **After the AC10 runs (this week).** They give `check-pr`'s real AWS time and one Godot process's memory peak.
+   - Confirm or correct the speed table above.
+   - Settle the triggers about `check-pr` and memory below.
+2. **After a week of m7i.large on heavy.** Compare its time and memory with c7i.xlarge. Keep it, or roll it back.
+3. **Monthly, in the cost review.** aws-build-machine checks every trigger below and reports the numbers to Kieron.
+   If one fires, it proposes a new ADR that supersedes or amends this one, with a price for each option.
+
+**Triggers** (the numbers are proposals; Kieron to confirm):
+
+| Trigger | Then consider |
 | --- | --- |
-| `check-pr`'s AWS median over 5 minutes (from the AC10 runs) | B: staged split, and reusing Godot passes |
+| `check-pr`'s AWS median over 5 minutes, or PR complete regularly over 12 minutes | B: the staged split, and reusing Godot passes |
 | More than 2 editor-only Godot failures a month reach main past `check-pr` | B: a Godot stage on PRs |
 | One Godot process peaks under about 3 GB, and faster feedback becomes the goal | C: parallel gdUnit on one machine |
-| m7i.large is slower than c7i.xlarge by more than 20%, or runs out of memory | go back to c7i.xlarge for heavy |
-| The laptop is the bottleneck, or Kieron wants it free | D: the review on AWS |
+| m7i.large is more than 20% slower than c7i.xlarge, or runs out of memory | go back to c7i.xlarge for heavy |
+| The laptop queues jobs: a laptop job regularly waits more than 2 minutes to start, or Kieron wants the laptop free | D: the review on AWS |
+| The month's runner cost is projected above US$20, or Budgets warns as it nears the US$29 stop | re-price; first look at what grew |
+| Heavy jobs a day double (over about 120), or jobs queue at the 8-runner limit | re-check the runner limit and C's shards |
+| A paperwork fix still costs a Godot re-run after the pr-title reword | B's reuse of Godot passes |
+
+## Metrics to check
+
+All of these exist today, at no cost or nearly none. Cost Explorer is used by hand only, never on a schedule.
+
+| Metric | Supports which trigger | Where it comes from |
+| --- | --- | --- |
+| `check-pr` and the full check's run time, per job (`wall_s`), split by machine type | `check-pr` median, m7i.large vs c7i.xlarge, release time | CloudWatch log group `/build/runner/jobs`, read with Logs Insights (a tiny scan, under a cent) |
+| Memory peak per job (`mem_peak_mb`) and per machine (`box_mem_peak_mb`) | m7i.large out of memory; Godot process memory for C | `/build/runner/jobs` |
+| Time from a PR push until `check` is green | PR complete over 12 minutes | GitHub: the commit's statuses and check runs, through `gh api` |
+| Claude review job time, and each laptop job's wait before it starts | the review verdict time; the laptop queues jobs | GitHub Actions job timings (`created_at`, `started_at`, `completed_at`) for the self-hosted runner |
+| Main-red issues caused by an editor-only Godot failure | more than 2 a month reach main | spellbound3d's main-red issues from 0048; spellbound3d says which were editor-only |
+| PRs that re-ran Godot only for a paperwork fix | the pr-title reword didn't remove them | pr-title failures followed by a new commit that changes no game files (GitHub; spellbound3d can list them) |
+| Heavy jobs a day, and jobs waiting at the 8-runner limit | volume doubled | `/build/runner/jobs` job counts; the launcher's logs |
+| Month-to-date and projected runner cost | cost above US$20, or nearing the stop | AWS Budgets `guardrail-monthly` (free); the monthly cost review |
 
 ## Open for Kieron
 
 1. **The goal:** lowest cost, fastest feedback, or keeping the laptop free. The proposal assumes lowest cost at today's
    speed.
-2. **The trigger numbers** above.
+2. **The trigger numbers** under When to re-evaluate.
 3. **Which PR hit the paperwork problem**, to confirm the pr-title message is the cause.
 
 ## Action items
@@ -166,4 +222,6 @@ A is the cheapest and the least work, and it leaves B and C open.
    add them to the research page.
 3. [ ] spellbound3d, with aws-build-machine: trial m7i.large for heavy, and compare its time and memory with c7i.xlarge.
 4. [ ] claude-sdlc: reword pr-title's error so a `## Plan changes` body edit is the first fix.
-5. [ ] aws-build-machine: check the triggers monthly in the cost review; propose a new ADR if one fires.
+5. [ ] aws-build-machine: replace the speed estimates with measured figures after the AC10 runs and the m7i.large trial.
+6. [ ] aws-build-machine: check every trigger monthly in the cost review, with the metrics above; propose a new ADR if
+   one fires.
