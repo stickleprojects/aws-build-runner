@@ -89,6 +89,7 @@ part2-runner/
   README.md            overview and status
   PLAN.md              design and steps for the spellbound3d runner
 PRICING.md             estimates for every option
+adr/                   architecture decision records; support/ holds each one's research
 .github/workflows/policy.yml   CI: generate, lint, check, store artifact, report applied state
 ```
 

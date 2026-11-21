@@ -1,16 +1,19 @@
 # Spellbound3d pipelines: laptop vs AWS plan
 
+Supporting research for [ADR-0001](../0001-spellbound3d-pipeline-split.md), which records the decision. This page
+keeps the evidence, the options and the open questions.
+
 The tracked copy of the live plan doc, which is where Kieron edits and comments:
 https://claude.ai/artifact/4Qz2sZifCSyJTwPvz8sV6L (private to Kieron). aws-build-machine's Claude updates both
-together. If they differ, the doc is newer. Copy the change here in the same PR as anything that acts on it.
+together. If they differ, the doc is newer. Copy the change here in the same PR as anything that acts on it. A change to the decision itself goes in the ADR.
 
 As of 21 Nov 2026.
 
 ## Status
 
-All answers are in, and nothing is decided. The leading option: spellbound3d's change 0048 (check-pr on PRs, the full
-check on main and every 3 hours), with the heavy pool on m7i.large. Add a Godot-free static job on light only if faster
-failure is worth half a day.
+All answers are in. The proposed decision is [ADR-0001](../0001-spellbound3d-pipeline-split.md): keep spellbound3d's
+change 0048 (merged 21 Nov), trial m7i.large for heavy, reword pr-title's error, and defer the rest until measurements
+say it's needed.
 
 | Item | Owner | Status | Notes |
 | --- | --- | --- | --- |
@@ -18,12 +21,12 @@ failure is worth half a day.
 | Answers: per-target times, what needs Godot, gdUnit cores, effort | spellbound3d | Done | Received 21 Nov |
 | Answers: staged checks, counter-proposal, constraints | claude-sdlc | Done | Received 21 Nov |
 | Usage data: job counts, CPU and memory profile | aws-build-machine | Done | 19–20 Nov, and 55 heavy make checks |
-| Decisions: the questions for Kieron below | Kieron | Not started | |
-| Change 0048, check tiers (check-pr, FULL on main, 3-hourly full check, release gate) | spellbound3d | Waiting | [PR #234](https://github.com/stickleprojects/spellbound3d/pull/234) open, waiting for Kieron's approval; check-pr took 3 min 11 s on the laptop, with every coverage module running |
-| Measure check-pr on AWS, and one Godot process's peak memory | aws-build-machine | Waiting | After #234 merges: 10 pr-tier dispatches of "Periodic full check" (AC10); spellbound3d sends the job ids |
+| Decisions: the questions for Kieron below | Kieron | In progress | Condensed into ADR-0001 (Proposed) |
+| Change 0048, check tiers (check-pr, FULL on main, 3-hourly full check, release gate) | spellbound3d | Done | [PR #234](https://github.com/stickleprojects/spellbound3d/pull/234) merged 21 Nov; check-pr took 3 min 11 s on the laptop, with every coverage module running |
+| Measure check-pr on AWS, and one Godot process's peak memory | aws-build-machine | Waiting | Now #234 has merged: 10 pr-tier dispatches of "Periodic full check" (AC10); spellbound3d sends the job ids |
 | Trial m7i.large for the heavy pool | aws-build-machine | Not started | A pools.json change; spellbound3d owns its machine definitions |
 | Staged check feature (with #190 and #225) | claude-sdlc | Not started | Only if Kieron picks stage B |
-| SDLC_STACK_NEEDS, so light jobs skip Godot (PR #250) | claude-sdlc | In progress | In review |
+| SDLC_STACK_NEEDS, so light jobs skip Godot (PR #250) | claude-sdlc | Done | Merged 21 Nov |
 
 ## Today
 
@@ -299,6 +302,7 @@ Risks:
 
 | Date | Change |
 | --- | --- |
+| 21 Nov 2026 | Moved to adr/support/ as ADR-0001's research; the decision is condensed into ADR-0001 (Proposed); #234 and #250 merged |
 | 21 Nov 2026 | 0048 open as spellbound3d PR #234; check-pr 3 min 11 s on the laptop; AWS timing and memory come from the AC10 dispatches after merge |
 | 21 Nov 2026 | spellbound3d's review of the reuse design: a reused pass never counts for a release; reuse waits on check-pr's AWS timing (0048 AC10); which PR Kieron hit is a question for him |
 | 21 Nov 2026 | Reuse key's exclude list: a data file (tools/ci/untested_docs.json) read from main; no project code runs in the trusted job (spellbound3d) |
