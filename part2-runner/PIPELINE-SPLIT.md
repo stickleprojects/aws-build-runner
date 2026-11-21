@@ -19,8 +19,8 @@ failure is worth half a day.
 | Answers: staged checks, counter-proposal, constraints | claude-sdlc | Done | Received 21 Nov |
 | Usage data: job counts, CPU and memory profile | aws-build-machine | Done | 19–20 Nov, and 55 heavy make checks |
 | Decisions: the questions for Kieron below | Kieron | Not started | |
-| Change 0048, check tiers (check-pr, FULL on main, 3-hourly full check, release gate) | spellbound3d | In progress | PR due 21 Nov; much of the counter-proposal comes with it |
-| Measure one Godot process's peak memory on AWS | aws-build-machine | Not started | Decides parallel Godot on one machine |
+| Change 0048, check tiers (check-pr, FULL on main, 3-hourly full check, release gate) | spellbound3d | Waiting | [PR #234](https://github.com/stickleprojects/spellbound3d/pull/234) open, waiting for Kieron's approval; check-pr took 3 min 11 s on the laptop, with every coverage module running |
+| Measure check-pr on AWS, and one Godot process's peak memory | aws-build-machine | Waiting | After #234 merges: 10 pr-tier dispatches of "Periodic full check" (AC10); spellbound3d sends the job ids |
 | Trial m7i.large for the heavy pool | aws-build-machine | Not started | A pools.json change; spellbound3d owns its machine definitions |
 | Staged check feature (with #190 and #225) | claude-sdlc | Not started | Only if Kieron picks stage B |
 | SDLC_STACK_NEEDS, so light jobs skip Godot (PR #250) | claude-sdlc | In progress | In review |
@@ -143,7 +143,8 @@ Open points for the build:
   count only a real full run on main: a push run's `make check FULL=1` or a full-tier periodic run. So a release always
   has a full run on its exact commit. No conflict with 0048.
 - **Is it needed under 0048?** That's unknown until check-pr's real time on AWS is measured: 0048's AC10 takes the
-  median of 10 runs after it merges. Until then, reuse on the PR tier isn't justified.
+  median of 10 runs after it merges. Until then, reuse on the PR tier isn't justified. On the laptop, check-pr took 3 min 11 s with
+  every coverage module running; a typical PR skips the slow ones.
 
 ## Machine sizes and parallelism on heavy
 
@@ -298,6 +299,7 @@ Risks:
 
 | Date | Change |
 | --- | --- |
+| 21 Nov 2026 | 0048 open as spellbound3d PR #234; check-pr 3 min 11 s on the laptop; AWS timing and memory come from the AC10 dispatches after merge |
 | 21 Nov 2026 | spellbound3d's review of the reuse design: a reused pass never counts for a release; reuse waits on check-pr's AWS timing (0048 AC10); which PR Kieron hit is a question for him |
 | 21 Nov 2026 | Reuse key's exclude list: a data file (tools/ci/untested_docs.json) read from main; no project code runs in the trusted job (spellbound3d) |
 | 21 Nov 2026 | claude-sdlc on reuse: the pr-title message fix first; the gate also waits on pr-title and descopes; a trusted job computes the key and records passes; S3 via two make targets and a new OIDC role (policy change) |
