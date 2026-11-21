@@ -848,6 +848,25 @@ def finished_recent_launches_dont_hold_back_new_jobs():
     return [] if plan == {pool: 1} else [f"a finished recent launch held back a new job's launch (plan {plan})"]
 
 
+@rule("2026-11-21: the pipeline plan and ADR-0001 said 'the 8-runner limit' (the template's MaxValue), but the "
+      "limit in force is policy.yaml's max_runners, 4.")
+def docs_state_the_runner_limit_from_policy():
+    m = re.search(r"^\s*max_runners:\s*(\d+)", (P1 / "policy.yaml").read_text(), re.M)
+    if not m:
+        return ["policy.yaml has no max_runners"]
+    limit = m.group(1)
+    docs = sorted(ROOT.glob("*.md")) + sorted((ROOT / "adr").rglob("*.md")) + sorted(P2.rglob("*.md"))
+    pattern = r"\b(\d+)(-runner limit| runners at once|-runner cap)|\b(\d+) runners\b(?=[;,.)]| limit| at)"
+    problems = []
+    for path in docs:
+        for n, line in enumerate(path.read_text().splitlines(), 1):
+            nums = [a or c for a, _, c in re.findall(pattern, line)]
+            if any(x != limit for x in nums):
+                problems.append(f"says a runner limit other than max_runners ({limit}): "
+                                f"{path.relative_to(ROOT)}:{n}: {line.strip()[:100]}")
+    return problems
+
+
 def main():
     failed = 0
     for name, incident, fn in RULES:

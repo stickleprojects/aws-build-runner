@@ -104,7 +104,7 @@ gdUnit runs as 2–3 processes on one c7i.xlarge, or as 2–3 shards on m7i.larg
 **Cons:**
 
 - Memory-bound, and one Godot process's peak memory isn't measured yet.
-- Shards use more of the 8-runner limit.
+- Shards use more of the 4-runner limit.
 
 ### D. Claude review on AWS (add-on to any option)
 
@@ -190,7 +190,7 @@ The estimates are replaced by measured figures from:
 | m7i.large is more than 20% slower than c7i.xlarge, or runs out of memory | go back to c7i.xlarge for heavy |
 | The laptop queues jobs: a laptop job regularly waits more than 2 minutes to start, or Kieron wants the laptop free | D: the review on AWS |
 | The month's runner cost is projected above US$20, or Budgets warns as it nears the US$29 stop | re-price; first look at what grew |
-| Heavy jobs a day double (over about 120), or jobs queue at the 8-runner limit | re-check the runner limit and C's shards |
+| Heavy jobs a day double (over about 120), or jobs queue at the 4-runner limit | re-check the runner limit and C's shards |
 | A paperwork fix still costs a Godot re-run after the pr-title reword | B's reuse of Godot passes |
 
 ## Metrics to check
@@ -205,7 +205,7 @@ All of these exist today, at no cost or nearly none. Cost Explorer is used by ha
 | Claude review job time, and each laptop job's wait before it starts | the review verdict time; the laptop queues jobs | GitHub Actions job timings (`created_at`, `started_at`, `completed_at`) for the self-hosted runner |
 | Main-red issues caused by an editor-only Godot failure | more than 2 a month reach main | spellbound3d's main-red issues from 0048; spellbound3d says which were editor-only |
 | PRs that re-ran Godot only for a paperwork fix | the pr-title reword didn't remove them | pr-title failures followed by a new commit that changes no game files (GitHub; spellbound3d can list them) |
-| Heavy jobs a day, and jobs waiting at the 8-runner limit | volume doubled | `/build/runner/jobs` job counts; the launcher's logs |
+| Heavy jobs a day, and jobs waiting at the 4-runner limit | volume doubled | `/build/runner/jobs` job counts; the launcher's logs |
 | Month-to-date and projected runner cost | cost above US$20, or nearing the stop | AWS Budgets `guardrail-monthly` (free); the monthly cost review |
 
 ## Answered by Kieron (21 Nov)

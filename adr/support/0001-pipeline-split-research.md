@@ -170,7 +170,7 @@ There are two ways to run more in parallel (Kieron, 21 Nov):
    editor-test and runner-smoke alongside. This uses c7i.xlarge's idle cores and cuts the wall time. Memory is the
    limit: it depends on each Godot process's peak.
 2. **Shards across machines.** A matrix of 2–3 heavy jobs, each running a slice of the suites. It gives the fastest
-   result, but each shard pays its own boot of about 40 s, uses more of the 8-runner limit, and the warnings summary,
+   result, but each shard pays its own boot of about 40 s, uses more of the 4-runner limit, and the warnings summary,
    slow_suites and reports need merging.
 
 Which wins depends on how long gdUnit itself takes (about 10 of 18 minutes in spellbound3d's laptop run) and on one
@@ -187,7 +187,7 @@ rough.
 | 1. Split, heavy stays c7i.xlarge | static on light beside the review; Godot after both | about 9–14 | static fails in about 1–2 min; Godot skipped on docs-only PRs | one extra light boot per push, about US$0.001 |
 | 2. Split + m7i.large for Godot | as 1, the heavy machine 40% cheaper | about 7–11 | Godot about the same, if it stays single-threaded | the cheapest |
 | 3. Split + parallel Godot on one c7i.xlarge | as 1, gdUnit in 2–3 processes | about 8–13 | Godot stage maybe 30–50% shorter | memory limits it; needs gdUnit split into groups |
-| 4. Split + 2–3 shards on m7i.large | as 1, the suites across machines | about 9–14 | the fastest | uses more of the 8 runners; reports need merging |
+| 4. Split + 2–3 shards on m7i.large | as 1, the suites across machines | about 9–14 | the fastest | uses more of the 4 runners; reports need merging |
 | Add-on: Claude `review` on AWS | moves the review off the laptop (the subscription token costs the same anywhere; a reclaim only re-runs it) | +4–5 | | only if the laptop is the bottleneck |
 
 Basis:
@@ -296,7 +296,7 @@ Risks:
   feature, not a local edit.
 - **Paths filter:** a required check skipped by a `paths:` filter never reports, and the PR blocks. The heavy job must
   always run and exit early.
-- **Runner limit:** shards and the extra light job use more of the 8-runner limit at busy times.
+- **Runner limit:** shards and the extra light job use more of the 4-runner limit at busy times.
 
 ## Change log
 
