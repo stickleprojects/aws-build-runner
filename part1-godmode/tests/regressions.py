@@ -867,6 +867,86 @@ def docs_state_the_runner_limit_from_policy():
     return problems
 
 
+HOOK = P2 / "ami" / "files" / "job-started.sh"
+
+
+def run_hook(hook, tmp, event, actor, triggering=None):
+    """Run the job-started hook on a stand-in allowlist; True when it allows the job."""
+    actors, repos, payload = tmp / "actors.txt", tmp / "repos.txt", tmp / "event.json"
+    actors.write_text("# test list\nstickleprojects\nspellbound3d-claude[bot]\n")
+    repos.write_text("stickleprojects/spellbound3d\n")
+    payload.write_text("{}")
+    env = {"PATH": "/usr/bin:/bin", "RUNNER_HOOK_ACTORS_FILE": str(actors), "RUNNER_HOOK_REPOS_FILE": str(repos),
+           "GITHUB_REPOSITORY": "stickleprojects/spellbound3d", "GITHUB_ACTOR": actor,
+           "GITHUB_TRIGGERING_ACTOR": triggering or actor, "GITHUB_EVENT_NAME": event,
+           "GITHUB_EVENT_PATH": str(payload), "RUNNER_HOOK_STATE_DIR": str(tmp)}
+    return subprocess.run(["bash", str(hook)], env=env, capture_output=True, text=True, cwd=tmp).returncode == 0
+
+
+@rule("2026-11-22: spellbound3d's scheduled periodic check (run 44949388553) reached an AWS runner, but the hook "
+      "refused it: on schedule runs GitHub gives the App's actor as 'spellbound3d-claude', without '[bot]'. Kieron "
+      "chose option A: accept the bare login on schedule runs only, and only when its '[bot]' form is listed.")
+def hook_accepts_an_apps_bare_login_on_schedule_runs_only(hook=HOOK):
+    import tempfile
+    cases = [  # (event, actor, triggering actor, should be allowed)
+        ("schedule", "spellbound3d-claude", None, True),
+        ("schedule", "spellbound3d-claude[bot]", None, True),
+        ("schedule", "stickleprojects", None, True),
+        ("push", "spellbound3d-claude[bot]", None, True),
+        ("workflow_dispatch", "spellbound3d-claude[bot]", None, True),
+        ("push", "spellbound3d-claude", None, False),               # bare login is not the App elsewhere
+        ("workflow_dispatch", "spellbound3d-claude", None, False),
+        ("issue_comment", "spellbound3d-claude", None, False),
+        ("schedule", "someone-else", None, False),
+        ("schedule", "stickleprojects[bot]", None, False),          # no stripping the other way round
+        ("schedule", "spellbound3d-claude", "someone-else", False),  # a re-run by a stranger
+        ("workflow_dispatch", "stickleprojects", "spellbound3d-claude", False),
+    ]
+    problems = []
+    with tempfile.TemporaryDirectory() as d:
+        for event, actor, trig, want in cases:
+            got = run_hook(hook, Path(d), event, actor, trig)
+            if got != want:
+                problems.append(f"{event} by {actor} (triggered by {trig or actor}): "
+                                f"{'allowed' if got else 'refused'}, should be {'allowed' if want else 'refused'}")
+    return problems
+
+
+@rule("2026-11-22: AC10's usage records showed 411-477 s for 4 jobs GitHub timed at 220-243 s, with avg_vcpu "
+      "halved: the record timed from the runner's start, and those runners sat idle ~4 min until another job's "
+      "runner swap handed them work. Halved vCPU could make the report call a heavy job 'could be light'.")
+def job_usage_times_the_job_not_the_runner(files=P2 / "ami" / "files"):
+    import importlib.util
+    import os
+    import tempfile
+    spec = importlib.util.spec_from_file_location("job_usage", files / "job-usage.py")
+    ju = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(ju)
+    with tempfile.TemporaryDirectory() as d:
+        t = Path(d)
+        (t / "job").touch()
+        ready = int((t / "job").stat().st_mtime) - 240
+        os.utime(t / "job", (ready, ready))
+        # The job-started hook, allowing a job, then the job-completed hook: as on a runner.
+        (t / "actors.txt").write_text("stickleprojects\n")
+        (t / "repos.txt").write_text("stickleprojects/spellbound3d\n")
+        (t / "event.json").write_text("{}")
+        env = {"PATH": "/usr/bin:/bin", "RUNNER_HOOK_ACTORS_FILE": str(t / "actors.txt"),
+               "RUNNER_HOOK_REPOS_FILE": str(t / "repos.txt"), "RUNNER_HOOK_STATE_DIR": d,
+               "GITHUB_REPOSITORY": "stickleprojects/spellbound3d", "GITHUB_ACTOR": "stickleprojects",
+               "GITHUB_EVENT_NAME": "push", "GITHUB_EVENT_PATH": str(t / "event.json")}
+        started = (files / "job-started.sh").read_text().replace("/run/build-runner", d)
+        completed = (files / "job-completed.sh").read_text().replace("/run/build-runner", d)
+        subprocess.run(["bash", "-c", started], env=env, capture_output=True, text=True)
+        subprocess.run(["bash", "-c", completed], env=env, capture_output=True, text=True)
+        info = ju.clean_job((t / "job-info.json").read_text()) if (t / "job-info.json").exists() else {}
+        wall = ju.wall_seconds(info)
+    if wall is None:
+        return [f"no wall time in the job record: {info}"]
+    return [] if wall < 60 else [f"a job that started 240 s after its runner was timed at {wall:.0f} s, "
+                                 "not from its own start"]
+
+
 def main():
     failed = 0
     for name, incident, fn in RULES:

@@ -6,7 +6,8 @@
 # The job is allowed only when ALL of these hold:
 #   - its repository is on the allowed repos list;
 #   - the user who started it (GITHUB_ACTOR) and the user who triggered this run,
-#     e.g. a re-run (GITHUB_TRIGGERING_ACTOR), are both on the allowlist;
+#     e.g. a re-run (GITHUB_TRIGGERING_ACTOR), are both on the allowlist (on a
+#     schedule run, an App's bare login counts when its "[bot]" form is listed);
 #   - for an event with a pull request, the PR's head branch is in this
 #     repository, not in a fork.
 # Anything missing or unreadable fails closed.
@@ -16,6 +17,8 @@ set -uo pipefail
 # runner-guard.sh and installed root-owned by runner-root.sh.
 ACTORS_FILE="${RUNNER_HOOK_ACTORS_FILE:-/etc/github-runner/allowed-actors.txt}"
 REPOS_FILE="${RUNNER_HOOK_REPOS_FILE:-/etc/github-runner/allowed-repos.txt}"
+# Where an allowed job's real start time is noted, for the usage record (job-completed.sh, job-usage.py).
+STATE_DIR="${RUNNER_HOOK_STATE_DIR:-/run/build-runner}"
 
 deny() {
 	echo "::error::Runner hook refused this job: $*"
@@ -47,6 +50,14 @@ in_array() { # in_array VALUE ITEM...
 	return 1
 }
 is_allowed_actor() { in_array "$1" "${ALLOWED_ACTORS[@]}"; }
+# On schedule runs GitHub drops "[bot]" from the actor: an App's run carries
+# "name", not "name[bot]" (2026-11-22, spellbound3d run 44949388553). Only a
+# push to the default branch sets a schedule's actor, so there, and only there,
+# a bare login passes when its "[bot]" form is on the allowlist.
+is_allowed_for_event() { # is_allowed_for_event LOGIN
+	is_allowed_actor "$1" && return 0
+	[ "$event" = "schedule" ] && [[ "$1" != *"[bot]" ]] && is_allowed_actor "$1[bot]"
+}
 
 repo="${GITHUB_REPOSITORY:-}"
 actor="${GITHUB_ACTOR:-}"
@@ -58,8 +69,8 @@ payload="${GITHUB_EVENT_PATH:-}"
 [ -n "$actor" ] || deny "GITHUB_ACTOR is not set"
 [ -n "$event" ] || deny "GITHUB_EVENT_NAME is not set"
 in_array "$repo" "${ALLOWED_REPOS[@]}" || deny "repository '$repo' is not on the allowed repos list"
-is_allowed_actor "$actor" || deny "actor '$actor' is not allowed"
-is_allowed_actor "$triggering" || deny "triggering actor '$triggering' is not allowed"
+is_allowed_for_event "$actor" || deny "actor '$actor' is not allowed"
+is_allowed_for_event "$triggering" || deny "triggering actor '$triggering' is not allowed"
 
 [ -n "$payload" ] && [ -r "$payload" ] || deny "event payload GITHUB_EVENT_PATH is not readable"
 command -v jq >/dev/null || deny "jq is not installed"
@@ -94,6 +105,11 @@ if [ -n "$ws" ] && git -C "$ws" rev-parse --git-dir >/dev/null 2>&1; then
 		xargs -r -n1 git -C "$ws" update-ref -d ||
 		deny "could not drop stale pull-request refs in $ws"
 fi
+
+# The job's real start, for its usage record. The runner can sit idle before GitHub hands it a job (another
+# job with the same label took the runner launched for it: 4 runners, about 4 min each, 2026-11-22), so
+# the runner's own start isn't the job's. Never refuses the job if it can't be written.
+date +%s > "$STATE_DIR/job-started" 2>/dev/null || true
 
 echo "Runner hook: allowed $event by $actor ($triggering) on $repo"
 exit 0

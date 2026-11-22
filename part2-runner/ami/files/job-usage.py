@@ -5,7 +5,8 @@
     job-usage.py             collect and send (failures are logged, never block the power-off)
     job-usage.py --dry-run   print the record, send nothing
 
-The record: which job (from the job-completed hook's /run/build-runner/job-info.json), this instance's
+The record: which job (from the job-completed hook's /run/build-runner/job-info.json), its wall time from
+the job-started hook's note (idle_s: how long the runner waited for it before that), this instance's
 class, type, vCPUs and memory (/etc/build-runner/instance.json), and from cgroup v2:
   - the runner service's memory peak and CPU time (the job's processes)
   - system.slice's memory peak and CPU time (everything on the box, containers included)
@@ -30,7 +31,8 @@ INSTANCE = Path("/etc/build-runner/instance.json")
 PREWARM = Path("/run/build-runner-prewarm.json")  # prewarm.py's result (root's)
 LOG_GROUP = "/build/runner/jobs"
 # job-info.json is written by the job user, so only these fields, as short strings, are kept.
-JOB_FIELDS = ("repository", "workflow", "job", "run_id", "run_attempt", "event", "started", "ended")
+JOB_FIELDS = ("repository", "workflow", "job", "run_id", "run_attempt", "event", "ready", "started", "ended")
+JOB_STARTED = JOB_INFO.with_name("job-started")  # the job-started hook's note of the job's real start
 
 
 # ---------------------------------------------------------------------------- reading (pure-ish)
@@ -114,8 +116,18 @@ def prewarm_fields(raw: str, job: dict) -> dict:
 
 
 def wall_seconds(job: dict) -> float | None:
+    """The job's own time: from the job-started hook's note, not from when the runner came up."""
     try:
         return max(0.0, float(job["ended"]) - float(job["started"]))
+    except (KeyError, ValueError):
+        return None
+
+
+def idle_seconds(job: dict) -> float | None:
+    """How long the runner sat ready before its job started (another job may have taken the runner
+    launched for it). Paid for, but not the job's time."""
+    try:
+        return max(0.0, float(job["started"]) - float(job["ready"]))
     except (KeyError, ValueError):
         return None
 
@@ -126,14 +138,22 @@ def collect() -> dict:
     except ValueError:
         instance = {}
     job = clean_job(read(JOB_INFO))
-    if not job.get("started"):  # start-jit.sh touches it just before the runner starts
+    if not job.get("ready"):  # start-jit.sh touches it just before the runner starts
         try:
-            job["started"] = str(int(JOB_INFO.with_name("job").stat().st_mtime))
+            job["ready"] = str(int(JOB_INFO.with_name("job").stat().st_mtime))
         except OSError:
             pass
+    if not job.get("started"):  # the completed hook didn't run (e.g. cancelled): the started hook's note
+        note = read(JOB_STARTED).strip()
+        job["started"] = note if note.isdigit() else job.get("ready", "")
+        if not job["started"]:
+            del job["started"]
     if "ended" not in job:
         job["ended"] = str(int(time.time()))  # the hook didn't run (e.g. the job was cancelled)
     rec = record(cgroup_stats(SERVICE), cgroup_stats(SYSTEM), instance, job, wall_seconds(job))
+    idle = idle_seconds(job)
+    if idle is not None:
+        rec["idle_s"] = round(idle, 1)
     return {**rec, **prewarm_fields(read(PREWARM), job)}
 
 
