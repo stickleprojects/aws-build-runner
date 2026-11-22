@@ -17,15 +17,15 @@ say it's needed.
 
 | Item | Owner | Status | Notes |
 | --- | --- | --- | --- |
-| Draft the plan, price every option | aws-build-machine | In progress | All answers in; waiting on Kieron's decisions |
+| Draft the plan, price every option | aws-build-machine | Done | Accepted 21 Nov as ADR-0001, aws-build-runner PR #64 (merged 22 Nov) |
 | Answers: per-target times, what needs Godot, gdUnit cores, effort | spellbound3d | Done | Received 21 Nov |
 | Answers: staged checks, counter-proposal, constraints | claude-sdlc | Done | Received 21 Nov |
 | Usage data: job counts, CPU and memory profile | aws-build-machine | Done | 19–20 Nov, and 55 heavy make checks |
-| Decisions: the questions for Kieron below | Kieron | In progress | Accepted 21 Nov as ADR-0001 |
+| Decisions: the questions for Kieron below | Kieron | Done | |
 | Change 0048, check tiers (check-pr, FULL on main, 3-hourly full check, release gate) | spellbound3d | Done | [PR #234](https://github.com/stickleprojects/spellbound3d/pull/234) merged 21 Nov; check-pr took 3 min 11 s on the laptop, with every coverage module running |
-| Measure check-pr on AWS, and one Godot process's peak memory | aws-build-machine | Waiting | Now #234 has merged: 10 pr-tier dispatches of "Periodic full check" (AC10); spellbound3d sends the job ids |
-| Trial m7i.large for the heavy pool | aws-build-machine | Not started | A pools.json change; spellbound3d owns its machine definitions |
-| Staged check feature (with #190 and #225) | claude-sdlc | Not started | Only if Kieron picks stage B |
+| Measure check-pr on AWS, and one Godot process's peak memory | aws-build-machine | Done | AC10, 22 Nov: 10 of 10 passed on c7i.xlarge. check-pr step median 210.5 s (202–224 s), whole job 235.5 s; job memory peak 3.8 GB (49% of the machine); about 1.65 busy vCPUs of 4 |
+| Trial m7i.large for the heavy pool | aws-build-machine | In progress | Live 22 Nov 12:10 Sydney ([spellbound3d #241](https://github.com/stickleprojects/spellbound3d/pull/241)). First 6 jobs: PR check about 223 s (+6%, inside the 253 s rollback line); FULL=1 main push about 760 s against 478 s on c7i.xlarge (+59%), accepted by Kieron on 22 Nov: m7i.large stays for both, rollback line unchanged; memory about 2.4 GB job peak, fine |
+| Staged check feature (with #190 and #225) | claude-sdlc | Not started | Deferred by ADR-0001 (option B) until a trigger fires |
 | SDLC_STACK_NEEDS, so light jobs skip Godot (PR #250) | claude-sdlc | Done | Merged 21 Nov |
 
 ## Today
@@ -302,6 +302,9 @@ Risks:
 
 | Date | Change |
 | --- | --- |
+| 22 Nov 2026 | Kieron keeps m7i.large for PR checks and FULL=1 main pushes, accepting +59% on FULL=1; pools.json and the rollback line unchanged |
+| 22 Nov 2026 | m7i.large trial live (spellbound3d #241, 12:10 Sydney); first 6 jobs: PR check +6%, FULL=1 main push +59%, memory fine. ADR-0001 merged (PR #64) |
+| 22 Nov 2026 | AC10 done: check-pr on c7i.xlarge median 210.5 s, job memory peak 3.8 GB; the runner hook now allows the App's scheduled runs (aws-build-runner #65); usage records time the job, not the runner (#66) |
 | 21 Nov 2026 | ADR-0001 accepted by Kieron |
 | 21 Nov 2026 | Kieron agreed the goal (the lowest cost, light on the laptop) and ADR-0001's triggers; the paperwork PR was spellbound3d #221, so the pr-title wording is the cause |
 | 21 Nov 2026 | Moved to adr/support/ as ADR-0001's research; the decision is condensed into ADR-0001 (Proposed); #234 and #250 merged |
