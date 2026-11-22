@@ -83,6 +83,46 @@ with tempfile.TemporaryDirectory() as d:
     r = subprocess.run(["bash", "-c", hook.replace(d, "/nonexistent/forbidden")], env=env, capture_output=True, text=True)
     check("hook: never fails the job, even if it can't write", r.returncode == 0, r.stderr)
 
+# A runner that sat ready before its job came (2026-11-22: another job took the runner launched for it).
+with tempfile.TemporaryDirectory() as d:
+    hook = (HERE / "files" / "job-completed.sh").read_text().replace("/run/build-runner", d)
+    Path(d, "job").touch()
+    ready = int(Path(d, "job").stat().st_mtime) - 240
+    os.utime(Path(d, "job"), (ready, ready))
+    Path(d, "job-started").write_text(f"{ready + 240}\n")
+    r = subprocess.run(["bash", "-c", hook], env=env, capture_output=True, text=True)
+    info = ju.clean_job(Path(d, "job-info.json").read_text())
+    check("hook: the wall time starts at the job's real start, not the runner's",
+          ju.wall_seconds(info) is not None and ju.wall_seconds(info) < 60, str(info))
+    check("hook: the idle wait before the job is kept apart", 230 <= (ju.idle_seconds(info) or 0) <= 250, str(info))
+    Path(d, "job-started").write_text("junk")
+    subprocess.run(["bash", "-c", hook], env=env, capture_output=True, text=True)
+    info = ju.clean_job(Path(d, "job-info.json").read_text())
+    check("hook: a junk start note falls back to the runner's start", info.get("started") == str(ready), str(info))
+
+# The job-started hook writes that note only for a job it allows.
+with tempfile.TemporaryDirectory() as d:
+    t = Path(d)
+    (t / "actors.txt").write_text("stickleprojects\n")
+    (t / "repos.txt").write_text("stickleprojects/spellbound3d\n")
+    (t / "event.json").write_text("{}")
+    base = {"PATH": "/usr/bin:/bin", "RUNNER_HOOK_ACTORS_FILE": str(t / "actors.txt"),
+            "RUNNER_HOOK_REPOS_FILE": str(t / "repos.txt"), "RUNNER_HOOK_STATE_DIR": d,
+            "GITHUB_REPOSITORY": "stickleprojects/spellbound3d", "GITHUB_EVENT_NAME": "push",
+            "GITHUB_EVENT_PATH": str(t / "event.json")}
+    started_hook = str(HERE / "files" / "job-started.sh")
+    r = subprocess.run(["bash", started_hook], env={**base, "GITHUB_ACTOR": "someone-else"}, capture_output=True, text=True)
+    check("started hook: a refused job leaves no start note", r.returncode != 0 and not (t / "job-started").exists())
+    r = subprocess.run(["bash", started_hook], env={**base, "GITHUB_ACTOR": "stickleprojects"}, capture_output=True, text=True)
+    note = (t / "job-started").read_text().strip() if (t / "job-started").exists() else ""
+    check("started hook: an allowed job notes its start time", r.returncode == 0 and note.isdigit(), r.stderr + note)
+    r = subprocess.run(["bash", started_hook], env={**base, "GITHUB_ACTOR": "stickleprojects",
+                                                    "RUNNER_HOOK_STATE_DIR": "/nonexistent/forbidden"},
+                       capture_output=True, text=True)
+    check("started hook: can't write the note, still allows the job", r.returncode == 0, r.stderr)
+
+check("idle time unknown without the runner's start", ju.idle_seconds({"started": "5"}) is None)
+
 service = (HERE / "files" / "github-runner-jit.service").read_text()
 usage_at = service.find("job-usage.py")
 check("service: the record is sent before the power-off",
