@@ -17,6 +17,8 @@ set -uo pipefail
 # runner-guard.sh and installed root-owned by runner-root.sh.
 ACTORS_FILE="${RUNNER_HOOK_ACTORS_FILE:-/etc/github-runner/allowed-actors.txt}"
 REPOS_FILE="${RUNNER_HOOK_REPOS_FILE:-/etc/github-runner/allowed-repos.txt}"
+# Where an allowed job's real start time is noted, for the usage record (job-completed.sh, job-usage.py).
+STATE_DIR="${RUNNER_HOOK_STATE_DIR:-/run/build-runner}"
 
 deny() {
 	echo "::error::Runner hook refused this job: $*"
@@ -103,6 +105,11 @@ if [ -n "$ws" ] && git -C "$ws" rev-parse --git-dir >/dev/null 2>&1; then
 		xargs -r -n1 git -C "$ws" update-ref -d ||
 		deny "could not drop stale pull-request refs in $ws"
 fi
+
+# The job's real start, for its usage record. The runner can sit idle before GitHub hands it a job (another
+# job with the same label took the runner launched for it: 4 runners, about 4 min each, 2026-11-22), so
+# the runner's own start isn't the job's. Never refuses the job if it can't be written.
+date +%s > "$STATE_DIR/job-started" 2>/dev/null || true
 
 echo "Runner hook: allowed $event by $actor ($triggering) on $repo"
 exit 0
