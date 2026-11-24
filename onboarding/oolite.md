@@ -30,15 +30,16 @@ Durations are from one cold run on 2026-11-18, all GitHub-hosted (M); about 8 mi
 | build-flatpak | privileged container | skipped, unknown | No: privileged |
 | build-windows | Windows | 7m41s | No: not offered |
 | build-macos | macOS | 3m32s | No: not offered |
-| ui-tests, 5 jobs (disabled by hand at present) | Docker desktop images, software-rendered | 6m40s–19m30s, in failing runs; passing time unknown | No: Docker. Best candidate if that changed |
+| ui-tests, 5 jobs (disabled by hand at present) | Docker desktop images, software-rendered | 6m30s–19m30s (M), in 2 failing runs with 3 jobs each (arch, debian, wayland); fedora, ubuntu and passing times unknown | No: Docker. Best candidate if that changed |
 | framework-tests | sudo apt | 2m08s | No: sudo |
 
-- **Volume:** bursty. 100 runs from 29 October to 18 November (M): 2 to 32 on active days, none for days between. Busiest hour unknown.
+- **Volume:** bursty. the latest 100 run entries, 29 October to 18 November, include skipped and failed runs, so they aren't 100 completed builds (M): 2 to 32 on active days, none for days between. Busiest hour unknown.
 - **Curfew:** probably fine (G). Urgency low (G).
 - **Needs network:** distro mirrors and GitHub (D). **Secrets:** only `GITHUB_TOKEN` (D).
 - **Trust:** a public repo whose fork pull requests can run CI, so outside code must be shut out first (see the [security gate](README.md#security-gate)).
-- **Caches:** one Actions cache, 7.5 MB (M). Artifact sizes unknown.
+- **Caches:** one Actions cache, 7.5 MB (M). The AppImage is 266 MiB (M, a local deployment build); other artifact sizes unknown.
 - **Unknown:** peak memory, CPU scaling, disk per job, incremental build time. The Wayland test image is about 4 GB (D); 30 GiB may be tight for all of them (G).
+- **Laptop, for reference:** the AppImage build in a cold Arch container took 11m33s on 2026-11-25 with other containers running, and about 4 minutes on 2026-11-18 (M). Not comparable with CI.
 - **What AWS could add:** nothing GitHub-hosted runners can't do, except a GPU or real desktop, which we don't offer.
 
 ## Image
@@ -64,14 +65,15 @@ Per instance-hour, including the public IPv4 address (US$0.005) and the 30 GiB r
 | 4 vCPU (c7i.xlarge) | ≈ US$0.10–0.11 | ≈ US$0.24 |
 
 If Docker were allowed, what oolite's jobs would cost on 4 vCPU. **Upper-end estimates:** hosted times carry over, one minute
-of boot per job, one machine per job.
+of boot per job, one machine per job. "5 jobs at 19m30s" is the workflow's 5 jobs at the slowest time seen, not a measurement.
+Run counts are entries in our listing of the latest 100, skipped and failed included, so the totals overstate real use.
 
-| Work | Machine time per run | Spot | On demand | Runs, 29 Oct–18 Nov | Those runs, spot / on demand |
+| Work | Machine time per run | Spot | On demand | Run entries, 29 Oct–18 Nov | All entries, spot / on demand |
 |---|---|---|---|---|---|
 | UI tests (5 jobs at 19m30s) | ≈ 1.7 h | ≈ US$0.19 | ≈ US$0.41 | 26 | ≈ US$5 / US$11 |
 | Linux jobs (pages, AppImage, Ubuntu, Fedora, format) | ≈ 0.34 h | ≈ US$0.04 | ≈ US$0.08 | 41 | ≈ US$1.50 / US$3.40 |
 
-Flatpak isn't included: its time is unknown. Those runs are about three weeks, and the UI tests are off now, so the current cost would be lower.
+Flatpak isn't included: its time is unknown. The entries span about three weeks, and the UI tests are off now, so the current cost would be lower.
 
 **Headroom under the US$29 stop:** about US$12 at November's recent rate (≈ US$17 a month, 19–23 November), but only
 about US$4 in the busiest month modelled (US$24–25). Credits hide usage from the stop while they last.
