@@ -1,12 +1,12 @@
 # Oolite: onboarding assessment (pilot)
 
-Status: **draft, 2026-11-25.** Facts are from the oolite session's survey (2026-11-25), which Kieron hasn't reviewed. Nothing
-is decided or built. Prices are US$ estimates for Sydney, from [PRICING.md](../PRICING.md). **M** = measured, **D** = documented,
+Status: **decided, 2026-11-25: not now (Kieron).** Facts are from the oolite session's survey (2026-11-25), checked by that
+session. Nothing is built. Prices are US$ estimates for Sydney, from [PRICING.md](../PRICING.md). **M** = measured, **D** = documented,
 **G** = guess, as oolite marked them.
 
 ## Summary
 
-- **Recommendation: not now (option D).** No job fits well: nearly all need root, Docker or a privileged container, which
+- **Decision: not now (option D).** No job fits well: nearly all need root, Docker or a privileged container, which
   our runners don't give, or Windows or macOS. The one that plausibly fits is a 20-second format check. Oolite's own view is
   that none is worth moving.
 - **Revisit if** Kieron wants Docker-capable runners for other projects too, or the UI tests come back into use and become
@@ -93,10 +93,9 @@ reason other than price.
 
 Effort isn't estimated, as the recommendation is not to proceed.
 
-## Decisions for Kieron
+## Decision
 
-1. Accept "not now"? If not, is Docker on the runners worth a separate design and security review?
-2. Keep the onboarding process for the next project, with the lessons below?
+Kieron accepted "not now" on 2026-11-25. Docker on the runners isn't being designed. The triggers to revisit are in the summary.
 
 ## What the pilot taught
 
