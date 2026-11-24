@@ -82,6 +82,51 @@ hours; a typical month should be well under. If months really run that hot, the 
 
 On-demand fallback (when spot is short) costs about 2.5× spot for those hours.
 
+### Web pool (`aws-spellbound3d-web`), checked 2026-11-24
+
+For spellbound3d's "Web release" and "Web browser tests". Spot order: m7i.xlarge, c6i.xlarge, c7i.xlarge;
+on-demand fallback c7i.xlarge. No always-on cost beyond the shared image. Sydney prices:
+
+| Type (4 vCPU) | Spot, range over the 3 zones | On demand |
+|---|---|---|
+| m7i.xlarge (16 GiB) | US$0.098–0.109/h | US$0.252/h |
+| c6i.xlarge (8 GiB) | US$0.103–0.112/h | US$0.222/h |
+| c7i.xlarge (8 GiB) | US$0.089–0.099/h | US$0.2331/h |
+
+Add US$0.005/h for the public IPv4 address and ≈ US$0.004/h for the 30 GiB root volume. Per-run figures
+allow ≈ 1 minute of boot and shutdown; they are estimates from measured times, not billed amounts.
+
+| Job | Measured (2026-11-24) | Spot, each | On-demand c7i.xlarge, each | 20 a month, spot | 20 a month, on demand |
+|---|---|---|---|---|---|
+| Web release (v0.1.0) | 384 s on m7i.xlarge | ≈ US$0.013 | ≈ US$0.030 | ≈ US$0.26 | ≈ US$0.60 |
+| Web browser tests | 595 s on c7i.xlarge | ≈ US$0.02 | ≈ US$0.044 | ≈ US$0.40 | ≈ US$0.88 |
+| **Total** | | | | **≈ US$0.66** | **≈ US$1.48** |
+
+- One run of each, so treat them as rough. The browser suite hasn't been timed on m7i.xlarge, and the
+  on-demand figures assume the same times as measured.
+- Reclaimed attempts are extra: 1 of the pool's first 5 launches was reclaimed (c7i.xlarge, before the
+  current order). Even paying for every job twice would be ≈ US$1.32 a month.
+- The browser libraries' effect on image size, and so on snapshot cost, hasn't been measured.
+
+### Actual spend, 1–24 November 2026
+
+From Cost Explorer on 2026-11-24, whole account, estimated (billing lags by about a day, so the web pool's
+runs are mostly not in it):
+
+| Service | Usage |
+|---|---|
+| EC2 instances | US$2.46 |
+| EC2 other (volumes, snapshots, regional data transfer) | US$0.55 |
+| CloudWatch (fast-stop alarms) | US$0.20 |
+| Public IPv4 | US$0.17 |
+| Cost Explorer (requests by hand, US$0.01 each) | US$0.15 |
+| **Total usage** | **US$3.53** |
+| Credits | −US$3.53 |
+| **Net** | **US$0.00** |
+
+The daily average for 19–23 November was US$0.57 (≈ US$17 over 30 such days). **The US$29 budget counts spend
+after credits, so it read US$0.00**: while credits cover the usage, the budget stop can't fire.
+
 ### GitHub's self-hosted runner fee (A, B and D)
 
 GitHub announced a US$0.002/min platform charge for self-hosted runners in private repos from
