@@ -107,6 +107,29 @@ check "claude global"           "as_job 'claude --version'"
 check "uv runs python"          "as_job 'uv run --no-project python3 -c \"print(42)\"' | grep -x 42"
 check "python venv"             "as_job 'python3 -m venv /tmp/v && /tmp/v/bin/python -c \"import sys; print(sys.version.split()[0])\"'"
 check "git commit"              "as_job 'rm -rf /tmp/g && git init -q /tmp/g && git -C /tmp/g -c user.name=x -c user.email=x@x commit -q --allow-empty -m x && git -C /tmp/g log --oneline | wc -l'"
+# The web browsers start and draw, as jobs run them (spellbound3d change 0030): downloaded here, only their
+# libraries are in the image. Firefox has no WebGL 2 without a display, even headless (2026-11-24), so xvfb.
+cat > /tmp/browsers.py <<'PY'
+import sys
+from playwright.sync_api import sync_playwright
+ARGS = ["--use-gl=angle", "--use-angle=swiftshader", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist"]
+JS = "() => { const g = document.createElement('canvas').getContext('webgl2'); return g ? g.getParameter(g.VERSION) : null }"
+with sync_playwright() as p:
+    name = sys.argv[1]
+    b = getattr(p, name).launch(**({"args": ARGS} if name == "chromium" else {}))
+    gl = b.new_page().evaluate(JS)
+    print(name, b.version, gl)
+    b.close()
+    sys.exit(0 if gl else 1)
+PY
+chmod 644 /tmp/browsers.py
+WEB="$(jq -r '.web.libraries_for | join(" ")' $M)"
+check "web browsers listed"     "test -n \"$WEB\" && test \"$WEB\" != null && echo $WEB"
+check "web browsers downloaded" "as_job 'python3 -m venv /tmp/pw && /tmp/pw/bin/pip install -q playwright==$(jq -r .web.playwright $M) && PLAYWRIGHT_BROWSERS_PATH=/tmp/pwb /tmp/pw/bin/playwright install $WEB'"
+for b in $WEB; do
+  run=""; [ "$b" = firefox ] && run="xvfb-run -a"
+  check "$b starts, WebGL 2"    "as_job 'PLAYWRIGHT_BROWSERS_PATH=/tmp/pwb $run /tmp/pw/bin/python /tmp/browsers.py $b'"
+done
 check "gitleaks"                "as_job 'gitleaks version'"
 check "jq"                      "as_job 'echo {\\\"a\\\":1} | jq -e .a'"
 check "runner version"          "as_job 'cd $R && ./config.sh --version'"

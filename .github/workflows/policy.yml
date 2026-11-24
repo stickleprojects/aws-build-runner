@@ -146,6 +146,9 @@ jobs:
       - name: Machine requirements reader tests (offline)
         run: python3 -I part2-runner/ami/test_machine_requirements.py
 
+      - name: The bake's reader of the web browsers' libraries
+        run: python3 -I part2-runner/ami/test_web_deps.py
+
       - name: shellcheck the scripts
         run: |
           # -P SCRIPTDIR: resolve "source lib.sh" next to each script, not from the repo root.
