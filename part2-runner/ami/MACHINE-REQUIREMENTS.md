@@ -41,6 +41,7 @@ setup-stack's `UV_VERSION`, `uv.lock`). The image's copies of those are caches.
 | `tool` | `<name> <minimum> <install>` | A command on the job's `PATH`, run as ghrunner. |
 | `range` | `<tool> <range> <source>` | Versions of that tool that work, and what requires them. |
 | `module` | `<python3 module> distro:<apt package>` | A module that must import with the system `python3`. |
+| `driver` | `<lavapipe or llvmpipe> distro:<apt package>` | A software graphics driver the render tests need. Added 2026-11-25. |
 | `sha256` | `<tool> <file> <hash>` | The official release file for that tool's exact version. |
 
 **`tool`:**
@@ -59,6 +60,13 @@ setup-stack's `UV_VERSION`, `uv.lock`). The image's copies of those are caches.
 - The prereqs check needs the version it finds to be inside the range, and the `exact:` version must be inside it too.
 - It exists because a minimum alone isn't enough. Node 23.x and 24.0–24.10 pass "≥ 22.13" but crash renovate 42.
 - **For the bake, it installs nothing.** setup.sh checks that the `exact:` version is inside the range, and fails the bake if not.
+
+**`driver`:** (spellbound3d's change 0069)
+- `name` is `lavapipe` (Vulkan) or `llvmpipe` (OpenGL). Any other name fails the bake.
+- One package a line. A name may repeat, for a driver that needs more than one package.
+- The bake installs the packages, with `--no-install-recommends`. spellbound3d's prereqs check starts each driver and names the one that fails.
+- The display is a `tool`: `tool Xvfb - distro:xvfb`.
+- Checked in a plain `ubuntu:24.04` container on 2026-11-25: with `xvfb`, `mesa-vulkan-drivers` and `libgl1-mesa-dri` installed, the loaders (`libvulkan1`, `libgl1`) came as dependencies. Under Xvfb, `vulkaninfo` and `glxinfo` both reported llvmpipe's renderer (lavapipe is Mesa's Vulkan driver on it). Godot wasn't run. `/usr` grew by 329 MB there, less on the image if its browser libraries already include some.
 
 **`sha256`:**
 - `file` is the release file name exactly, e.g. `node-v22.23.5-linux-x64.tar.xz`.
