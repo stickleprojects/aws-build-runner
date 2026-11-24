@@ -256,6 +256,31 @@ gdUnit is the bulk of the check and is single-threaded, so it decides the machin
 
 The 3-hourly full check adds about US$2–3 a month on heavy (5 runs a day of about 10 minutes).
 
+## Parked: batched checks on branch pushes (Kieron, 22 Nov)
+
+Kieron asked whether every branch commit could run some tests in parallel on AWS, batched, so a PR waits less. The
+answer is yes, but he **kept the ADR-0001 plan** and parked the idea. Bring it back at a checkpoint if PR waits become the
+problem (the ADR's `check-pr` and PR-complete triggers).
+
+How it would work (a claude-sdlc feature, since spellbound3d's workflows are synced):
+
+1. `on: push` for every branch except `main`.
+2. Batching: `concurrency: { group: branch-check-${{ github.ref }}, cancel-in-progress: true }`, so only the newest commit runs.
+3. Debounce: a `sleep 180` job on the laptop (free while it sleeps), and the heavy AWS job `needs:` it. A push within
+   3 minutes cancels the wait before any AWS machine boots.
+4. Optional: matrix shards, or `check-pr` plus a rotating slice of the FULL-only tests.
+
+The catch: without reuse, the PR still re-runs `check-pr`, so feedback comes earlier but the PR wait is unchanged. To cut
+the PR wait, the branch run records a pass keyed on the tree hash and the PR's `check` reuses it. That's option B's
+Godot-pass reuse: an S3 record from a trusted job and a new OIDC role, so a policy change.
+
+| Option | Gives | Extra cost (m7i.large spot, about US$0.005–0.006 a `check-pr` run) | Effort |
+| --- | --- | --- | --- |
+| A. Batched branch checks, no reuse | failures minutes after a push | about US$2–4 a month (10–25 runs a day) | S, claude-sdlc |
+| B. A plus reuse by tree hash | instant PR `check` when the code is unchanged | about US$1–3 a month net | 1–2 days plus the policy change |
+| C. B plus shards or rotating FULL-only tests | faster, and deferred tests run between releases | about US$3–6 a month | B plus about 1 day; memory and the 4-runner limit |
+| D. Draft PRs opened early | no build work | US$0 | doesn't help: each push would trigger a Claude review on the laptop |
+
 ## Open questions
 
 For Kieron:
@@ -302,6 +327,7 @@ Risks:
 
 | Date | Change |
 | --- | --- |
+| 22 Nov 2026 | Parked: batched checks on branch pushes, with options and prices; Kieron keeps the ADR-0001 plan |
 | 22 Nov 2026 | Kieron keeps m7i.large for PR checks and FULL=1 main pushes, accepting +59% on FULL=1; pools.json and the rollback line unchanged |
 | 22 Nov 2026 | m7i.large trial live (spellbound3d #241, 12:10 Sydney); first 6 jobs: PR check +6%, FULL=1 main push +59%, memory fine. ADR-0001 merged (PR #64) |
 | 22 Nov 2026 | AC10 done: check-pr on c7i.xlarge median 210.5 s, job memory peak 3.8 GB; the runner hook now allows the App's scheduled runs (aws-build-runner #65); usage records time the job, not the runner (#66) |
