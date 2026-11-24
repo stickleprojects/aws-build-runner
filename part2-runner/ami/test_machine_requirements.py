@@ -74,6 +74,21 @@ check("a bad apt package name fails", bad(GOOD + "tool x - distro:Bad;rm\n") is 
 check("with: a tool that isn't listed fails", bad(GOOD + "tool npm - with:nothing\n") is not None)
 check("a 0.x caret range is refused, not guessed", bad(GOOD.replace("^22.13.0||^24.11.0", "^0.1.0")) is not None)
 
+withdrv = GOOD + """tool Xvfb - distro:xvfb
+driver lavapipe distro:mesa-vulkan-drivers
+driver llvmpipe distro:libgl1-mesa-dri
+driver lavapipe distro:libvulkan1
+"""
+check("driver lines: packages follow the others, and a name may repeat", mr.parse(withdrv)["APT_PACKAGES"] ==
+      "python3 git make curl unzip xvfb python3-venv mesa-vulkan-drivers libgl1-mesa-dri libvulkan1",
+      mr.parse(withdrv)["APT_PACKAGES"])
+check("a driver package listed twice is installed once",
+      mr.parse(withdrv + "driver llvmpipe distro:libvulkan1\n")["APT_PACKAGES"].split().count("libvulkan1") == 1)
+for what, line in {"an unknown driver": "driver nvidia distro:nvidia-driver", "a driver pin": "driver lavapipe exact:25.2",
+                   "a driver with no package": "driver lavapipe", "a driver with two packages": "driver lavapipe distro:a1 distro:b1",
+                   "a bad driver package name": "driver lavapipe distro:Bad;rm"}.items():
+    check(f"{what} fails", bad(GOOD + line + "\n") is not None)
+
 GH = "4c806978ffce1cec70853302a56d70ac6da4f19bae7adca4e1a8ab00633dd91d"
 withgh = GOOD + f"tool gh 2.46 exact:2.103.3\nsha256 gh gh_2.103.3_linux_amd64.tar.gz {GH}\n"
 o = mr.parse(withgh)
