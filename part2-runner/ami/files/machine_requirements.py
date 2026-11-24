@@ -2,7 +2,7 @@
 """Read spellbound3d's tools/runner-smoke/machine-requirements.txt for the bake (format: ../MACHINE-REQUIREMENTS.md).
 
     machine_requirements.py FILE     print what setup.sh installs, as shell assignments it can eval:
-                                       APT_PACKAGES='python3 git ...'   every distro: package
+                                       APT_PACKAGES='python3 git ...'   every distro: package, of tool, module and driver lines
                                        NODE_VERSION=22.23.5 NODE_FILE=node-v22.23.5-linux-x64.tar.xz NODE_SHA256=...
                                        GH_VERSION=2.103.3 GH_FILE=gh_2.103.3_linux_amd64.tar.gz GH_SHA256=...
                                          (the GH_ lines only when the file pins gh; node is required)
@@ -22,6 +22,9 @@ HASH = re.compile(r"[0-9a-f]{64}")
 # The exact: tools the bake knows how to install: each one's official release file name (node agreed 2026-11-18;
 # gh added 2026-11-18 because claude-sdlc's scripts need it and Ubuntu 24.04's is 2.45). A new one is a bake change first.
 EXACT_TOOLS = {"node": "node-v{v}-linux-x64.tar.xz", "gh": "gh_{v}_linux_amd64.tar.gz"}
+
+# The software graphics drivers a driver line may name (spellbound3d 0069, agreed 2026-11-25). A new one is a bake change first.
+DRIVERS = ("lavapipe", "llvmpipe")
 
 
 class Bad(Exception):
@@ -51,7 +54,7 @@ def in_range(v: str, spec: str) -> bool:
 
 
 def parse(text: str) -> dict:
-    tools, modules, hashes, ranges = {}, [], {}, {}
+    tools, modules, drivers, hashes, ranges = {}, [], [], {}, {}
     for n, raw in enumerate(text.splitlines(), 1):
         f = raw.split("#", 1)[0].split()
         if not f:
@@ -75,6 +78,13 @@ def parse(text: str) -> dict:
             if how != "distro" or not PACKAGE.fullmatch(pkg):
                 raise Bad(f"{where}: module needs distro:<apt package>, not {args[1]!r}")
             modules.append(pkg)
+        elif kind == "driver" and len(args) == 2:
+            how, _, pkg = args[1].partition(":")
+            if args[0] not in DRIVERS:
+                raise Bad(f"{where}: driver {args[0]!r} isn't one of {', '.join(DRIVERS)}")
+            if how != "distro" or not PACKAGE.fullmatch(pkg):
+                raise Bad(f"{where}: driver needs distro:<apt package>, not {args[1]!r}")
+            drivers.append(pkg)
         elif kind == "sha256" and len(args) == 3:
             if not HASH.fullmatch(args[2]):
                 raise Bad(f"{where}: {args[2]!r} isn't 64 lowercase hex digits")
@@ -99,7 +109,7 @@ def parse(text: str) -> dict:
         want = EXACT_TOOLS[name].format(v=v)
         if hashes.get(name, ("",))[0] != want:
             raise Bad(f"{name} needs 'sha256 {name} {want} <hash>'")
-    packages = [t["what"] for t in tools.values() if t["how"] == "distro"] + modules
+    packages = [t["what"] for t in tools.values() if t["how"] == "distro"] + modules + drivers
     out = {"APT_PACKAGES": " ".join(dict.fromkeys(packages))}
     for name in EXACT_TOOLS:
         t = tools.get(name)

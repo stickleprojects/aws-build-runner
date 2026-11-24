@@ -21,7 +21,8 @@ for path, old, new, expect in CASES:
     assert original.count(old) >= 1, (path, old)
     f.write_text(original.replace(old, new, 1))
     try:
-        out = subprocess.run(["python3", "-I", "part1-godmode/tests/regressions.py"], capture_output=True, text=True).stdout
+        out = subprocess.run(["python3", "-I", "part1-godmode/tests/regressions.py", "cost_boundary_holds"],
+                             capture_output=True, text=True).stdout
     finally:
         f.write_text(original)
     caught = "FAIL cost_boundary_holds" in out and expect in out
