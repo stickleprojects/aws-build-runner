@@ -947,9 +947,47 @@ def job_usage_times_the_job_not_the_runner(files=P2 / "ami" / "files"):
                                  "not from its own start"]
 
 
+TIME_SHIFT = """import runpy, sys, time
+from datetime import datetime
+from zoneinfo import ZoneInfo
+hour, path = int(sys.argv[1]), sys.argv[2]
+real = time.time
+offset = datetime.now(ZoneInfo("Australia/Sydney")).replace(hour=hour, minute=30).timestamp() - real()
+time.time = lambda: real() + offset
+sys.argv = [path]
+runpy.run_path(path, run_name="__main__")
+"""
+
+
+@rule("2026-11-22: PR #68's policy check failed at 23:27 Sydney, on a docs-only change: test_lambda.py's #47 tests "
+      "ran on the real clock, so the runner curfew stopped their launches (found 2026-11-25). Every offline test "
+      "must pass at any hour.")
+def offline_tests_pass_inside_and_outside_the_curfew(tests=None):
+    if tests is None:
+        # test_cost_boundary.py runs these rules and edits files as it goes, so it isn't run from here.
+        tests = [t for t in sorted((P1 / "tests").glob("test_*.py")) + sorted(P2.rglob("test_*.py"))
+                 if t.name != "test_cost_boundary.py"]
+    problems = []
+    for path in tests:
+        for hour in (3, 15, 23):  # the early hours, the open day, the late evening
+            r = subprocess.run([sys.executable, "-I", "-c", TIME_SHIFT, str(hour), str(path)],
+                               capture_output=True, text=True, cwd=ROOT)
+            if r.returncode != 0:
+                out = (r.stdout + r.stderr).strip().splitlines()
+                why = next((x for x in out if x.startswith("FAIL")), out[-1] if out else "no output")
+                problems.append(f"{path.name} at {hour}:30 Sydney: {why[:140]}")
+    return problems
+
+
 def main():
+    wanted = sys.argv[1:]  # rule names; none = all
+    unknown = set(wanted) - {name for name, _, _ in RULES}
+    if unknown:
+        print(f"unknown rules: {', '.join(sorted(unknown))}")
+        return 1
+    rules = [r for r in RULES if not wanted or r[0] in wanted]
     failed = 0
-    for name, incident, fn in RULES:
+    for name, incident, fn in rules:
         problems = fn()
         print(f"{'ok  ' if not problems else 'FAIL'} {name}")
         for p in problems:
@@ -957,7 +995,7 @@ def main():
         if problems:
             print(f"       why: {incident}")
             failed += 1
-    print(f"\n{len(RULES)} regression rules, {failed} failed")
+    print(f"\n{len(rules)} regression rules, {failed} failed")
     return 1 if failed else 0
 
 

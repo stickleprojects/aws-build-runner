@@ -23,7 +23,7 @@ failed = 0
 
 def check(name: str, ok: bool, detail: str = "") -> None:
     global failed
-    print(f"{'ok  ' if ok else 'FAIL'}  {name}{'' if ok else ': ' + detail}")
+    print(f"{'ok  ' if ok else 'FAIL'}  {name}{'' if ok else f': {detail}'}")
     failed += 0 if ok else 1
 
 
@@ -360,10 +360,11 @@ runner.launcher({"source": "schedule"}, None)
 # i-new1 was launched by the afternoon run above and EC2 doesn't list it yet (#47): /stop must catch it too.
 check("curfew: /stop in the afternoon terminates (even a just-launched one) and launches nothing",
       calls["terminated"] == ["i-1", "i-new1"] and calls["launched"] == [], str(calls))
-runner.time.time = real_time
+runner.time.time = lambda: at_sydney(15)  # outside the curfew, whatever the real hour (#47's tests launch)
 
 # --- #47 (2026-11-18): DescribeInstances lags RunInstances, so a second run must still see the first's launch
 params.pop(runner.LAUNCHES, None)
+params.pop(curfew_mod.PARAMETER, None)  # the /stop above
 H = "aws-heavy"
 runner.GitHub = lambda token: type("G", (), {"paged": lambda self, *a: []})()  # no registrations listed yet
 runner.queued_jobs = lambda gh: [{"id": 548, "pool": H, "created_at": "2026-11-18T02:12:00Z"},
@@ -385,6 +386,7 @@ check("#47: after the boot grace, a job still queued with no runner gets a new o
       sorted(calls["launched"]) == [237, 548], str(calls))
 runner.time.time = real
 
+runner.time.time = real_time
 now2 = time.time()
 rec = {"id": "i-r", "name": "aws-9-r", "job_id": "9", "pool": L, "launched": now2 - 10}
 check("#47: a recent launch EC2 doesn't list counts as live", runner.with_recent_launches([], [rec], now2) == [rec])
