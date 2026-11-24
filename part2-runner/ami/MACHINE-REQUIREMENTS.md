@@ -98,3 +98,20 @@ tool unzip - distro:unzip
 ```
 
 The `sha256` was checked against nodejs.org's `SHASUMS256.txt` for v22.23.5 by both sides on 2026-11-18.
+
+## Web browsers: `tools/web/machine-requirements.txt`
+
+A second file, owned by spellbound3d (their change 0030), for the system libraries of the browsers the web checks
+use. Agreed with spellbound3d on 2026-11-24; their README states the same format. Read by
+[files/web_deps.py](files/web_deps.py) (tests: [test_web_deps.py](test_web_deps.py)).
+
+- One record per line: `browser <name> <packages>`. `name` is `chromium`, `firefox` or `webkit`, each at most once.
+- `packages` is extra apt packages, separated by spaces, or `-` alone for none.
+- A comment is a whole line starting with `#`; there are no end-of-line comments. Blank lines are ignored.
+- **The bake fails** on an unknown kind, a malformed line, a missing file or a file with no browser line.
+
+The bake installs, for those browsers, the packages `playwright install-deps --dry-run` names, at the Playwright
+version in spellbound3d's `uv.lock`, plus the extras. Playwright runs as ghrunner and only names them; root only runs
+apt, on names checked against a strict pattern. The browsers, Playwright and the Web templates aren't baked: jobs
+install them. `smoke-test.sh` downloads each browser and needs it to start with WebGL 2 before the image becomes
+current (Firefox under `xvfb-run`: it has no WebGL 2 without a display, even headless).
