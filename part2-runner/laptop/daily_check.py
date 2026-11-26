@@ -39,6 +39,7 @@ ROOT = Path(__file__).resolve().parents[2]
 REGION = "ap-southeast-2"
 SYDNEY = ZoneInfo("Australia/Sydney")
 BUDGET = "guardrail-monthly"
+USAGE_BUDGET = "guardrail-monthly-usage"  # usage before credits: sees spending while credits cover the bill
 OUR_LAMBDAS = ["build-runner-launcher", "build-runner-webhook"]
 LOG = Path.home() / ".local" / "state" / "aws-daily-check" / "log"
 CONFIG = Path.home() / ".config" / "aws-daily-check" / "notify.env"
@@ -109,6 +110,14 @@ def pools_status() -> dict:
         return {}
 
 
+def usage_budget(acct: str) -> dict | None:
+    """The usage-before-credits budget (alerts only), or None if it isn't there yet."""
+    try:
+        return aws("budgets", "describe-budget", "--account-id", acct, "--budget-name", USAGE_BUDGET)["Budget"]
+    except (RuntimeError, KeyError):
+        return None
+
+
 def gather() -> dict:
     acct = aws("sts", "get-caller-identity")["Account"]
     d = {"budget": aws("budgets", "describe-budget", "--account-id", acct, "--budget-name", BUDGET)["Budget"],
@@ -125,7 +134,8 @@ def gather() -> dict:
          "images": aws("ec2", "describe-images", "--owners", "self").get("Images", []),
          "subscriptions": [],
          "pools_status": pools_status(),
-         "lambda_limit": aws("lambda", "get-account-settings").get("AccountLimit", {}).get("ConcurrentExecutions")}
+         "lambda_limit": aws("lambda", "get-account-settings").get("AccountLimit", {}).get("ConcurrentExecutions"),
+         "usage": usage_budget(acct)}
     for t in aws("sns", "list-topics").get("Topics", []):
         if t["TopicArn"].split(":")[-1].startswith("guardrail-"):
             d["subscriptions"] += aws("sns", "list-subscriptions-by-topic", "--topic-arn", t["TopicArn"]).get(
@@ -165,6 +175,24 @@ def evaluate(d: dict, now: dt.datetime, lim: dict) -> tuple[str, list[str], list
     updated = b.get("LastUpdatedTime")
     if updated and now - parse_time(updated) > dt.timedelta(days=2):
         alerts.append(f"Budgets hasn't updated since {updated[:16]}: its alerts and stop can't fire")
+
+    # Usage before credits (2026-11-26): while credits cover the bill, the stop's budget reads US$0, so only this
+    # one sees a slow leak. Alerts only; nothing stops on it.
+    u = d.get("usage")
+    usage = None
+    if u is None:
+        warns.append(f"budget {USAGE_BUDGET} is missing: nothing sees usage while credits cover the bill (run apply)")
+    else:
+        usage = float(u.get("CalculatedSpend", {}).get("ActualSpend", {}).get("Amount", 0))
+        ulimit = float(u["BudgetLimit"]["Amount"])
+        if usage >= ulimit:
+            alerts.append(f"usage before credits US${usage:.2f} has reached US${ulimit:g}: credits may be paying, "
+                          "but nothing stops it until they run out")
+        elif usage >= 0.8 * ulimit:
+            warns.append(f"usage before credits US${usage:.2f} is over 80% of US${ulimit:g}")
+        elif elapsed > 0.1 and usage > lim["busiest"] * elapsed:
+            warns.append(f"usage before credits is running ahead of the busiest expected month (US${lim['busiest']:g}): "
+                         f"US${usage:.2f} after {elapsed:.0%} of the month")
 
     for a in d["actions"]:
         if a.get("Status") != "STANDBY":
@@ -220,8 +248,9 @@ def evaluate(d: dict, now: dt.datetime, lim: dict) -> tuple[str, list[str], list
 
     state = "ALERT" if alerts else "WARN" if warns else "OK"
     fc_text = f", forecast US${forecast:.2f}" if forecast is not None else ""
-    summary = (f"AWS {state}: US${spend:.2f} spent this month{fc_text} (stop US${limit:g}, ceiling US${lim['ceiling']:g}); "
-               f"{len(d['instances'])} instance(s) running")
+    usage_text = f", usage before credits US${usage:.2f}" if usage is not None else ""
+    summary = (f"AWS {state}: US${spend:.2f} spent this month{fc_text} (stop US${limit:g}, ceiling US${lim['ceiling']:g})"
+               f"{usage_text}; {len(d['instances'])} instance(s) running")
     return summary, alerts, warns
 
 

@@ -28,6 +28,8 @@ REGION="$(yaml_get "['region']")"
 BOUNDARY_PATH_NAME="$(yaml_get "['iam']['boundary']")"      # e.g. guardrails/claude-boundary
 BUDGET_USD="$(yaml_get "['account_settings']['budget_usd']")"
 BUDGET_NAME=guardrail-monthly
+USAGE_BUDGET_NAME=guardrail-monthly-usage   # usage before credits: alerts only (2026-11-26)
+USAGE_ALERT_USD="$(yaml_get "['account_settings']['usage_alert_usd']")"
 ENVIRONMENT=aws
 
 # ---------- 0. who and where ----------
@@ -177,6 +179,21 @@ else
            Subscribers:[{SubscriptionType:"EMAIL", Address:$e}]})')"
   aws budgets create-budget --account-id "$ACCOUNT_ID" --budget "$budget_json" --notifications-with-subscribers "$notifications"
   echo "budget ${BUDGET_NAME}: created, US\$${BUDGET_USD}/month, alerts to ${ALERT_EMAIL}"
+fi
+# Usage before credits, alerts only: while credits cover the bill, the budget above reads US$0 and can't fire.
+usage_json="$(jq -n --arg n "$USAGE_BUDGET_NAME" --arg a "$USAGE_ALERT_USD" \
+  '{BudgetName:$n, BudgetType:"COST", TimeUnit:"MONTHLY", BudgetLimit:{Amount:$a, Unit:"USD"},
+    CostTypes:{IncludeCredit:false, IncludeRefund:false, IncludeTax:true}}')"   # usage, before credits
+if aws budgets describe-budget --account-id "$ACCOUNT_ID" --budget-name "$USAGE_BUDGET_NAME" >/dev/null 2>&1; then
+  aws budgets update-budget --account-id "$ACCOUNT_ID" --new-budget "$usage_json"
+  echo "budget ${USAGE_BUDGET_NAME}: limit US\$${USAGE_ALERT_USD}, usage before credits (existing alert recipients kept)"
+else
+  notifications="$(jq -n --arg e "$ALERT_EMAIL" '
+    [ {t:"ACTUAL",p:80}, {t:"ACTUAL",p:100}, {t:"FORECASTED",p:100} ]
+    | map({Notification:{NotificationType:.t, ComparisonOperator:"GREATER_THAN", Threshold:.p, ThresholdType:"PERCENTAGE"},
+           Subscribers:[{SubscriptionType:"EMAIL", Address:$e}]})')"
+  aws budgets create-budget --account-id "$ACCOUNT_ID" --budget "$usage_json" --notifications-with-subscribers "$notifications"
+  echo "budget ${USAGE_BUDGET_NAME}: created, US\$${USAGE_ALERT_USD}/month of usage before credits, alerts only, to ${ALERT_EMAIL}"
 fi
 aws s3control put-public-access-block --account-id "$ACCOUNT_ID" --public-access-block-configuration \
   BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true

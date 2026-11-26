@@ -354,6 +354,10 @@ def summary(p: dict, pending: list, sizes: dict) -> str:
                  "as **what you'd be billed**: credits (applied automatically on the invoice) reduce it, refunds "
                  "(paid back later, if ever) don't, and tax counts.") if settings.get("budget_counts_billed") else ""
         w(f"- Monthly budget **US${settings['budget_usd']}**, email alerts at 50 %, 80 % and 100 % actual, and 100 % forecast.{scope}")
+    if "usage_alert_usd" in settings:
+        w(f"- **Usage alert, no stop:** budget `guardrail-monthly-usage` counts usage **before credits** "
+          f"(US${settings['usage_alert_usd']}), emailing at 80 % and 100 % actual and 100 % forecast. While credits "
+          "cover the bill the budget above reads US$0 and can't fire; this one still sees the spending.")
     stop = settings.get("budget_stop")
     if stop:
         roles = ", ".join(f"`{r}`" for r in stop["roles"]) or "none yet"

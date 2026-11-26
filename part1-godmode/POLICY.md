@@ -2,6 +2,9 @@
 
 Generated from [policy.yaml](policy.yaml) by `build-policies.py`. Don't edit this file.
 
+> **DRAFT, not approved yet.** Pending:
+> - change 2026-11-26: Usage alert (#30): a second budget, guardrail-monthly-usage, counts usage before credits at US$29 and emails at 80 % and 100 % actual and 100 % forecast. It stops nothing; the stop stays on what would be billed. The apply role may view and change that budget too
+
 Claude's IAM user (`AWS_CLAUDE_USER`) in the account `AWS_ACCOUNT_ID` · home region Sydney (`ap-southeast-2`). The account id and user name aren't in the repo: see [config.py](config.py).
 
 ## In short
@@ -108,6 +111,7 @@ Each group also has an AWS Resource Group of the same name (a saved tag search) 
 ## Set by godmode, outside the policy
 
 - Monthly budget **US$29**, email alerts at 50 %, 80 % and 100 % actual, and 100 % forecast. It counts **everything in the account**, every service (instances, logs, snapshots, data transfer…), as **what you'd be billed**: credits (applied automatically on the invoice) reduce it, refunds (paid back later, if ever) don't, and tax counts.
+- **Usage alert, no stop:** budget `guardrail-monthly-usage` counts usage **before credits** (US$29), emailing at 80 % and 100 % actual and 100 % forecast. While credits cover the bill the budget above reads US$0 and can't fire; this one still sees the spending.
 - **Automatic stop at 100 % of actual spend** (US$29):
   - **Nothing new:** AWS Budgets attaches `guardrails/budget-stop` to Claude's user and roles (`build-runner-bake`, `build-runner-ami-ci`, `build-runner-launcher`): no instances, spot/fleet, volumes, snapshots, images, IPs, NAT, endpoints, functions, buckets, stacks or passing roles; no resizing disks, copying snapshots, changing Lambdas or their concurrency, creating or changing schedules and rules, or creating log groups.
   - **Stop what's spending:** the kill switch (Lambda `guardrail-kill-switch`, Sydney) terminates **every instance** in the account and cancels open spot requests; sets **our Lambdas** (tagged `resource-group`) to 0 concurrency, so none runs; deletes the runner AMIs and their snapshots (the weekly pipeline rebuilds them); deletes **unattached disks** tagged `resource-group`; releases **Elastic IPs not attached** to anything; deletes **interface VPC endpoints**.
@@ -131,6 +135,7 @@ Each group also has an AWS Resource Group of the same name (a saved tag search) 
 | 2026-11-16 | The budget stop also covers the weekly AMI pipeline role (build-runner-ami-ci), so at the limit it can't launch bake instances either | 2026-11-16 Kieron |
 | 2026-11-16 | The budget stop also covers the runner launcher's role (build-runner-launcher), so at the limit it can't launch runner instances either (the org-wide stop already did) | 2026-11-16 Kieron |
 | 2026-11-17 | Disk limits (#30 fix 4): gp3 disks at most the free 3,000 IOPS and 125 MiB/s; snapshot locks and AMI deletion protection blocked, so the kill switch can always remove what it must | 2026-11-17 Kieron |
+| 2026-11-26 | Usage alert (#30): a second budget, guardrail-monthly-usage, counts usage before credits at US$29 and emails at 80 % and 100 % actual and 100 % forecast. It stops nothing; the stop stays on what would be billed. The apply role may view and change that budget too | pending |
 | 2026-11-17 | Fast stop (#30 fix 2): CloudWatch alarms on data sent by instances, Lambda calls and log ingestion trigger the kill switch within ≈10 minutes, without waiting for billing data. It terminates instances and throttles our Lambdas; AMIs, disks and IPs stay. Claude can't change or delete the alarms | 2026-11-17 Kieron |
 | 2026-11-17 | Wider stop at the budget (#30 fix 3): the kill switch also throttles our Lambdas, deletes detached build disks, releases unused Elastic IPs and deletes interface VPC endpoints; the budget stop also blocks resizing disks, copying snapshots, changing Lambdas, creating or changing schedules and rules, and creating log groups | 2026-11-17 Kieron |
 | 2026-11-17 | More headroom (#30 fix 5): the budget stop fires at US$29, ≈£23 (was US$25); Cost Anomaly Detection emails Kieron about unusual daily spend of US$3 or more | 2026-11-17 Kieron |
