@@ -65,34 +65,36 @@ aws budgets update-budget --account-id "$ACCOUNT_ID" --new-budget "$budget"
 aws budgets describe-budget --account-id "$ACCOUNT_ID" --budget-name "$BUDGET" \
   --query 'Budget.{limit: BudgetLimit.Amount, filters: CostFilters, credits: CostTypes.IncludeCredit, refunds: CostTypes.IncludeRefund}' --output json
 
-echo "== policy guardrails/budget-stop"
-if aws iam get-policy --policy-arn "$POLICY_ARN" >/dev/null 2>&1; then
-  current="$(aws iam get-policy-version --policy-arn "$POLICY_ARN" \
-    --version-id "$(aws iam get-policy --policy-arn "$POLICY_ARN" --query Policy.DefaultVersionId --output text)" \
-    --query PolicyVersion.Document --output json | jq -S -c .)"
-  if [[ "$current" == "$(jq -S -c . bootstrap/budget-stop-policy.json)" ]]; then
-    echo "unchanged"
-  else
-    old="$(aws iam list-policy-versions --policy-arn "$POLICY_ARN" \
-      --query 'Versions[?!IsDefaultVersion] | sort_by(@, &CreateDate)[0].VersionId' --output text)"
-    n="$(aws iam list-policy-versions --policy-arn "$POLICY_ARN" --query 'length(Versions)' --output text)"
-    if (( n >= 5 )); then aws iam delete-policy-version --policy-arn "$POLICY_ARN" --version-id "$old"; fi
-    aws iam create-policy-version --policy-arn "$POLICY_ARN" --policy-document file://bootstrap/budget-stop-policy.json \
-      --set-as-default --query PolicyVersion.VersionId --output text | sed 's/^/updated -> /'
+echo "== what only CloudShell sets (bootstrap-github-apply.sh): budget-stop, the boundary, the helper roles' trust"
+BOUNDARY_ARN="arn:aws:iam::${ACCOUNT_ID}:policy/guardrails/guardrail-roles-boundary"
+cloudshell_only=()
+live_policy() {
+  aws iam get-policy-version --policy-arn "$1" --version-id \
+    "$(aws iam get-policy --policy-arn "$1" --query Policy.DefaultVersionId --output text 2>/dev/null)" \
+    --query PolicyVersion.Document --output json 2>/dev/null | jq -S -c . 2>/dev/null
+}
+rendered() { python3 -I config.py --render "bootstrap/$1" | jq -S -c .; }
+[[ "$(live_policy "$POLICY_ARN")" == "$(rendered budget-stop-policy.json)" ]] || cloudshell_only+=("policy guardrails/budget-stop")
+[[ "$(live_policy "$BOUNDARY_ARN")" == "$(rendered guardrail-roles-boundary.json)" ]] || cloudshell_only+=("policy guardrails/guardrail-roles-boundary")
+for pair in "budget-action-runner:budget-action-runner-trust.json" "budget-kill-switch:budget-kill-switch-trust.json"; do
+  helper="${pair%%:*}"
+  if role="$(aws iam get-role --role-name "$helper" --query Role --output json 2>/dev/null)"; then
+    [[ "$(jq -S -c .AssumeRolePolicyDocument <<<"$role")" == "$(rendered "${pair#*:}")" ]] || cloudshell_only+=("role ${helper} trust")
+    [[ "$(jq -r '.PermissionsBoundary.PermissionsBoundaryArn // ""' <<<"$role")" == "$BOUNDARY_ARN" ]] || cloudshell_only+=("role ${helper} boundary")
   fi
-else
-  aws iam create-policy --policy-name budget-stop --path /guardrails/ --policy-document file://bootstrap/budget-stop-policy.json \
-    --description "Attached automatically when guardrail-monthly reaches its limit" --query Policy.Arn --output text | sed 's/^/created /'
+done
+if (( ${#cloudshell_only[@]} )); then
+  printf 'Not as the repo says: %s\n' "${cloudshell_only[@]}" >&2
+  echo "These could widen permissions, so only CloudShell sets them: run bootstrap-github-apply.sh there, then rerun this." >&2
+  exit 1
 fi
+echo "as the repo says"
 
 echo "== role guardrails/${RUNNER_ROLE} (AWS Budgets applies the stop with it)"
-trust="$(jq -n --arg acct "$ACCOUNT_ID" '{Version: "2012-10-17", Statement: [{Effect: "Allow",
-  Principal: {Service: "budgets.amazonaws.com"}, Action: "sts:AssumeRole",
-  Condition: {StringEquals: {"aws:SourceAccount": $acct}}}]}')"
-if aws iam get-role --role-name "$RUNNER_ROLE" >/dev/null 2>&1; then
-  aws iam update-assume-role-policy --role-name "$RUNNER_ROLE" --policy-document "$trust"
-else
-  aws iam create-role --role-name "$RUNNER_ROLE" --path /guardrails/ --assume-role-policy-document "$trust" \
+# Trust and boundary are CloudShell's (checked above); this only creates the role the first time, with both.
+if ! aws iam get-role --role-name "$RUNNER_ROLE" >/dev/null 2>&1; then
+  aws iam create-role --role-name "$RUNNER_ROLE" --path /guardrails/ \
+    --assume-role-policy-document "$(rendered budget-action-runner-trust.json)" --permissions-boundary "$BOUNDARY_ARN" \
     --description "AWS Budgets: attach/detach guardrails/budget-stop on Claude's user and roles" \
     --query Role.Arn --output text | sed 's/^/created /'
 fi
@@ -148,9 +150,9 @@ KS_ENDPOINTS="$(ks_flag delete_interface_endpoints)"
 KS_REGIONS="ap-southeast-2,us-east-1"
 
 echo "== kill switch role guardrails/${KS_ROLE}"
-ks_trust='{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Service":"lambda.amazonaws.com"},"Action":"sts:AssumeRole"}]}'
 if ! aws iam get-role --role-name "$KS_ROLE" >/dev/null 2>&1; then
-  aws iam create-role --role-name "$KS_ROLE" --path /guardrails/ --assume-role-policy-document "$ks_trust" \
+  aws iam create-role --role-name "$KS_ROLE" --path /guardrails/ \
+    --assume-role-policy-document "$(rendered budget-kill-switch-trust.json)" --permissions-boundary "$BOUNDARY_ARN" \
     --description "guardrail-kill-switch: stop what's spending when the budget is reached" --query Role.Arn --output text | sed 's/^/created /'
   sleep 10   # IAM propagation, before Lambda may use it
 fi

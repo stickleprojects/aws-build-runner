@@ -61,6 +61,10 @@ def expected(policy: dict, template: str, account: str, user: str) -> dict:
         "action": {"at": float(stop["at_percent"]), "user": user, "roles": sorted(stop["roles"]),
                    "policy": f"arn:aws:iam::{account}:policy/guardrails/budget-stop"},
         "stop_policy": render("budget-stop-policy.json"),
+        "boundary": render("guardrail-roles-boundary.json"),
+        "boundary_arn": f"arn:aws:iam::{account}:policy/guardrails/guardrail-roles-boundary",
+        "helpers": {"budget-action-runner": render("budget-action-runner-trust.json"),
+                    "budget-kill-switch": render("budget-kill-switch-trust.json")},
         "kill_switch_env": {"REGIONS": "ap-southeast-2,us-east-1", "TERMINATE_INSTANCES": flag("terminate_instances"),
                             "DELETE_RUNNER_AMIS": flag("delete_runner_amis"), "THROTTLE_LAMBDAS": flag("throttle_lambdas"),
                             "DELETE_DETACHED_VOLUMES": flag("delete_detached_volumes"),
@@ -133,8 +137,21 @@ def compare(exp: dict, live: dict) -> list[dict]:
                 fix = "it has fired: lifting it is Kieron's call (Budgets → Actions)" if k == "status" else FIX_BOOTSTRAP
                 differ(f"budget stop action {k}", got[k], want[k], fix)
 
+    # These could widen permissions, so only CloudShell sets them (bootstrap-github-apply.sh), 2026-11-27.
     if not same(live.get("stop_policy"), exp["stop_policy"]):
-        differ("policy guardrails/budget-stop", "differs from bootstrap/budget-stop-policy.json", "the same", FIX_BOOTSTRAP)
+        differ("policy guardrails/budget-stop", "differs from bootstrap/budget-stop-policy.json", "the same", FIX_GITHUB)
+    if not same(live.get("boundary"), exp["boundary"]):
+        differ("policy guardrails/guardrail-roles-boundary", "differs or missing", "bootstrap/guardrail-roles-boundary.json", FIX_GITHUB)
+    for helper, trust in exp["helpers"].items():
+        h = (live.get("helpers") or {}).get(helper)
+        if not h:
+            differ(f"role guardrails/{helper}", "missing", "present", FIX_BOOTSTRAP)
+            continue
+        if not same(h.get("trust"), trust):
+            differ(f"role guardrails/{helper} trust", "differs from bootstrap/", "the same", FIX_GITHUB)
+        if h.get("boundary") != exp["boundary_arn"]:
+            differ(f"role guardrails/{helper} permissions boundary", h.get("boundary") or "none",
+                   "guardrails/guardrail-roles-boundary", FIX_GITHUB)
 
     env = live.get("kill_switch_env")
     if env is None:
@@ -245,6 +262,17 @@ def gather(account: str) -> dict:
     if pol:
         v = aws("iam", "get-policy-version", "--policy-arn", pol["Policy"]["Arn"], "--version-id", pol["Policy"]["DefaultVersionId"])
         live["stop_policy"] = v["PolicyVersion"]["Document"]
+    bnd = aws("iam", "get-policy", "--policy-arn", f"arn:aws:iam::{account}:policy/guardrails/guardrail-roles-boundary",
+              ok_missing=True)
+    if bnd:
+        live["boundary"] = aws("iam", "get-policy-version", "--policy-arn", bnd["Policy"]["Arn"], "--version-id",
+                               bnd["Policy"]["DefaultVersionId"])["PolicyVersion"]["Document"]
+    live["helpers"] = {}
+    for helper in ("budget-action-runner", "budget-kill-switch"):
+        r = aws("iam", "get-role", "--role-name", helper, ok_missing=True)
+        if r:
+            live["helpers"][helper] = {"trust": r["Role"]["AssumeRolePolicyDocument"],
+                                       "boundary": r["Role"].get("PermissionsBoundary", {}).get("PermissionsBoundaryArn")}
     ks = aws("lambda", "get-function-configuration", "--function-name", KILL_SWITCH, ok_missing=True)
     live["kill_switch_env"] = ks and ks.get("Environment", {}).get("Variables", {})
     if ks:

@@ -49,6 +49,8 @@ def live_matching():
         "actions": [action],
         "budget_notifies_kill_switch": True,
         "stop_policy": copy.deepcopy(e["stop_policy"]),
+        "boundary": copy.deepcopy(e["boundary"]),
+        "helpers": {h: {"trust": copy.deepcopy(t), "boundary": e["boundary_arn"]} for h, t in e["helpers"].items()},
         "kill_switch_env": dict(e["kill_switch_env"]),
         "kill_switch_reserved": 2,
         "alarms": [{"AlarmName": n, "Threshold": float(t), "AlarmActions": [fast], "ActionsEnabled": True}
@@ -104,7 +106,19 @@ check("the budget notification not reaching the kill switch: drift",
       "notification" in names(drift(budget_notifies_kill_switch=False)))
 
 p = live_matching()["stop_policy"]; p["Statement"][0]["Action"] = p["Statement"][0]["Action"][1:]
-check("budget-stop policy loosened: drift", "guardrails/budget-stop" in names(drift(stop_policy=p)))
+f = drift(stop_policy=p)
+check("budget-stop policy loosened: drift, and only CloudShell fixes it",
+      any("guardrails/budget-stop" in x["what"] and x["fix"] == gc.FIX_GITHUB for x in f), f)
+# 2026-11-27: the guardrails role could have widened the helper roles; their boundary and trust are CloudShell's.
+h = live_matching()["helpers"]; h["budget-kill-switch"]["boundary"] = None
+f = drift(helpers=h)
+check("kill-switch role without its boundary: drift, fixed in CloudShell",
+      any("budget-kill-switch permissions boundary" in x["what"] and x["fix"] == gc.FIX_GITHUB for x in f), f)
+h = live_matching()["helpers"]; h["budget-action-runner"]["trust"] = {"Version": "2012-10-17", "Statement": []}
+check("budget-action-runner trust changed: drift", "budget-action-runner trust" in names(drift(helpers=h)))
+b2 = live_matching()["boundary"]; b2["Statement"].append({"Effect": "Allow", "Action": "*", "Resource": "*"})
+check("the boundary widened: drift", "guardrail-roles-boundary" in names(drift(boundary=b2)))
+check("the boundary missing: drift", "guardrail-roles-boundary" in names(drift(boundary=None)))
 env = live_matching()["kill_switch_env"]; env["TERMINATE_INSTANCES"] = "false"
 f = drift(kill_switch_env=env)
 check("kill switch no longer terminating: drift, fixed by the bootstrap",

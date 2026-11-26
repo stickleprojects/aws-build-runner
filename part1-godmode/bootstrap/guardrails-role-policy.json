@@ -4,32 +4,76 @@
     {
       "Sid": "TheGuardrailBudgetAndItsStop",
       "Effect": "Allow",
-      "Action": ["budgets:ViewBudget", "budgets:ModifyBudget", "budgets:DescribeBudgetActionsForBudget",
-                 "budgets:CreateBudgetAction", "budgets:UpdateBudgetAction", "budgets:DescribeBudgetAction"],
-      "Resource": ["arn:aws:budgets::{{ACCOUNT_ID}}:budget/guardrail-monthly",
-                   "arn:aws:budgets::{{ACCOUNT_ID}}:budget/guardrail-monthly/action/*"]
+      "Action": [
+        "budgets:ViewBudget",
+        "budgets:ModifyBudget",
+        "budgets:DescribeBudgetActionsForBudget",
+        "budgets:CreateBudgetAction",
+        "budgets:UpdateBudgetAction",
+        "budgets:DescribeBudgetAction"
+      ],
+      "Resource": [
+        "arn:aws:budgets::{{ACCOUNT_ID}}:budget/guardrail-monthly",
+        "arn:aws:budgets::{{ACCOUNT_ID}}:budget/guardrail-monthly/action/*"
+      ]
     },
     {
-      "Sid": "TheBudgetStopPolicy",
+      "Sid": "ReadBudgetStopAndTheBoundary",
       "Effect": "Allow",
-      "Action": ["iam:GetPolicy", "iam:GetPolicyVersion", "iam:ListPolicyVersions", "iam:CreatePolicy",
-                 "iam:CreatePolicyVersion", "iam:DeletePolicyVersion"],
-      "Resource": "arn:aws:iam::{{ACCOUNT_ID}}:policy/guardrails/budget-stop"
+      "Action": [
+        "iam:GetPolicy",
+        "iam:GetPolicyVersion"
+      ],
+      "Resource": [
+        "arn:aws:iam::{{ACCOUNT_ID}}:policy/guardrails/budget-stop",
+        "arn:aws:iam::{{ACCOUNT_ID}}:policy/guardrails/guardrail-roles-boundary"
+      ]
     },
     {
-      "Sid": "OnlyTheTwoGuardrailRoles",
+      "Sid": "ReadTheTwoGuardrailRoles",
       "Effect": "Allow",
-      "Action": ["iam:GetRole", "iam:CreateRole", "iam:UpdateAssumeRolePolicy", "iam:PutRolePolicy", "iam:GetRolePolicy"],
-      "Resource": ["arn:aws:iam::{{ACCOUNT_ID}}:role/guardrails/budget-action-runner",
-                   "arn:aws:iam::{{ACCOUNT_ID}}:role/guardrails/budget-kill-switch"]
+      "Action": [
+        "iam:GetRole",
+        "iam:GetRolePolicy"
+      ],
+      "Resource": [
+        "arn:aws:iam::{{ACCOUNT_ID}}:role/guardrails/budget-action-runner",
+        "arn:aws:iam::{{ACCOUNT_ID}}:role/guardrails/budget-kill-switch"
+      ]
+    },
+    {
+      "Sid": "CreateOrChangeThemOnlyWithTheBoundary",
+      "Effect": "Allow",
+      "Action": [
+        "iam:CreateRole",
+        "iam:PutRolePolicy"
+      ],
+      "Resource": [
+        "arn:aws:iam::{{ACCOUNT_ID}}:role/guardrails/budget-action-runner",
+        "arn:aws:iam::{{ACCOUNT_ID}}:role/guardrails/budget-kill-switch"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "iam:PermissionsBoundary": "arn:aws:iam::{{ACCOUNT_ID}}:policy/guardrails/guardrail-roles-boundary"
+        }
+      }
     },
     {
       "Sid": "PassThemOnlyToTheirServices",
       "Effect": "Allow",
       "Action": "iam:PassRole",
-      "Resource": ["arn:aws:iam::{{ACCOUNT_ID}}:role/guardrails/budget-action-runner",
-                   "arn:aws:iam::{{ACCOUNT_ID}}:role/guardrails/budget-kill-switch"],
-      "Condition": {"StringEquals": {"iam:PassedToService": ["budgets.amazonaws.com", "lambda.amazonaws.com"]}}
+      "Resource": [
+        "arn:aws:iam::{{ACCOUNT_ID}}:role/guardrails/budget-action-runner",
+        "arn:aws:iam::{{ACCOUNT_ID}}:role/guardrails/budget-kill-switch"
+      ],
+      "Condition": {
+        "StringEquals": {
+          "iam:PassedToService": [
+            "budgets.amazonaws.com",
+            "lambda.amazonaws.com"
+          ]
+        }
+      }
     },
     {
       "Sid": "SeeWhichStopTargetsExist",
@@ -40,9 +84,16 @@
     {
       "Sid": "TheKillSwitch",
       "Effect": "Allow",
-      "Action": ["lambda:GetFunction", "lambda:GetFunctionConfiguration", "lambda:CreateFunction",
-                 "lambda:UpdateFunctionCode", "lambda:UpdateFunctionConfiguration", "lambda:AddPermission",
-                 "lambda:PutFunctionConcurrency", "lambda:InvokeFunction"],
+      "Action": [
+        "lambda:GetFunction",
+        "lambda:GetFunctionConfiguration",
+        "lambda:CreateFunction",
+        "lambda:UpdateFunctionCode",
+        "lambda:UpdateFunctionConfiguration",
+        "lambda:AddPermission",
+        "lambda:PutFunctionConcurrency",
+        "lambda:InvokeFunction"
+      ],
       "Resource": "arn:aws:lambda:ap-southeast-2:{{ACCOUNT_ID}}:function:guardrail-kill-switch"
     },
     {
@@ -54,15 +105,25 @@
     {
       "Sid": "TheKillSwitchLogs",
       "Effect": "Allow",
-      "Action": ["logs:CreateLogGroup", "logs:PutRetentionPolicy"],
+      "Action": [
+        "logs:CreateLogGroup",
+        "logs:PutRetentionPolicy"
+      ],
       "Resource": "arn:aws:logs:ap-southeast-2:{{ACCOUNT_ID}}:log-group:/aws/lambda/guardrail-kill-switch*"
     },
     {
       "Sid": "TheStopTopics",
       "Effect": "Allow",
-      "Action": ["sns:CreateTopic", "sns:SetTopicAttributes", "sns:Subscribe", "sns:ListSubscriptionsByTopic"],
-      "Resource": ["arn:aws:sns:ap-southeast-2:{{ACCOUNT_ID}}:guardrail-budget-stop",
-                   "arn:aws:sns:ap-southeast-2:{{ACCOUNT_ID}}:guardrail-fast-stop"]
+      "Action": [
+        "sns:CreateTopic",
+        "sns:SetTopicAttributes",
+        "sns:Subscribe",
+        "sns:ListSubscriptionsByTopic"
+      ],
+      "Resource": [
+        "arn:aws:sns:ap-southeast-2:{{ACCOUNT_ID}}:guardrail-budget-stop",
+        "arn:aws:sns:ap-southeast-2:{{ACCOUNT_ID}}:guardrail-fast-stop"
+      ]
     },
     {
       "Sid": "TheFastStopAlarms",
@@ -79,8 +140,30 @@
     {
       "Sid": "TheAnomalyAlert",
       "Effect": "Allow",
-      "Action": ["ce:GetAnomalyMonitors", "ce:CreateAnomalyMonitor", "ce:GetAnomalySubscriptions",
-                 "ce:CreateAnomalySubscription", "ce:UpdateAnomalySubscription"],
+      "Action": [
+        "ce:GetAnomalyMonitors",
+        "ce:CreateAnomalyMonitor",
+        "ce:GetAnomalySubscriptions",
+        "ce:CreateAnomalySubscription",
+        "ce:UpdateAnomalySubscription"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "NeverWidenPermissions",
+      "Effect": "Deny",
+      "Action": [
+        "iam:DeleteRolePermissionsBoundary",
+        "iam:PutRolePermissionsBoundary",
+        "iam:UpdateAssumeRolePolicy",
+        "iam:AttachRolePolicy",
+        "iam:DeleteRolePolicy",
+        "iam:CreatePolicy",
+        "iam:CreatePolicyVersion",
+        "iam:DeletePolicyVersion",
+        "iam:SetDefaultPolicyVersion",
+        "iam:DeletePolicy"
+      ],
       "Resource": "*"
     }
   ]
