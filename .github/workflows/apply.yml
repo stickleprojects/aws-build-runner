@@ -94,6 +94,12 @@ jobs:
               fi
             fi
             echo
+            # What the run executes, and the most its role can change (part1-godmode/release_preview.py).
+            python3 -I part1-godmode/release_preview.py --last "$last" --head "$head" \
+              --role bootstrap/apply-role-policy.json --role-name godmode/aws-build-runner-apply \
+              'part1-godmode/*.sh' 'part1-godmode/*.py' part1-godmode/out part1-godmode/policy.yaml \
+              .github/workflows/apply.yml
+            echo
             echo "Approve on this page (**Review deployments**) only if this is what you expect."
           } >> "$GITHUB_STEP_SUMMARY"
 

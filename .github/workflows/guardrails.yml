@@ -25,8 +25,49 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Runs before the approval wait, so the run page shows what you're approving: the most the role can change,
+  # and the code this run executes that changed since the last approved run (part1-godmode/release_preview.py).
+  describe:
+    name: what this run will do
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Summary of the run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NOTE: ${{ inputs.note }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          last=""
+          for id in $(gh api "repos/${REPO}/deployments?environment=guardrails&per_page=30" --jq '.[].id'); do
+            state="$(gh api "repos/${REPO}/deployments/${id}/statuses?per_page=1" --jq '.[0].state')"
+            if [[ "$state" == success ]]; then last="$(gh api "repos/${REPO}/deployments/${id}" --jq .sha)"; break; fi
+          done
+          head="$(git rev-parse HEAD)"
+          {
+            echo "## guardrails run of \`main\` @ \`${head:0:12}\`, started by ${ACTOR}"
+            echo
+            echo "> ${NOTE}"
+            echo
+            python3 -I part1-godmode/release_preview.py --last "$last" --head "$head" \
+              --role bootstrap/guardrails-role-policy.json --role-name godmode/aws-build-runner-guardrails \
+              part1-godmode/bootstrap-budget-stop.sh part1-godmode/lib.sh part1-godmode/config.py \
+              part1-godmode/bootstrap part1-godmode/policy.yaml .github/workflows/guardrails.yml
+            echo
+            echo "Approve on this page (**Review deployments**) only if this is what you expect."
+          } >> "$GITHUB_STEP_SUMMARY"
+
   guardrails:
     if: github.ref == 'refs/heads/main'
+    needs: describe
     runs-on: ubuntu-latest
     environment: guardrails
     timeout-minutes: 20

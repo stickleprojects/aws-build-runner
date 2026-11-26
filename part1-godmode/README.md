@@ -70,6 +70,7 @@ Commands for drafting: `python3 -I build-policies.py --draft`, `./verify.py --of
 | [config.py](config.py) | Account id and IAM user name, which are kept out of this public repo. Read from env vars, `.env.local` or GitHub repo variables. Committed JSON uses `{{ACCOUNT_ID}}`, filled in only when checking against AWS or applying |
 | [check-live.py](check-live.py) | Live AWS vs this checkout: drift, applied commit, date, who |
 | [guardrails_check.py](guardrails_check.py) | The rest of the guardrails, live vs the repo (#42 C): both budgets, the stop action and policy, the kill switch, alarms, SNS wiring, anomaly alerts, the apply and check roles, our Lambdas' caps. Run daily and after every apply by the **guardrails-check** workflow (read-only role `godmode/aws-build-runner-guardrails-check`), which opens or closes one "Guardrails drift" issue |
+| [release_preview.py](release_preview.py) | What an approval will actually run, shown before the approval gate of **apply** and **guardrails**: every permission of the role it signs in as (from the role file, which the drift check confirms is live), and the diff of the code it executes since the last approved run |
 | [apply.sh](apply.sh) | **Admin only.** Applies main's checked artifact and records it. Run by the **apply** workflow, or in CloudShell |
 | [lib.sh](lib.sh) | Shared helpers for apply/rollback: IAM tag values cleaned, deployment status descriptions capped |
 | [tests/regressions.py](tests/regressions.py) | One rule per past mistake, each with what went wrong; runs in CI with `shellcheck` |
