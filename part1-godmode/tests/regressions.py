@@ -1025,6 +1025,9 @@ def usage_before_credits_is_watched():
     check = (P2 / "laptop" / "daily_check.py").read_text()
     if 'USAGE_BUDGET = "guardrail-monthly-usage"' not in check or "before credits" not in check:
         problems.append("the daily check doesn't read usage before credits")
+    return problems
+
+
 @rule("2026-11-26: AWS refused to lower the Lambda limit to 110 (its minimum is 1,000). The invocation alarm misses "
       "a fault holding hundreds of long copies on few new calls (≈US$13/h, unseen by the budget for 8-36 h). "
       "Kieron chose a concurrency alarm and a cap on every one of our functions.")
