@@ -36,12 +36,19 @@ the last apply's deployment inactive, and opens an issue to revert the change in
 
 The manual route below still works and is the fallback.
 
-### Automatic stop at the budget (godmode, once; again when budget_stop.roles changes)
+### Automatic stop at the budget (the guardrails workflow; again when budget_stop or bootstrap/ changes)
 
-In CloudShell:
+Normally: Actions → **guardrails** → Run workflow on `main`, with a note (Claude starts it when you ask), then
+you approve the run on its page, after reading what it will do. The drift check runs straight after.
+
+It stops before changing anything if `guardrails/budget-stop`, the boundary `guardrails/guardrail-roles-boundary`,
+or the helper roles' trust or boundary differ from the repo. Those could widen permissions, so only CloudShell
+sets them:
 ```bash
-export PATH=$HOME/bin:$PATH; cd ~/aws-build-runner/part1-godmode && git pull && ./bootstrap-budget-stop.sh
+export AWS_ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)" AWS_CLAUDE_USER=<Claude's user> AWS_ALERT_EMAIL=<alert email> && cd ~/aws-build-runner && git pull && cd part1-godmode && ./bootstrap-github-apply.sh
 ```
+(Claude gives you this with the real values, in chat.) As a fallback, `./bootstrap-budget-stop.sh` also runs in
+CloudShell with the same exports.
 Makes the budget count what would be billed (credits reduce it, refunds don't, tax counts), and creates `guardrails/budget-stop` and the
 role AWS Budgets uses to attach it. Then sets the budget action: at 100 % of actual spend, attach it automatically to
 Claude's user and roles. Ends by listing the action. To lift a stop once you've decided: Billing → Budgets →
