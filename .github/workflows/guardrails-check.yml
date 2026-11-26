@@ -43,6 +43,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
       - run: pip install --quiet "pyyaml==${PYYAML_VERSION}"
 
       - name: Sign in to AWS (OIDC)
@@ -59,6 +63,8 @@ jobs:
           python3 -I part1-godmode/guardrails_check.py > "$RUNNER_TEMP/drift.md"
           rc=$?
           set -e
+          # Also into the log, so a failure can be read without signing in (account id redacted and masked).
+          cat "$RUNNER_TEMP/drift.md"
           cat "$RUNNER_TEMP/drift.md" >> "$GITHUB_STEP_SUMMARY"
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
           # 0 matches, 1 drift (reported in the issue), 2 couldn't run (fails the run, so it's seen)

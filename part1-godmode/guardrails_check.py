@@ -286,7 +286,7 @@ def main(argv) -> int:
         template = (REPO / "part2-runner" / "stack" / "template.yaml").read_text()
         findings = compare(expected(policy, template, account, user), gather(account))
     except Exception as e:  # noqa: BLE001 - a check that can't run must say so, not pass
-        print(redact(f"The guardrails check couldn't run: {e}", account))
+        print(redact(f"The guardrails check couldn't run: {type(e).__name__}: {e}", account))
         return 2
     print(json.dumps(json.loads(redact(json.dumps(findings), account)), indent=1) if "--json" in argv
           else report(findings, account))
