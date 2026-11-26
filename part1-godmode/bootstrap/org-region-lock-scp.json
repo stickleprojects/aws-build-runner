@@ -1,0 +1,18 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "NoComputeInUsEast1",
+      "Effect": "Deny",
+      "Action": ["ec2:*", "ec2messages:*", "ssm:*", "ssmmessages:*", "ec2-instance-connect:*"],
+      "Resource": "*",
+      "Condition": {"StringEquals": {"aws:RequestedRegion": "us-east-1"}}
+    },
+    {
+      "Sid": "NoBedrockAnywhere",
+      "Effect": "Deny",
+      "Action": ["bedrock:*", "bedrock-mantle:*"],
+      "Resource": "*"
+    }
+  ]
+}

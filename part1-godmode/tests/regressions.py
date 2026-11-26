@@ -1223,6 +1223,35 @@ def approvals_show_what_will_run():
     return problems
 
 
+@rule("2026-11-27 (#30 fix 7): the organization's AWS-generated region SCP allowed EC2 in us-east-1, where nothing of "
+      "ours runs (only global services are needed there), and Bedrock model calls in every region. org-region-lock "
+      "denies both, and the kill switch sweeps Sydney only.")
+def region_lock_holds():
+    problems = []
+    scp_path = P1 / "bootstrap" / "org-region-lock-scp.json"
+    if not scp_path.exists():
+        return ["there's no bootstrap/org-region-lock-scp.json"]
+    scp = json.loads(scp_path.read_text())
+    denied = {}
+    for st in scp["Statement"]:
+        if st["Effect"] != "Deny":
+            problems.append(f"org-region-lock {st.get('Sid')}: SCPs here only deny")
+            continue
+        region = st.get("Condition", {}).get("StringEquals", {}).get("aws:RequestedRegion", "*")
+        for a in ([st["Action"]] if isinstance(st["Action"], str) else st["Action"]):
+            denied[a] = region
+    if denied.get("ec2:*") != "us-east-1":
+        problems.append("org-region-lock doesn't deny EC2 in us-east-1")
+    if denied.get("bedrock:*") != "*":
+        problems.append("org-region-lock doesn't deny Bedrock everywhere")
+    for svc in ("iam", "sts", "budgets", "ce", "organizations", "billing", "support"):
+        if any(a.startswith(svc + ":") for a in denied):
+            problems.append(f"org-region-lock denies {svc}, a global service that must stay reachable in us-east-1")
+    if 'KS_REGIONS="ap-southeast-2"' not in (P1 / "bootstrap-budget-stop.sh").read_text():
+        problems.append("the kill switch still sweeps a region other than Sydney")
+    return problems
+
+
 def main():
     wanted = sys.argv[1:]  # rule names; none = all
     unknown = set(wanted) - {name for name, _, _ in RULES}

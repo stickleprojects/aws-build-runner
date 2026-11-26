@@ -62,6 +62,12 @@ a dry run of both modes. After a fast stop, once you've found the cause: turn ou
 `aws lambda put-function-concurrency --function-name build-runner-webhook --reserved-concurrent-executions 5`
 (each keeps its cap, #30 fix 6: AWS won't set the account limit below 1,000; don't delete them), or tell Claude to.
 
+### Region lock (management account, once; again when bootstrap/org-region-lock-scp.json changes)
+
+`./bootstrap-org-region-lock.sh` in the management account's CloudShell attaches the SCP `org-region-lock` to Root:
+no EC2 or SSM in us-east-1 (only global services are needed there), and no Bedrock anywhere (#30 fix 7). Then run
+the **guardrails** workflow, so the kill switch sweeps Sydney only.
+
 When [bootstrap/budget-stop-policy.json](bootstrap/budget-stop-policy.json) or `budget_usd` changes, rerun
 `./bootstrap-org-budget-stop.sh` in the management account (below): it updates the `org-budget-stop` SCP
 and the org budget from the repo, so there's nothing to paste.

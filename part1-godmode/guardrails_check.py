@@ -65,7 +65,7 @@ def expected(policy: dict, template: str, account: str, user: str) -> dict:
         "boundary_arn": f"arn:aws:iam::{account}:policy/guardrails/guardrail-roles-boundary",
         "helpers": {"budget-action-runner": render("budget-action-runner-trust.json"),
                     "budget-kill-switch": render("budget-kill-switch-trust.json")},
-        "kill_switch_env": {"REGIONS": "ap-southeast-2,us-east-1", "TERMINATE_INSTANCES": flag("terminate_instances"),
+        "kill_switch_env": {"REGIONS": "ap-southeast-2", "TERMINATE_INSTANCES": flag("terminate_instances"),
                             "DELETE_RUNNER_AMIS": flag("delete_runner_amis"), "THROTTLE_LAMBDAS": flag("throttle_lambdas"),
                             "DELETE_DETACHED_VOLUMES": flag("delete_detached_volumes"),
                             "RELEASE_UNUSED_ADDRESSES": flag("release_unused_addresses"),
