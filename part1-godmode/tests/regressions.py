@@ -1203,6 +1203,26 @@ def pipeline_roles_cannot_escalate():
     return problems
 
 
+@rule("2026-11-27: approving the guardrails run (#80) showed only a note and a commit; Kieron saw no 'this is what the "
+      "approval will do'. Each approval now waits behind a job that shows the role's limits and the diff of the code "
+      "the run executes since the last approved run.")
+def approvals_show_what_will_run():
+    problems = []
+    for wf, env in (("guardrails.yml", "guardrails"), ("apply.yml", "aws")):
+        text = (ROOT / ".github" / "workflows" / wf).read_text()
+        if "release_preview.py" not in text:
+            problems.append(f"{wf}: no release preview before the approval")
+        if not re.search(r"^  describe:\n(?:(?!^  \S).*\n)*?\s+fetch-depth: 0", text, re.M):
+            problems.append(f"{wf}: the describe job doesn't fetch the history it diffs")
+        gated = re.search(r"^  (?!describe)[a-z-]+:\n(?:(?!^  \S).*\n)*?\s+needs: describe\n(?:(?!^  \S).*\n)*?\s+environment:",
+                          text, re.M)
+        if not gated:
+            problems.append(f"{wf}: the approval job doesn't wait for the describe job")
+        if f"environment={env}" not in text:
+            problems.append(f"{wf}: the preview doesn't compare with the last approved {env} run")
+    return problems
+
+
 def main():
     wanted = sys.argv[1:]  # rule names; none = all
     unknown = set(wanted) - {name for name, _, _ in RULES}

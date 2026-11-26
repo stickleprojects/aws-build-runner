@@ -122,6 +122,9 @@ jobs:
       - name: Guardrails drift check tests (offline)
         run: python3 -I part1-godmode/tests/test_guardrails_check.py
 
+      - name: Release preview tests (offline)
+        run: python3 -I part1-godmode/tests/test_release_preview.py
+
       - name: Cost boundary catches every kind of breach (offline)
         run: python3 -I part1-godmode/tests/test_cost_boundary.py
 
