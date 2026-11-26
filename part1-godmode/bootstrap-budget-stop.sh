@@ -199,14 +199,14 @@ fi
 rm -r "$zipdir"
 aws lambda wait function-active-v2 --region "$REGION" --function-name "$FUNCTION"
 # #30 fix 6: 2 executions always free for the kill switch, whatever else floods the account. Lambda keeps 100
-# unreserved, so this needs the account limit raised from a new account's 10 (quota L-B99A9384, to 110:
-# the least that fits 5 + 2 reserved; Kieron's choice 2026-11-18, to keep a runaway's ceiling low).
+# unreserved, so this needs the account limit raised from a new account's 10 (quota L-B99A9384). Kieron asked for
+# 110 (2026-11-18); AWS's minimum is 1,000 (2026-11-26), so guardrail-fast-lambda-concurrency keeps the ceiling low.
 limit="$(aws lambda get-account-settings --region "$REGION" --query AccountLimit.ConcurrentExecutions --output text)"
 if (( limit >= 102 )); then
   aws lambda put-function-concurrency --region "$REGION" --function-name "$FUNCTION" --reserved-concurrent-executions 2 >/dev/null
   echo "reserved 2 concurrent executions for ${FUNCTION}"
 else
-  echo "WARNING: the account's Lambda limit is ${limit}; request 110 (quota L-B99A9384) and rerun to reserve the kill switch's 2" >&2
+  echo "WARNING: the account's Lambda limit is ${limit}; request 1,000, AWS's minimum (quota L-B99A9384), and rerun to reserve the kill switch's 2" >&2
 fi
 aws logs create-log-group --region "$REGION" --log-group-name "/aws/lambda/${FUNCTION}" 2>/dev/null || true
 aws logs put-retention-policy --region "$REGION" --log-group-name "/aws/lambda/${FUNCTION}" --retention-in-days 90
@@ -258,6 +258,7 @@ else
   echo "email subscription sent: confirm it from your inbox"
 fi
 gib="$(fast network_out_gib)"; calls="$(fast lambda_invocations)"; mib="$(fast log_ingest_mib)"
+conc="$(fast lambda_concurrent)"
 alarm=(--region "$REGION" --evaluation-periods 2 --datapoints-to-alarm 2 --treat-missing-data notBreaching
        --comparison-operator GreaterThanThreshold --alarm-actions "$fast_arn")
 # EC2 publishes NetworkOut per instance only (an account total needs paid detailed monitoring), so a
@@ -270,6 +271,11 @@ aws cloudwatch put-metric-alarm "${alarm[@]}" --alarm-name guardrail-fast-networ
 aws cloudwatch put-metric-alarm "${alarm[@]}" --alarm-name guardrail-fast-lambda-invocations --period 300 \
   --alarm-description "Lambdas called > ${calls} times in 5 min, twice: kill switch (fast). policy.yaml fast_stop" \
   --namespace AWS/Lambda --metric-name Invocations --statistic Sum --threshold "$calls"
+# AWS won't set the account's Lambda limit below 1,000 (2026-11-26), so a stuck fault could keep hundreds of
+# long copies running on few new calls, under the invocation alarm. This one counts copies running at once.
+aws cloudwatch put-metric-alarm "${alarm[@]}" --alarm-name guardrail-fast-lambda-concurrency --period 300 \
+  --alarm-description "More than ${conc} Lambda executions at once in 5 min, twice: kill switch (fast). policy.yaml fast_stop" \
+  --namespace AWS/Lambda --metric-name ConcurrentExecutions --statistic Maximum --threshold "$conc"
 aws cloudwatch put-metric-alarm "${alarm[@]}" --alarm-name guardrail-fast-log-ingest --period 300 \
   --alarm-description "Logs took in > ${mib} MiB in 5 min, twice: kill switch (fast). policy.yaml fast_stop" \
   --namespace AWS/Logs --metric-name IncomingBytes --statistic Sum --threshold "$(( mib * 1024 * 1024 ))"
