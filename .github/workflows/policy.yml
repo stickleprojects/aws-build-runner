@@ -104,7 +104,7 @@ jobs:
           AWS_CLAUDE_USER: example-claude-user
         run: |
           status=0
-          for f in part1-godmode/out/*.json part1-godmode/bootstrap/apply-role-policy.json; do
+          for f in part1-godmode/out/*.json part1-godmode/bootstrap/apply-role-policy.json part1-godmode/bootstrap/guardrails-check-role-policy.json; do
             doc="$(python3 -I part1-godmode/config.py --render "$f")"
             findings="$(parliament --minimum_severity MEDIUM --string "$doc" < /dev/null 2>/dev/null || true)"
             # rds:DatabaseClass is a real key that parliament's data doesn't know; nothing else is expected.
@@ -118,6 +118,9 @@ jobs:
 
       - name: Kill switch tests (offline)
         run: python3 -I part1-godmode/tests/test_kill_switch.py
+
+      - name: Guardrails drift check tests (offline)
+        run: python3 -I part1-godmode/tests/test_guardrails_check.py
 
       - name: Cost boundary catches every kind of breach (offline)
         run: python3 -I part1-godmode/tests/test_cost_boundary.py

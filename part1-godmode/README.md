@@ -69,6 +69,7 @@ Commands for drafting: `python3 -I build-policies.py --draft`, `./verify.py --of
 | [verify.py](verify.py) | ≈514 allow/deny checks, for the user and for the worst role Claude could create. `--offline`: local evaluator. `--local`: IAM simulator on the drafts. Default: IAM simulator on the live policies |
 | [config.py](config.py) | Account id and IAM user name, which are kept out of this public repo. Read from env vars, `.env.local` or GitHub repo variables. Committed JSON uses `{{ACCOUNT_ID}}`, filled in only when checking against AWS or applying |
 | [check-live.py](check-live.py) | Live AWS vs this checkout: drift, applied commit, date, who |
+| [guardrails_check.py](guardrails_check.py) | The rest of the guardrails, live vs the repo (#42 C): both budgets, the stop action and policy, the kill switch, alarms, SNS wiring, anomaly alerts, the apply and check roles, our Lambdas' caps. Run daily and after every apply by the **guardrails-check** workflow (read-only role `godmode/aws-build-runner-guardrails-check`), which opens or closes one "Guardrails drift" issue |
 | [apply.sh](apply.sh) | **Admin only.** Applies main's checked artifact and records it. Run by the **apply** workflow, or in CloudShell |
 | [lib.sh](lib.sh) | Shared helpers for apply/rollback: IAM tag values cleaned, deployment status descriptions capped |
 | [tests/regressions.py](tests/regressions.py) | One rule per past mistake, each with what went wrong; runs in CI with `shellcheck` |

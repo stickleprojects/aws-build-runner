@@ -1054,6 +1054,42 @@ def lambda_ceiling_without_the_quota():
         problems.append("the daily check still wants 110, or doesn't check the concurrency alarm")
     return problems
 
+@rule("2026-11-17 (#41): the bootstrap set the stop budget to US$25 when the decision was US$29, and only a pasted "
+      "output showed it. 2026-11-27: applying #75 needed the apply role updated first, and nothing said so until a "
+      "run failed. The guardrails-check workflow compares what's live with the repo daily and after every apply.")
+def guardrails_drift_is_checked():
+    problems = []
+    wf_path = ROOT / ".github" / "workflows" / "guardrails-check.yml"
+    if not wf_path.exists():
+        return ["there's no guardrails-check workflow"]
+    wf = wf_path.read_text()
+    for need, why in (("schedule:", "it doesn't run daily"), ("workflows: [apply]", "it doesn't run after apply"),
+                      ("environment: guardrails-check", "it doesn't use the guardrails-check environment"),
+                      ("guardrails_check.py", "it doesn't run guardrails_check.py"),
+                      ("secrets.AWS_ACCOUNT_ID", "the account id isn't masked in its logs")):
+        if need not in wf:
+            problems.append(f"guardrails-check.yml: {why}")
+    check = (P1 / "guardrails_check.py").read_text()
+    for need in ("guardrail-monthly-usage", "lambda_concurrent",
+                 "budget-stop-policy.json", "apply-role-policy.json", "kill_switch_env", "redact("):
+        if need not in check:
+            problems.append(f"guardrails_check.py doesn't cover {need}")
+    trust = json.loads((P1 / "bootstrap" / "guardrails-check-role-trust.json").read_text())
+    cond = trust["Statement"][0]["Condition"]["StringEquals"]
+    if cond.get("token.actions.githubusercontent.com:ref") != "refs/heads/main" or \
+            not str(cond.get("token.actions.githubusercontent.com:sub", "")).endswith(":environment:guardrails-check"):
+        problems.append("the check role can be assumed from outside main's guardrails-check environment")
+    pol = json.loads((P1 / "bootstrap" / "guardrails-check-role-policy.json").read_text())
+    writes = [a for st in pol["Statement"] for a in ([st["Action"]] if isinstance(st["Action"], str) else st["Action"])
+              if not re.match(r"[a-z]+:(Get|List|Describe|View)", a)]
+    if writes:
+        problems.append(f"the check role can do more than read: {writes}")
+    boot = (P1 / "bootstrap-github-apply.sh").read_text()
+    if "aws-build-runner-guardrails-check" not in boot or "check-policy.json" not in boot:
+        problems.append("bootstrap-github-apply.sh doesn't create the check role")
+    return problems
+
+
 def main():
     wanted = sys.argv[1:]  # rule names; none = all
     unknown = set(wanted) - {name for name, _, _ in RULES}

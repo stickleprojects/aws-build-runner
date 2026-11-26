@@ -9,6 +9,9 @@
 #   - the role godmode/aws-build-runner-apply, which only jobs in this repo's GitHub environments
 #     "aws" and "aws-rollback" can assume (those wait for Kieron's approval and accept main only),
 #     with only the permissions apply.sh and rollback.sh use.
+#   - the role godmode/aws-build-runner-guardrails-check (#42 C), which only the read-only
+#     guardrails-check workflow on main can assume (environment "guardrails-check", no approval):
+#     it reads the guardrails to report drift and can change nothing.
 # Idempotent. Prints the role ARN for the GitHub environment secret AWS_APPLY_ROLE_ARN.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -28,10 +31,12 @@ echo "Account ${ACCOUNT_ID} as ${caller_arn}"
 work="$(mktemp -d)"; trap 'rm -rf "$work"' EXIT
 python3 -I config.py --render bootstrap/apply-role-trust.json > "$work/trust.json"
 python3 -I config.py --render bootstrap/apply-role-policy.json > "$work/policy.json"
+python3 -I config.py --render bootstrap/guardrails-check-role-trust.json > "$work/check-trust.json"
+python3 -I config.py --render bootstrap/guardrails-check-role-policy.json > "$work/check-policy.json"
 
 echo "== validate with IAM Access Analyzer"
 blocking=0
-for pair in "IDENTITY_POLICY:policy.json" "RESOURCE_POLICY:trust.json"; do
+for pair in "IDENTITY_POLICY:policy.json" "RESOURCE_POLICY:trust.json" "IDENTITY_POLICY:check-policy.json" "RESOURCE_POLICY:check-trust.json"; do
   type="${pair%%:*}"; file="${pair#*:}"
   extra=(); [[ "$type" == RESOURCE_POLICY ]] && extra=(--validate-policy-resource-type AWS::IAM::AssumeRolePolicyDocument)
   findings="$(aws accessanalyzer validate-policy --region "$REGION" --policy-type "$type" "${extra[@]}" \
@@ -65,6 +70,21 @@ aws iam put-role-policy --role-name "$ROLE_NAME" --policy-name apply-and-rollbac
   --policy-document "file://$work/policy.json"
 echo "permissions policy set"
 
+CHECK_ROLE=aws-build-runner-guardrails-check
+echo "== role ${ROLE_PATH}${CHECK_ROLE} (read-only)"
+if aws iam get-role --role-name "$CHECK_ROLE" >/dev/null 2>&1; then
+  aws iam update-assume-role-policy --role-name "$CHECK_ROLE" --policy-document "file://$work/check-trust.json"
+  echo "trust policy updated"
+else
+  aws iam create-role --role-name "$CHECK_ROLE" --path "$ROLE_PATH" --max-session-duration 3600 \
+    --description "GitHub Actions guardrails-check for stickleprojects/aws-build-runner (read-only)" \
+    --assume-role-policy-document "file://$work/check-trust.json" --query Role.Arn --output text | sed 's/^/created /'
+fi
+aws iam put-role-policy --role-name "$CHECK_ROLE" --policy-name guardrails-check \
+  --policy-document "file://$work/check-policy.json"
+echo "permissions policy set"
+
 echo
-echo "Done. Role ARN, for the GitHub environment secret AWS_APPLY_ROLE_ARN:"
+echo "Done. Role ARNs, for the GitHub environment secrets AWS_APPLY_ROLE_ARN and AWS_GUARDRAILS_CHECK_ROLE_ARN:"
 echo "arn:aws:iam::${ACCOUNT_ID}:role${ROLE_PATH}${ROLE_NAME}"
+echo "arn:aws:iam::${ACCOUNT_ID}:role${ROLE_PATH}${CHECK_ROLE}"
