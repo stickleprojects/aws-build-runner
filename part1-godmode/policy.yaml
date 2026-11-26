@@ -325,4 +325,4 @@ changes:
     approved: 2026-11-18 Kieron
   - date: 2026-11-26
     what: "Lambda concurrency (#30 fix 6): AWS won't set the account's Lambda limit below 1,000, so a fast-stop alarm fires when more than 20 Lambda executions run at once for 10 minutes, and the launcher is capped at 4 (the webhook stays at 5). Both free"
-    approved: pending
+    approved: 2026-11-27 Kieron

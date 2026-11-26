@@ -2,9 +2,6 @@
 
 Generated from [policy.yaml](policy.yaml) by `build-policies.py`. Don't edit this file.
 
-> **DRAFT, not approved yet.** Pending:
-> - change 2026-11-26: Lambda concurrency (#30 fix 6): AWS won't set the account's Lambda limit below 1,000, so a fast-stop alarm fires when more than 20 Lambda executions run at once for 10 minutes, and the launcher is capped at 4 (the webhook stays at 5). Both free
-
 Claude's IAM user (`AWS_CLAUDE_USER`) in the account `AWS_ACCOUNT_ID` · home region Sydney (`ap-southeast-2`). The account id and user name aren't in the repo: see [config.py](config.py).
 
 ## In short
@@ -141,7 +138,7 @@ Each group also has an AWS Resource Group of the same name (a saved tag search) 
 | 2026-11-17 | More headroom (#30 fix 5): the budget stop fires at US$29, ≈£23 (was US$25); Cost Anomaly Detection emails Kieron about unusual daily spend of US$3 or more | 2026-11-17 Kieron |
 | 2026-11-17 | Cost boundary: the runners stay within a US$35 ceiling (stop at US$29; expected ≈US$13 typical, ≈US$25 busiest a month), at most 4 runners of at most 4 vCPU, spot first, 90-minute and 20-minute limits, a 9-hour curfew, 3 kept images, 30 GiB disks, a capped upload rate, and no scheduled Cost Explorer calls. CI fails any change past these; raising one needs Kieron's approval, whoever asks | 2026-11-17 Kieron |
 | 2026-11-18 | SNS read-only (Sydney): list topics and their subscriptions, so Claude can check the alert emails are confirmed and the budget and fast stops still reach the kill switch. Free; no publishing, subscribing or changes | 2026-11-18 Kieron |
-| 2026-11-26 | Lambda concurrency (#30 fix 6): AWS won't set the account's Lambda limit below 1,000, so a fast-stop alarm fires when more than 20 Lambda executions run at once for 10 minutes, and the launcher is capped at 4 (the webhook stays at 5). Both free | pending |
+| 2026-11-26 | Lambda concurrency (#30 fix 6): AWS won't set the account's Lambda limit below 1,000, so a fast-stop alarm fires when more than 20 Lambda executions run at once for 10 minutes, and the launcher is capped at 4 (the webhook stays at 5). Both free | 2026-11-27 Kieron |
 
 ## Policy sizes
 
