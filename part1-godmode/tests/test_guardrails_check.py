@@ -59,6 +59,7 @@ def live_matching():
         "anomaly_usd": str(e["anomaly_usd"]),
         "apply_role": copy.deepcopy(e["apply_role"]),
         "check_role": copy.deepcopy(e["check_role"]),
+        "guard_role": copy.deepcopy(e["guard_role"]),
         "caps": dict(e["caps"]),
     }
 
@@ -132,6 +133,9 @@ r = copy.deepcopy(live_matching()["apply_role"]); r["policy"]["Statement"].appen
 f = drift(apply_role=r)
 check("2026-11-27: the apply role out of step with bootstrap/: drift, fixed by bootstrap-github-apply.sh",
       any("aws-build-runner-apply policy" in x["what"] and x["fix"] == gc.FIX_GITHUB for x in f), f)
+f = drift(guard_role=None)
+check("the guardrails role missing: drift, fixed by bootstrap-github-apply.sh",
+      any(x["what"].endswith("aws-build-runner-guardrails") and x["fix"] == gc.FIX_GITHUB for x in f), f)
 f = drift(check_role=None)
 check("the check role missing: drift, said as missing", any(x["what"].endswith("guardrails-check") and x["live"] == "missing" for x in f), f)
 check("the launcher's cap gone: drift, fixed by the stack deploy",

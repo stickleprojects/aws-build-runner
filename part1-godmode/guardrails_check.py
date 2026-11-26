@@ -29,8 +29,9 @@ STOP_TOPIC = "guardrail-budget-stop"
 FAST_TOPIC = "guardrail-fast-stop"
 APPLY_ROLE = "aws-build-runner-apply"
 CHECK_ROLE = "aws-build-runner-guardrails-check"
+GUARD_ROLE = "aws-build-runner-guardrails"
 # What fixes each kind of drift. Each command is complete (see CHECKLIST.md for CloudShell's settings).
-FIX_BOOTSTRAP = "rerun bootstrap-budget-stop.sh in CloudShell"
+FIX_BOOTSTRAP = "run the guardrails workflow (bootstrap-budget-stop.sh)"
 FIX_GITHUB = "rerun bootstrap-github-apply.sh in CloudShell"
 FIX_APPLY = "run the apply workflow (action apply)"
 FIX_STACK = "Claude reruns part2-runner/stack/deploy.sh"
@@ -74,6 +75,7 @@ def expected(policy: dict, template: str, account: str, user: str) -> dict:
         "apply_role": {"trust": render("apply-role-trust.json"), "policy": render("apply-role-policy.json")},
         "check_role": {"trust": render("guardrails-check-role-trust.json"),
                        "policy": render("guardrails-check-role-policy.json")},
+        "guard_role": {"trust": render("guardrails-role-trust.json"), "policy": render("guardrails-role-policy.json")},
         "caps": caps,
     }
 
@@ -176,7 +178,7 @@ def compare(exp: dict, live: dict) -> list[dict]:
     elif float(live["anomaly_usd"]) != exp["anomaly_usd"]:
         differ("Cost Anomaly Detection threshold", live["anomaly_usd"], exp["anomaly_usd"], FIX_BOOTSTRAP)
 
-    for role, key in ((APPLY_ROLE, "apply_role"), (CHECK_ROLE, "check_role")):
+    for role, key in ((APPLY_ROLE, "apply_role"), (CHECK_ROLE, "check_role"), (GUARD_ROLE, "guard_role")):
         got = live.get(key)
         if not got:
             differ(f"role godmode/{role}", "missing", "present", FIX_GITHUB)
@@ -262,7 +264,8 @@ def gather(account: str) -> dict:
         vals = daily.get("ThresholdExpression", {}).get("Dimensions", {}).get("Values") or [None]
         live["anomaly_usd"] = vals[0]
     for role, key, policy_name in ((APPLY_ROLE, "apply_role", "apply-and-rollback"),
-                                   (CHECK_ROLE, "check_role", "guardrails-check")):
+                                   (CHECK_ROLE, "check_role", "guardrails-check"),
+                                   (GUARD_ROLE, "guard_role", "guardrails")):
         r = aws("iam", "get-role", "--role-name", role, ok_missing=True)
         if r:
             p = aws("iam", "get-role-policy", "--role-name", role, "--policy-name", policy_name, ok_missing=True)
