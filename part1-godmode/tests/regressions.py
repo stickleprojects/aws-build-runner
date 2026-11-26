@@ -1090,6 +1090,21 @@ def guardrails_drift_is_checked():
     return problems
 
 
+@rule("2026-11-27: the guardrails check's first run failed with AccessDenied on cloudwatch:DescribeAlarms. Its role "
+      "allowed alarm:guardrail-fast-* only, but a describe-by-prefix call is authorized against alarm:*, which the "
+      "IAM simulator (one alarm at a time) reported as allowed.")
+def guardrails_check_can_list_alarms():
+    pol = json.loads((P1 / "bootstrap" / "guardrails-check-role-policy.json").read_text())
+    for st in pol["Statement"]:
+        acts = [st["Action"]] if isinstance(st["Action"], str) else st["Action"]
+        if "cloudwatch:DescribeAlarms" in acts:
+            res = [st["Resource"]] if isinstance(st["Resource"], str) else st["Resource"]
+            if not any(r.endswith(":alarm:*") or r == "*" for r in res):
+                return [f"the check role's DescribeAlarms is scoped to {res}; prefix listing needs alarm:*"]
+            return []
+    return ["the check role can't describe alarms"]
+
+
 def main():
     wanted = sys.argv[1:]  # rule names; none = all
     unknown = set(wanted) - {name for name, _, _ in RULES}

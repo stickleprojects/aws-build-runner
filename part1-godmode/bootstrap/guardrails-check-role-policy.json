@@ -32,10 +32,10 @@
                    "arn:aws:sns:ap-southeast-2:{{ACCOUNT_ID}}:guardrail-fast-stop"]
     },
     {
-      "Sid": "ReadTheFastStopAlarms",
+      "Sid": "ReadTheAlarmsInSydney",
       "Effect": "Allow",
       "Action": "cloudwatch:DescribeAlarms",
-      "Resource": "arn:aws:cloudwatch:ap-southeast-2:{{ACCOUNT_ID}}:alarm:guardrail-fast-*"
+      "Resource": "arn:aws:cloudwatch:ap-southeast-2:{{ACCOUNT_ID}}:alarm:*"
     },
     {
       "Sid": "ReadTheAnomalySubscription",

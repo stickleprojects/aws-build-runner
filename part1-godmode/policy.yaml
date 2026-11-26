@@ -329,3 +329,6 @@ changes:
   - date: 2026-11-27
     what: "Guardrails drift check (#42 C): a read-only role, godmode/aws-build-runner-guardrails-check, which only the guardrails-check workflow on main can assume. It reads the guardrail budgets, the budget-stop policy, the apply and check roles, the kill switch, the guardrail alarms and topics, the anomaly subscription and our Lambdas' caps, and changes nothing. Free"
     approved: 2026-11-27 Kieron
+  - date: 2026-11-27
+    what: "Guardrails check fix: its read-only role may describe any alarm in Sydney (alarm:*, was guardrail-fast-*), because listing alarms by name prefix is authorized against all of them. Still read-only; it can change no alarm. Free"
+    approved: 2026-11-27 Kieron

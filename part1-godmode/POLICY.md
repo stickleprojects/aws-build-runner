@@ -140,6 +140,7 @@ Each group also has an AWS Resource Group of the same name (a saved tag search) 
 | 2026-11-18 | SNS read-only (Sydney): list topics and their subscriptions, so Claude can check the alert emails are confirmed and the budget and fast stops still reach the kill switch. Free; no publishing, subscribing or changes | 2026-11-18 Kieron |
 | 2026-11-26 | Lambda concurrency (#30 fix 6): AWS won't set the account's Lambda limit below 1,000, so a fast-stop alarm fires when more than 20 Lambda executions run at once for 10 minutes, and the launcher is capped at 4 (the webhook stays at 5). Both free | 2026-11-27 Kieron |
 | 2026-11-27 | Guardrails drift check (#42 C): a read-only role, godmode/aws-build-runner-guardrails-check, which only the guardrails-check workflow on main can assume. It reads the guardrail budgets, the budget-stop policy, the apply and check roles, the kill switch, the guardrail alarms and topics, the anomaly subscription and our Lambdas' caps, and changes nothing. Free | 2026-11-27 Kieron |
+| 2026-11-27 | Guardrails check fix: its read-only role may describe any alarm in Sydney (alarm:*, was guardrail-fast-*), because listing alarms by name prefix is authorized against all of them. Still read-only; it can change no alarm. Free | 2026-11-27 Kieron |
 
 ## Policy sizes
 
