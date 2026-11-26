@@ -66,7 +66,7 @@ say "machine requirements: spellbound3d's tools/runner-smoke/machine-requirement
 # The reader fails the bake on a missing file, no node line, an unknown kind, or a pin outside its range.
 req="$(python3 "$FILES/machine_requirements.py" "$SB3D/tools/runner-smoke/machine-requirements.txt")"
 eval "$req"
-say "  apt: ${APT_PACKAGES}; node ${NODE_VERSION}"
+say "  apt: ${APT_PACKAGES}; node ${NODE_VERSION}; drivers: ${DRIVERS:-none}"
 # shellcheck disable=SC2086 # one word per package, checked by the reader
 apt-get install -y -q --no-install-recommends $APT_PACKAGES
 curl -fsSL --retry 3 -o "/tmp/${NODE_FILE}" "https://nodejs.org/dist/v${NODE_VERSION}/${NODE_FILE}"
@@ -127,6 +127,9 @@ say "web browsers: the system libraries Playwright's browsers need (ami/MACHINE-
 # the checked names. Its own environment and cache are in /tmp: the browsers and Playwright aren't baked.
 web="$(python3 "$FILES/web_deps.py" browsers "$SB3D/tools/web/machine-requirements.txt")"
 eval "$web"
+# Mesa's GL driver asked for as a browser extra counts as the llvmpipe driver, so the smoke test checks Chromium
+# draws with it (spellbound3d 0082, until their 0069 adds driver lines to runner-smoke; agreed 2026-11-26).
+case " ${WEB_EXTRA} " in *" libgl1-mesa-dri "*) DRIVERS="${DRIVERS} llvmpipe" ;; esac
 pw="cd '$SB3D' && UV_CACHE_DIR=/tmp/pw-cache UV_PROJECT_ENVIRONMENT=/tmp/pw-venv uv run --frozen --quiet --only-group web playwright"
 # The dry run exits 1 when anything is missing; web_deps.py decides whether its output is a list.
 missing="$(as_runner "$pw install-deps --dry-run ${WEB_BROWSERS}" || true)"
@@ -199,7 +202,7 @@ jq -n -c \
   --arg python "$(v 'python3 --version')" --arg git "$(v 'git --version')" --arg jq "$(v 'jq --version')" \
   --arg make "$(v 'make --version | head -1')" \
   --arg gh "$(v 'gh --version | head -1')" \
-  --arg playwright "$PLAYWRIGHT_VERSION" --arg browsers "$WEB_BROWSERS" \
+  --arg playwright "$PLAYWRIGHT_VERSION" --arg browsers "$WEB_BROWSERS" --arg drivers "$DRIVERS" \
   '{built: $built, base_ami: $base, os: $os, spellbound3d_commit: $sb3d,
     godot_pinned: $godot_pinned, runner_smoke: $runner_smoke,
     runner: {version: $runner, dir: "/opt/github-runners/spellbound3d", user: "ghrunner",
@@ -207,6 +210,7 @@ jq -n -c \
     tools: {godot: $godot, claude_code: $claude, uv: $uv, gitleaks: $gitleaks, node: $node, npm: $npm,
             python: $python, git: $git, jq: $jq, make: $make, gh: $gh},
     web: {playwright: $playwright, libraries_for: ($browsers | split(" "))},
+    drivers: ($drivers | split(" ") | map(select(. != "")) | unique),
     on_path: ["godot", "claude", "uv", "uvx", "gitleaks", "node", "npm", "python3", "git", "jq", "make"],
     caches: ["~/.cache/godot (Godot zip)", "~/.local/opt/godot-<ver>", "~/.cache/uv (uv.lock)",
              "~/.cache/pip (uv wheel)", "~/.npm (Claude Code)"],

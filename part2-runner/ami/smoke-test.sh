@@ -130,6 +130,33 @@ for b in $WEB; do
   run=""; [ "$b" = firefox ] && run="xvfb-run -a"
   check "$b starts, WebGL 2"    "as_job 'PLAYWRIGHT_BROWSERS_PATH=/tmp/pwb $run /tmp/pw/bin/python /tmp/browsers.py $b'"
 done
+# Every software graphics driver spellbound3d's driver lines name must work, not just be installed
+# (2026-11-26, their 0079: we said this test checked llvmpipe; it didn't). llvmpipe: Chromium run the way their
+# render jobs run it (headed under xvfb-run, --use-angle=gl) must report Mesa's llvmpipe and never SwiftShader,
+# its own fallback. lavapipe: Mesa's Vulkan driver is registered. A driver with no check fails the image.
+cat > /tmp/renderer.py <<'PY'
+import sys
+from playwright.sync_api import sync_playwright
+ARGS = ["--ignore-gpu-blocklist", "--use-angle=gl"]
+JS = ("() => { const g = document.createElement('canvas').getContext('webgl2');"
+      " const d = g && g.getExtension('WEBGL_debug_renderer_info');"
+      " return d ? g.getParameter(d.UNMASKED_RENDERER_WEBGL) : null }")
+with sync_playwright() as p:
+    b = p.chromium.launch(headless=False, args=ARGS)
+    r = b.new_page().evaluate(JS) or "no WebGL 2 renderer"
+    b.close()
+print(r)
+sys.exit(0 if "llvmpipe" in r and "swiftshader" not in r.lower() else 1)
+PY
+chmod 644 /tmp/renderer.py
+DRIVERS="$(jq -r '(.drivers // []) | join(" ")' $M)"
+for d in $DRIVERS; do
+  case $d in
+    llvmpipe) check "driver llvmpipe draws (Chromium, --use-angle=gl)" "as_job 'PLAYWRIGHT_BROWSERS_PATH=/tmp/pwb xvfb-run -a -s \"-screen 0 1600x2000x24\" /tmp/pw/bin/python /tmp/renderer.py'" ;;
+    lavapipe) check "driver lavapipe registered (Vulkan ICD)" "ls /usr/share/vulkan/icd.d/lvp_icd.*.json" ;;
+    *) echo "FAIL  driver $d: the smoke test has no check for it"; fail=1 ;;
+  esac
+done
 check "gitleaks"                "as_job 'gitleaks version'"
 check "jq"                      "as_job 'echo {\\\"a\\\":1} | jq -e .a'"
 check "runner version"          "as_job 'cd $R && ./config.sh --version'"

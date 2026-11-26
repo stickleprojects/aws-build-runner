@@ -82,6 +82,8 @@ driver lavapipe distro:libvulkan1
 check("driver lines: packages follow the others, and a name may repeat", mr.parse(withdrv)["APT_PACKAGES"] ==
       "python3 git make curl unzip xvfb python3-venv mesa-vulkan-drivers libgl1-mesa-dri libvulkan1",
       mr.parse(withdrv)["APT_PACKAGES"])
+check("DRIVERS: each driver name once, in order", mr.parse(withdrv)["DRIVERS"] == "lavapipe llvmpipe", mr.parse(withdrv))
+check("DRIVERS is empty without driver lines", mr.parse(GOOD)["DRIVERS"] == "")
 check("a driver package listed twice is installed once",
       mr.parse(withdrv + "driver llvmpipe distro:libvulkan1\n")["APT_PACKAGES"].split().count("libvulkan1") == 1)
 for what, line in {"an unknown driver": "driver nvidia distro:nvidia-driver", "a driver pin": "driver lavapipe exact:25.2",
