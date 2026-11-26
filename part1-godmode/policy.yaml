@@ -304,7 +304,7 @@ changes:
     approved: 2026-11-17 Kieron
   - date: 2026-11-26
     what: "Usage alert (#30): a second budget, guardrail-monthly-usage, counts usage before credits at US$29 and emails at 80 % and 100 % actual and 100 % forecast. It stops nothing; the stop stays on what would be billed. The apply role may view and change that budget too"
-    approved: pending
+    approved: 2026-11-26 Kieron
   - date: 2026-11-17
     what: "Fast stop (#30 fix 2): CloudWatch alarms on data sent by instances, Lambda calls and log ingestion trigger the kill switch within ≈10 minutes, without waiting for billing data. It terminates instances and throttles our Lambdas; AMIs, disks and IPs stay. Claude can't change or delete the alarms"
     approved: 2026-11-17 Kieron
