@@ -15,9 +15,16 @@
 #   - the role godmode/aws-build-runner-guardrails (#42 A), which only the guardrails workflow on main can
 #     assume, after Kieron's approval (environment "guardrails"). It runs bootstrap-budget-stop.sh, so it
 #     can change the guardrails, by name; never Claude's user or policies, these godmode roles, or itself.
+#   - what could widen permissions, so it's set only here (2026-11-27): policy guardrails/budget-stop (the
+#     budget action attaches it to Claude's user), the boundary guardrails/guardrail-roles-boundary, and the
+#     helper roles guardrails/budget-action-runner and guardrails/budget-kill-switch: their trust, and that
+#     boundary on them. The guardrails workflow may change those roles' inline policies only while the
+#     boundary is on them, and may never remove it, edit their trust or edit budget-stop.
 # Idempotent. Prints the role ARN for the GitHub environment secret AWS_APPLY_ROLE_ARN.
 set -euo pipefail
 cd "$(dirname "$0")"
+# shellcheck source=lib.sh
+. ./lib.sh
 
 ROLE_NAME=aws-build-runner-apply
 ROLE_PATH=/godmode/
@@ -38,11 +45,17 @@ python3 -I config.py --render bootstrap/guardrails-check-role-trust.json > "$wor
 python3 -I config.py --render bootstrap/guardrails-check-role-policy.json > "$work/check-policy.json"
 python3 -I config.py --render bootstrap/guardrails-role-trust.json > "$work/guardrails-trust.json"
 python3 -I config.py --render bootstrap/guardrails-role-policy.json > "$work/guardrails-policy.json"
+python3 -I config.py --render bootstrap/guardrail-roles-boundary.json > "$work/boundary.json"
+python3 -I config.py --render bootstrap/budget-stop-policy.json > "$work/budget-stop.json"
+python3 -I config.py --render bootstrap/budget-action-runner-trust.json > "$work/runner-trust.json"
+python3 -I config.py --render bootstrap/budget-kill-switch-trust.json > "$work/ks-trust.json"
 
 echo "== validate with IAM Access Analyzer"
 blocking=0
 for pair in "IDENTITY_POLICY:policy.json" "RESOURCE_POLICY:trust.json" "IDENTITY_POLICY:check-policy.json" "RESOURCE_POLICY:check-trust.json" \
-            "IDENTITY_POLICY:guardrails-policy.json" "RESOURCE_POLICY:guardrails-trust.json"; do
+            "IDENTITY_POLICY:guardrails-policy.json" "RESOURCE_POLICY:guardrails-trust.json" \
+            "IDENTITY_POLICY:boundary.json" "IDENTITY_POLICY:budget-stop.json" \
+            "RESOURCE_POLICY:runner-trust.json" "RESOURCE_POLICY:ks-trust.json"; do
   type="${pair%%:*}"; file="${pair#*:}"
   extra=(); [[ "$type" == RESOURCE_POLICY ]] && extra=(--validate-policy-resource-type AWS::IAM::AssumeRolePolicyDocument)
   findings="$(aws accessanalyzer validate-policy --region "$REGION" --policy-type "$type" "${extra[@]}" \
@@ -89,6 +102,25 @@ fi
 aws iam put-role-policy --role-name "$CHECK_ROLE" --policy-name guardrails-check \
   --policy-document "file://$work/check-policy.json"
 echo "permissions policy set"
+
+echo "== what could widen permissions (set only here)"
+echo "-- policy guardrails/guardrail-roles-boundary"
+put_managed_policy "arn:aws:iam::${ACCOUNT_ID}:policy/guardrails/guardrail-roles-boundary" /guardrails/ \
+  guardrail-roles-boundary "$work/boundary.json" "Caps the guardrail helper roles at what the kill switch and budget action do"
+echo "-- policy guardrails/budget-stop"
+put_managed_policy "arn:aws:iam::${ACCOUNT_ID}:policy/guardrails/budget-stop" /guardrails/ \
+  budget-stop "$work/budget-stop.json" "Attached automatically when guardrail-monthly reaches its limit"
+for pair in "budget-action-runner:runner-trust.json" "budget-kill-switch:ks-trust.json"; do
+  helper="${pair%%:*}"
+  if aws iam get-role --role-name "$helper" >/dev/null 2>&1; then
+    aws iam update-assume-role-policy --role-name "$helper" --policy-document "file://$work/${pair#*:}"
+    aws iam put-role-permissions-boundary --role-name "$helper" \
+      --permissions-boundary "arn:aws:iam::${ACCOUNT_ID}:policy/guardrails/guardrail-roles-boundary"
+    echo "-- role guardrails/${helper}: trust and boundary set"
+  else
+    echo "-- role guardrails/${helper}: not there yet (the guardrails workflow creates it, with the boundary)"
+  fi
+done
 
 GUARD_ROLE=aws-build-runner-guardrails
 echo "== role ${ROLE_PATH}${GUARD_ROLE} (the guardrails workflow)"

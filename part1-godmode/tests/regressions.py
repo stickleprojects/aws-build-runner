@@ -1149,6 +1149,60 @@ def guardrails_workflow_is_fenced():
     return problems
 
 
+@rule("2026-11-27: #79's guardrails role looked scoped by name, but an edited script could escalate to admin: write "
+      "any inline policy onto the kill-switch role, then replace and invoke its code; edit who may assume the helper "
+      "roles; or rewrite budget-stop, which the budget action attaches to Claude's user. parliament and Cloudsplaining "
+      "didn't flag it (each statement looked fine alone). Kieron caught it by asking what stops an edited script.")
+def pipeline_roles_cannot_escalate():
+    problems = []
+    boundary_arn = "arn:aws:iam::{{ACCOUNT_ID}}:policy/guardrails/guardrail-roles-boundary"
+    widening = {"iam:UpdateAssumeRolePolicy", "iam:CreatePolicy", "iam:CreatePolicyVersion", "iam:SetDefaultPolicyVersion",
+                "iam:DeleteRolePermissionsBoundary", "iam:PutRolePermissionsBoundary", "iam:AttachRolePolicy",
+                "iam:AttachUserPolicy", "iam:PutUserPolicy", "iam:CreateUser", "iam:CreateAccessKey",
+                "iam:UpdateRole", "sts:AssumeRole"}
+    for name in ("guardrails-role-policy.json", "guardrails-check-role-policy.json"):
+        pol = json.loads((P1 / "bootstrap" / name).read_text())
+        denied = set()
+        for st in pol["Statement"]:
+            acts = [st["Action"]] if isinstance(st["Action"], str) else st["Action"]
+            if st["Effect"] == "Deny":
+                denied |= set(acts)
+                continue
+            for a in sorted(widening & set(acts)):
+                problems.append(f"{name} {st['Sid']}: allows {a}, which can widen permissions")
+            for a in ("iam:PutRolePolicy", "iam:CreateRole"):
+                if a in acts and st.get("Condition", {}).get("StringEquals", {}).get("iam:PermissionsBoundary") != boundary_arn:
+                    problems.append(f"{name} {st['Sid']}: {a} without requiring guardrails/guardrail-roles-boundary")
+        if name == "guardrails-role-policy.json":
+            for a in ("iam:DeleteRolePermissionsBoundary", "iam:PutRolePermissionsBoundary", "iam:UpdateAssumeRolePolicy",
+                      "iam:CreatePolicyVersion"):
+                if a not in denied:
+                    problems.append(f"{name}: doesn't explicitly deny {a}")
+    bnd_path = P1 / "bootstrap" / "guardrail-roles-boundary.json"
+    if not bnd_path.exists():
+        problems.append("there's no bootstrap/guardrail-roles-boundary.json")
+    else:
+        for st in json.loads(bnd_path.read_text())["Statement"]:
+            if st["Effect"] != "Allow":
+                continue
+            acts = [st["Action"]] if isinstance(st["Action"], str) else st["Action"]
+            if any(a.endswith(":*") or a == "*" for a in acts):
+                problems.append(f"boundary {st['Sid']}: a wildcard action")
+            for a in acts:
+                if a.startswith(("sts:", "iam:Pass", "iam:Put", "iam:Create", "iam:Update")) or a in (
+                        "lambda:UpdateFunctionCode", "lambda:CreateFunction", "lambda:InvokeFunction"):
+                    problems.append(f"boundary {st['Sid']}: allows {a}")
+            if any(a.startswith("iam:") for a in acts) and "policy/guardrails/budget-stop" not in json.dumps(st.get("Condition", {})):
+                problems.append(f"boundary {st['Sid']}: IAM attach not limited to guardrails/budget-stop")
+    script = (P1 / "bootstrap-budget-stop.sh").read_text()
+    for call in ("update-assume-role-policy", "create-policy-version", "create-policy ", "put-role-permissions-boundary"):
+        if re.search(rf"^[^#]*aws iam {call}", script, re.M):
+            problems.append(f"bootstrap-budget-stop.sh (run by the workflow) calls aws iam {call.strip()}")
+    if script.count("--permissions-boundary") < 2:
+        problems.append("bootstrap-budget-stop.sh creates a helper role without the boundary")
+    return problems
+
+
 def main():
     wanted = sys.argv[1:]  # rule names; none = all
     unknown = set(wanted) - {name for name, _, _ in RULES}

@@ -4,33 +4,55 @@
     {
       "Sid": "ReadTheGuardrailBudgets",
       "Effect": "Allow",
-      "Action": ["budgets:ViewBudget", "budgets:DescribeBudgetActionsForBudget"],
-      "Resource": ["arn:aws:budgets::{{ACCOUNT_ID}}:budget/guardrail-monthly",
-                   "arn:aws:budgets::{{ACCOUNT_ID}}:budget/guardrail-monthly-usage"]
+      "Action": [
+        "budgets:ViewBudget",
+        "budgets:DescribeBudgetActionsForBudget"
+      ],
+      "Resource": [
+        "arn:aws:budgets::{{ACCOUNT_ID}}:budget/guardrail-monthly",
+        "arn:aws:budgets::{{ACCOUNT_ID}}:budget/guardrail-monthly-usage"
+      ]
     },
     {
       "Sid": "ReadTheGuardrailPolicyAndRoles",
       "Effect": "Allow",
-      "Action": ["iam:GetPolicy", "iam:GetPolicyVersion", "iam:GetRole", "iam:GetRolePolicy"],
-      "Resource": ["arn:aws:iam::{{ACCOUNT_ID}}:policy/guardrails/budget-stop",
-                   "arn:aws:iam::{{ACCOUNT_ID}}:role/godmode/aws-build-runner-apply",
-                   "arn:aws:iam::{{ACCOUNT_ID}}:role/godmode/aws-build-runner-guardrails-check",
-                   "arn:aws:iam::{{ACCOUNT_ID}}:role/godmode/aws-build-runner-guardrails"]
+      "Action": [
+        "iam:GetPolicy",
+        "iam:GetPolicyVersion",
+        "iam:GetRole",
+        "iam:GetRolePolicy"
+      ],
+      "Resource": [
+        "arn:aws:iam::{{ACCOUNT_ID}}:policy/guardrails/budget-stop",
+        "arn:aws:iam::{{ACCOUNT_ID}}:role/godmode/aws-build-runner-apply",
+        "arn:aws:iam::{{ACCOUNT_ID}}:role/godmode/aws-build-runner-guardrails-check",
+        "arn:aws:iam::{{ACCOUNT_ID}}:role/godmode/aws-build-runner-guardrails",
+        "arn:aws:iam::{{ACCOUNT_ID}}:policy/guardrails/guardrail-roles-boundary",
+        "arn:aws:iam::{{ACCOUNT_ID}}:role/guardrails/budget-action-runner",
+        "arn:aws:iam::{{ACCOUNT_ID}}:role/guardrails/budget-kill-switch"
+      ]
     },
     {
       "Sid": "ReadTheKillSwitchAndOurLambdaCaps",
       "Effect": "Allow",
-      "Action": ["lambda:GetFunctionConfiguration", "lambda:GetFunctionConcurrency"],
-      "Resource": ["arn:aws:lambda:ap-southeast-2:{{ACCOUNT_ID}}:function:guardrail-kill-switch",
-                   "arn:aws:lambda:ap-southeast-2:{{ACCOUNT_ID}}:function:build-runner-launcher",
-                   "arn:aws:lambda:ap-southeast-2:{{ACCOUNT_ID}}:function:build-runner-webhook"]
+      "Action": [
+        "lambda:GetFunctionConfiguration",
+        "lambda:GetFunctionConcurrency"
+      ],
+      "Resource": [
+        "arn:aws:lambda:ap-southeast-2:{{ACCOUNT_ID}}:function:guardrail-kill-switch",
+        "arn:aws:lambda:ap-southeast-2:{{ACCOUNT_ID}}:function:build-runner-launcher",
+        "arn:aws:lambda:ap-southeast-2:{{ACCOUNT_ID}}:function:build-runner-webhook"
+      ]
     },
     {
       "Sid": "ReadTheStopTopics",
       "Effect": "Allow",
       "Action": "sns:ListSubscriptionsByTopic",
-      "Resource": ["arn:aws:sns:ap-southeast-2:{{ACCOUNT_ID}}:guardrail-budget-stop",
-                   "arn:aws:sns:ap-southeast-2:{{ACCOUNT_ID}}:guardrail-fast-stop"]
+      "Resource": [
+        "arn:aws:sns:ap-southeast-2:{{ACCOUNT_ID}}:guardrail-budget-stop",
+        "arn:aws:sns:ap-southeast-2:{{ACCOUNT_ID}}:guardrail-fast-stop"
+      ]
     },
     {
       "Sid": "ReadTheAlarmsInSydney",

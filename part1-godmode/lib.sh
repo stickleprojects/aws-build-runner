@@ -4,6 +4,29 @@
 
 # IAM tag values allow only letters, digits, spaces and _ . : / = + - @, at most 256 characters.
 # (2026-11-16: "(approved in environment aws)" made tag-policy fail after an apply.)
+# Make managed policy ARN match the rendered FILE: create it (PATH, NAME, DESCRIPTION) or add a default version,
+# deleting the oldest non-default first when all 5 are in use. Prints created / unchanged / updated.
+put_managed_policy() {
+  local arn="$1" path="$2" name="$3" file="$4" description="$5" current old n
+  if aws iam get-policy --policy-arn "$arn" >/dev/null 2>&1; then
+    current="$(aws iam get-policy-version --policy-arn "$arn" \
+      --version-id "$(aws iam get-policy --policy-arn "$arn" --query Policy.DefaultVersionId --output text)" \
+      --query PolicyVersion.Document --output json | jq -S -c .)"
+    if [[ "$current" == "$(jq -S -c . "$file")" ]]; then echo "unchanged"; return; fi
+    n="$(aws iam list-policy-versions --policy-arn "$arn" --query 'length(Versions)' --output text)"
+    if (( n >= 5 )); then
+      old="$(aws iam list-policy-versions --policy-arn "$arn" \
+        --query 'Versions[?!IsDefaultVersion] | sort_by(@, &CreateDate)[0].VersionId' --output text)"
+      aws iam delete-policy-version --policy-arn "$arn" --version-id "$old"
+    fi
+    aws iam create-policy-version --policy-arn "$arn" --policy-document "file://$file" --set-as-default \
+      --query PolicyVersion.VersionId --output text | sed 's/^/updated -> /'
+  else
+    aws iam create-policy --policy-name "$name" --path "$path" --policy-document "file://$file" \
+      --description "$description" --query Policy.Arn --output text | sed 's/^/created /'
+  fi
+}
+
 iam_tag_value() { LC_ALL=C sed 's#[^A-Za-z0-9 _.:/=+@-]# #g; s#  *# #g' <<<"${1:0:256}"; }
 
 # tag_applied POLICY_ARN COMMIT AT BY: the applied-commit/-at/-by tags, values cleaned.
