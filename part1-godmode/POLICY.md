@@ -2,9 +2,6 @@
 
 Generated from [policy.yaml](policy.yaml) by `build-policies.py`. Don't edit this file.
 
-> **DRAFT, not approved yet.** Pending:
-> - change 2026-11-27: Guardrails workflow (#42 A): role godmode/aws-build-runner-guardrails, which only the guardrails workflow on main can assume after Kieron's approval, runs bootstrap-budget-stop.sh in place of CloudShell. It can change only the guardrails, by name: the guardrail-monthly budget and its stop action, policy guardrails/budget-stop, the roles guardrails/budget-action-runner and guardrails/budget-kill-switch (passed only to Budgets and Lambda), the kill switch Lambda and its logs, the two guardrail topics, the guardrail-fast-* alarms and the anomaly alert. Never Claude's user or policies, the godmode roles or itself. The drift check also watches this role. Free
-
 Claude's IAM user (`AWS_CLAUDE_USER`) in the account `AWS_ACCOUNT_ID` · home region Sydney (`ap-southeast-2`). The account id and user name aren't in the repo: see [config.py](config.py).
 
 ## In short
@@ -144,7 +141,7 @@ Each group also has an AWS Resource Group of the same name (a saved tag search) 
 | 2026-11-26 | Lambda concurrency (#30 fix 6): AWS won't set the account's Lambda limit below 1,000, so a fast-stop alarm fires when more than 20 Lambda executions run at once for 10 minutes, and the launcher is capped at 4 (the webhook stays at 5). Both free | 2026-11-27 Kieron |
 | 2026-11-27 | Guardrails drift check (#42 C): a read-only role, godmode/aws-build-runner-guardrails-check, which only the guardrails-check workflow on main can assume. It reads the guardrail budgets, the budget-stop policy, the apply and check roles, the kill switch, the guardrail alarms and topics, the anomaly subscription and our Lambdas' caps, and changes nothing. Free | 2026-11-27 Kieron |
 | 2026-11-27 | Guardrails check fix: its read-only role may describe any alarm in Sydney (alarm:*, was guardrail-fast-*), because listing alarms by name prefix is authorized against all of them. Still read-only; it can change no alarm. Free | 2026-11-27 Kieron |
-| 2026-11-27 | Guardrails workflow (#42 A): role godmode/aws-build-runner-guardrails, which only the guardrails workflow on main can assume after Kieron's approval, runs bootstrap-budget-stop.sh in place of CloudShell. It can change only the guardrails, by name: the guardrail-monthly budget and its stop action, policy guardrails/budget-stop, the roles guardrails/budget-action-runner and guardrails/budget-kill-switch (passed only to Budgets and Lambda), the kill switch Lambda and its logs, the two guardrail topics, the guardrail-fast-* alarms and the anomaly alert. Never Claude's user or policies, the godmode roles or itself. The drift check also watches this role. Free | pending |
+| 2026-11-27 | Guardrails workflow (#42 A): role godmode/aws-build-runner-guardrails, which only the guardrails workflow on main can assume after Kieron's approval, runs bootstrap-budget-stop.sh in place of CloudShell. It can change only the guardrails, by name: the guardrail-monthly budget and its stop action, policy guardrails/budget-stop, the roles guardrails/budget-action-runner and guardrails/budget-kill-switch (passed only to Budgets and Lambda), the kill switch Lambda and its logs, the two guardrail topics, the guardrail-fast-* alarms and the anomaly alert. Never Claude's user or policies, the godmode roles or itself. The drift check also watches this role. Free | 2026-11-27 Kieron |
 
 ## Policy sizes
 
