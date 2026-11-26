@@ -1,0 +1,85 @@
+# Guardrails drift check (#42 C): compares what's live in the account with the repo, daily and after every
+# apply (part1-godmode/guardrails_check.py). On a difference it opens or updates one issue, "Guardrails drift"
+# (label guardrails-drift), assigned to Kieron, with what differs and the command that fixes it. It closes
+# the issue once everything matches again. It changes nothing in AWS.
+#
+# Read-only in AWS: OIDC as godmode/aws-build-runner-guardrails-check (bootstrap-github-apply.sh), which
+# only the "guardrails-check" environment on main can assume. Account details are environment secrets
+# (masked in logs), and the report replaces the account id with <account>, as the issue is public.
+name: guardrails-check
+run-name: "guardrails-check: ${{ github.event_name == 'schedule' && 'daily' || github.event_name == 'workflow_run' && 'after apply' || 'by hand' }}"
+
+on:
+  schedule:
+    - cron: "30 20 * * *"   # 07:30 in Sydney (AEDT; 06:30 in AEST)
+  workflow_run:
+    workflows: [apply]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: guardrails-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: guardrails-check
+    timeout-minutes: 10
+    permissions:
+      issues: write     # the drift issue
+      id-token: write   # OIDC: sign in to AWS without keys
+    env:
+      AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}     # only so GitHub masks it in the logs
+      AWS_CLAUDE_USER: ${{ secrets.AWS_CLAUDE_USER }}
+      GH_TOKEN: ${{ github.token }}
+      PYYAML_VERSION: "6.0.3"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - run: pip install --quiet "pyyaml==${PYYAML_VERSION}"
+
+      - name: Sign in to AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_GUARDRAILS_CHECK_ROLE_ARN }}
+          role-session-name: github-guardrails-check-${{ github.run_id }}
+          aws-region: ap-southeast-2
+
+      - name: Compare live with the repo
+        id: check
+        run: |
+          set +e
+          python3 -I part1-godmode/guardrails_check.py > "$RUNNER_TEMP/drift.md"
+          rc=$?
+          set -e
+          cat "$RUNNER_TEMP/drift.md" >> "$GITHUB_STEP_SUMMARY"
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          # 0 matches, 1 drift (reported in the issue), 2 couldn't run (fails the run, so it's seen)
+          [[ "$rc" -le 1 ]]
+
+      - name: Open, update or close the drift issue
+        env:
+          RC: ${{ steps.check.outputs.rc }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          gh label create guardrails-drift --color d93f0b --description "Live guardrails differ from the repo (guardrails-check)" 2>/dev/null || true
+          n="$(gh issue list --label guardrails-drift --state open --json number --jq '.[0].number // empty')"
+          body="$RUNNER_TEMP/body.md"
+          { cat "$RUNNER_TEMP/drift.md"; echo; echo "Checked $(date -u +%Y-%m-%dT%H:%MZ) by [this run]($RUN_URL) on \`${GITHUB_SHA:0:12}\`."; } > "$body"
+          if [[ "$RC" == 1 ]]; then
+            if [[ -n "$n" ]]; then
+              gh issue edit "$n" --body-file "$body"
+            else
+              gh issue create --title "Guardrails drift" --label guardrails-drift --assignee stickleprojects --body-file "$body"
+            fi
+          elif [[ -n "$n" ]]; then
+            gh issue comment "$n" --body-file "$body"
+            gh issue close "$n"
+          fi
