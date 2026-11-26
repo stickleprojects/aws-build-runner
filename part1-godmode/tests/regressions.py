@@ -979,6 +979,25 @@ def offline_tests_pass_inside_and_outside_the_curfew(tests=None):
     return problems
 
 
+@rule("2026-11-26: Claude told spellbound3d's 0079 session the smoke test would check llvmpipe before a rebake, but it "
+      "checked no driver at all: an image could install Mesa and still give their Chromium SwiftShader. Every driver "
+      "a driver line may name needs its own smoke check, and the manifest must say which drivers the image has.")
+def every_driver_has_a_smoke_check():
+    names = re.search(r"^DRIVERS = \(([^)]*)\)", (P2 / "ami" / "files" / "machine_requirements.py").read_text(), re.M)
+    if not names:
+        return ["machine_requirements.py has no DRIVERS tuple"]
+    smoke = (P2 / "ami" / "smoke-test.sh").read_text()
+    setup = (P2 / "ami" / "setup.sh").read_text()
+    problems = [f"smoke-test.sh has no check for driver {d}"
+                for d in re.findall(r'"(\w+)"', names.group(1)) if not re.search(rf"^\s*{d}\) check ", smoke, re.M)]
+    if not re.search(r"^\s*drivers: \(\$drivers", setup, re.M):
+        problems.append("setup.sh doesn't write the image's drivers into the manifest")
+    if ".drivers" not in smoke:
+        problems.append("smoke-test.sh doesn't read the manifest's drivers")
+    if "llvmpipe" in names.group(1) and not re.search(r'"llvmpipe" in r and "swiftshader" not in r\.lower\(\)', smoke):
+        problems.append("the llvmpipe check doesn't refuse SwiftShader")
+    return problems
+
 def main():
     wanted = sys.argv[1:]  # rule names; none = all
     unknown = set(wanted) - {name for name, _, _ in RULES}

@@ -3,6 +3,7 @@
 
     machine_requirements.py FILE     print what setup.sh installs, as shell assignments it can eval:
                                        APT_PACKAGES='python3 git ...'   every distro: package, of tool, module and driver lines
+                                       DRIVERS='llvmpipe'   the driver lines' names, once each (empty if none)
                                        NODE_VERSION=22.23.5 NODE_FILE=node-v22.23.5-linux-x64.tar.xz NODE_SHA256=...
                                        GH_VERSION=2.103.3 GH_FILE=gh_2.103.3_linux_amd64.tar.gz GH_SHA256=...
                                          (the GH_ lines only when the file pins gh; node is required)
@@ -54,7 +55,7 @@ def in_range(v: str, spec: str) -> bool:
 
 
 def parse(text: str) -> dict:
-    tools, modules, drivers, hashes, ranges = {}, [], [], {}, {}
+    tools, modules, drivers, driver_names, hashes, ranges = {}, [], [], [], {}, {}
     for n, raw in enumerate(text.splitlines(), 1):
         f = raw.split("#", 1)[0].split()
         if not f:
@@ -85,6 +86,7 @@ def parse(text: str) -> dict:
             if how != "distro" or not PACKAGE.fullmatch(pkg):
                 raise Bad(f"{where}: driver needs distro:<apt package>, not {args[1]!r}")
             drivers.append(pkg)
+            driver_names.append(args[0])
         elif kind == "sha256" and len(args) == 3:
             if not HASH.fullmatch(args[2]):
                 raise Bad(f"{where}: {args[2]!r} isn't 64 lowercase hex digits")
@@ -110,7 +112,8 @@ def parse(text: str) -> dict:
         if hashes.get(name, ("",))[0] != want:
             raise Bad(f"{name} needs 'sha256 {name} {want} <hash>'")
     packages = [t["what"] for t in tools.values() if t["how"] == "distro"] + modules + drivers
-    out = {"APT_PACKAGES": " ".join(dict.fromkeys(packages))}
+    # DRIVERS: the driver names, for the manifest; the smoke test checks each one draws (2026-11-26).
+    out = {"APT_PACKAGES": " ".join(dict.fromkeys(packages)), "DRIVERS": " ".join(dict.fromkeys(driver_names))}
     for name in EXACT_TOOLS:
         t = tools.get(name)
         if t and t["how"] == "exact":

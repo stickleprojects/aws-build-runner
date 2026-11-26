@@ -66,6 +66,7 @@ setup-stack's `UV_VERSION`, `uv.lock`). The image's copies of those are caches.
 - One package a line. A name may repeat, for a driver that needs more than one package.
 - The bake installs the packages, with `--no-install-recommends`. spellbound3d's prereqs check starts each driver and names the one that fails.
 - The display is a `tool`: `tool Xvfb - distro:xvfb`.
+- The manifest lists the image's drivers (`drivers`), and the smoke test checks each one works before the image goes live (2026-11-26). `llvmpipe`: Chromium, headed under `xvfb-run -a -s "-screen 0 1600x2000x24"` with `--ignore-gpu-blocklist --use-angle=gl` (as spellbound3d's render jobs run it), must report a WebGL renderer containing `llvmpipe` and not SwiftShader. `lavapipe`: Mesa's Vulkan ICD is registered. A driver with no check fails the image, so a new driver name needs its check first.
 - Checked in a plain `ubuntu:24.04` container on 2026-11-25: with `xvfb`, `mesa-vulkan-drivers` and `libgl1-mesa-dri` installed, the loaders (`libvulkan1`, `libgl1`) came as dependencies. Under Xvfb, `vulkaninfo` and `glxinfo` both reported llvmpipe's renderer (lavapipe is Mesa's Vulkan driver on it). Godot wasn't run. `/usr` grew by 329 MB there, less on the image if its browser libraries already include some.
 
 **`sha256`:**
