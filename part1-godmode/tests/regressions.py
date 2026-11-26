@@ -1000,6 +1000,33 @@ def every_driver_has_a_smoke_check():
         problems.append("the llvmpipe check doesn't refuse SwiftShader")
     return problems
 
+@rule("2026-11-26: November's usage (US$3.53 by the 24th) was all paid by credits, so guardrail-monthly, which counts "
+      "what would be billed, read US$0.00: no budget saw any spending, and a slow leak could have used up the credits "
+      "unnoticed. Kieron chose a second, alerts-only budget on usage before credits; the stop stays on the bill.")
+def usage_before_credits_is_watched():
+    problems = []
+    apply = (P1 / "apply.sh").read_text()
+    flat = apply.replace(" ", "")
+    if "USAGE_BUDGET_NAME=guardrail-monthly-usage" not in flat:
+        problems.append("apply.sh doesn't set up the guardrail-monthly-usage budget")
+    if "IncludeCredit:false" not in flat:
+        problems.append("apply.sh's usage budget doesn't count usage before credits (IncludeCredit:false)")
+    if "IncludeCredit:true" not in flat:
+        problems.append("apply.sh's stop budget no longer counts what would be billed (IncludeCredit:true)")
+    stop = (P1 / "bootstrap-budget-stop.sh").read_text()
+    if "guardrail-monthly-usage" in stop:
+        problems.append("bootstrap-budget-stop.sh puts a stop on the usage budget; it's alerts only")
+    role = (P1 / "bootstrap" / "apply-role-policy.json").read_text()
+    if "budget/guardrail-monthly-usage" not in role:
+        problems.append("the apply role can't create or update guardrail-monthly-usage")
+    settings = (P1 / "policy.yaml").read_text()
+    if not re.search(r"^  usage_alert_usd: \d+", settings, re.M):
+        problems.append("policy.yaml has no account_settings.usage_alert_usd")
+    check = (P2 / "laptop" / "daily_check.py").read_text()
+    if 'USAGE_BUDGET = "guardrail-monthly-usage"' not in check or "before credits" not in check:
+        problems.append("the daily check doesn't read usage before credits")
+    return problems
+
 def main():
     wanted = sys.argv[1:]  # rule names; none = all
     unknown = set(wanted) - {name for name, _, _ in RULES}

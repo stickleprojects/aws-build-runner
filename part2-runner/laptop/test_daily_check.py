@@ -36,6 +36,7 @@ BASE = {
     "instances": [], "volumes": [], "addresses": [], "images": [{}, {}, {}],
     "subscriptions": [{"TopicArn": "arn:aws:sns:x:1:guardrail-fast-stop", "Protocol": "email", "SubscriptionArn": "arn:x"}],
     "lambda_limit": 110,
+    "usage": {"BudgetLimit": {"Amount": "29.0"}, "CalculatedSpend": {"ActualSpend": {"Amount": "4.10"}}},
 }
 BASE["concurrency"]["build-runner-webhook"] = 5
 
@@ -55,6 +56,19 @@ def spend(actual, forecast="9.50", updated="2026-11-15T08:00:00+11:00", limit="2
 s, a, w = run()
 check("all well: OK, with the month's spend and forecast", s.startswith("AWS OK: US$4.10 spent this month, forecast US$9.50")
       and not a and not w, (s, a, w))
+check("the summary shows usage before credits", "usage before credits US$4.10" in s, s)
+# 2026-11-26: credits covered the bill, so the stop's budget read US$0.00; only the usage budget sees spending.
+credited = {"BudgetLimit": {"Amount": "29.0"}, "CalculatedSpend": {"ActualSpend": {"Amount": "0.0"}},
+            "LastUpdatedTime": "2026-11-15T08:00:00+11:00"}
+usage = lambda amt: {"BudgetLimit": {"Amount": "29.0"}, "CalculatedSpend": {"ActualSpend": {"Amount": amt}}}
+s, a, w = run(budget=credited, usage=usage("30.00"))
+check("credits cover the bill but usage passed US$29: an alert", s.startswith("AWS ALERT") and any("before credits" in x for x in a), (s, a))
+s, a, w = run(budget=credited, usage=usage("24.00"))
+check("usage before credits over 80%: a warning", any("over 80% of US$29" in x and "before credits" in x for x in w), w)
+s, a, w = run(budget=credited, usage=usage("14.00"))
+check("usage ahead of the busiest month while credited: a warning", any("before credits is running ahead" in x for x in w), w)
+s, a, w = run(usage=None)
+check("no usage budget: a warning, and the summary still reads", any("is missing" in x for x in w) and "before credits" not in s, (s, w))
 s, a, w = run(budget=spend("15.00"))
 check("over 50% of the stop: a warning", s.startswith("AWS WARN") and any("50%" in x for x in w), w)
 s, a, w = run(budget=spend("24.00"))

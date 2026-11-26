@@ -48,7 +48,8 @@
       "Sid": "TheGuardrailBudget",
       "Effect": "Allow",
       "Action": ["budgets:ViewBudget", "budgets:ModifyBudget"],
-      "Resource": "arn:aws:budgets::{{ACCOUNT_ID}}:budget/guardrail-monthly"
+      "Resource": ["arn:aws:budgets::{{ACCOUNT_ID}}:budget/guardrail-monthly",
+                   "arn:aws:budgets::{{ACCOUNT_ID}}:budget/guardrail-monthly-usage"]
     },
     {
       "Sid": "AccountWideS3PublicAccessBlock",

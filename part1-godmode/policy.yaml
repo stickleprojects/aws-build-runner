@@ -249,6 +249,10 @@ account_settings:
   # charged), refunds don't (they come back later, if at all), tax counts. Set by apply.sh and
   # bootstrap-budget-stop.sh.
   budget_counts_billed: true
+  # A second budget, guardrail-monthly-usage, counts USAGE before credits, at the same amount: email alerts only
+  # (80 % and 100 % actual, 100 % forecast), no stop. While credits cover the bill, guardrail-monthly reads
+  # US$0 and can't fire, so this is the only budget that sees spending then (Kieron, 2026-11-26). Set by apply.sh.
+  usage_alert_usd: 29
   # Automatic stop at this % of ACTUAL spend (godmode: bootstrap-budget-stop.sh; rerun when roles change):
   #  - AWS Budgets attaches guardrails/budget-stop (nothing new and billable) to Claude's user and these
   #    /claude/ roles (ones that don't exist yet are skipped)
@@ -298,6 +302,9 @@ changes:
   - date: 2026-11-17
     what: "Disk limits (#30 fix 4): gp3 disks at most the free 3,000 IOPS and 125 MiB/s; snapshot locks and AMI deletion protection blocked, so the kill switch can always remove what it must"
     approved: 2026-11-17 Kieron
+  - date: 2026-11-26
+    what: "Usage alert (#30): a second budget, guardrail-monthly-usage, counts usage before credits at US$29 and emails at 80 % and 100 % actual and 100 % forecast. It stops nothing; the stop stays on what would be billed. The apply role may view and change that budget too"
+    approved: 2026-11-26 Kieron
   - date: 2026-11-17
     what: "Fast stop (#30 fix 2): CloudWatch alarms on data sent by instances, Lambda calls and log ingestion trigger the kill switch within ≈10 minutes, without waiting for billing data. It terminates instances and throttles our Lambdas; AMIs, disks and IPs stay. Claude can't change or delete the alarms"
     approved: 2026-11-17 Kieron
