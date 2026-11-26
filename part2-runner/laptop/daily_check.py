@@ -15,7 +15,7 @@ guardrails look alive:
   - nothing left behind that bills monthly: unattached disks, unattached Elastic IPs, more images than kept
   - the alert emails are confirmed (SNS subscriptions not "PendingConfirmation")
   - spellbound3d's pools.json wasn't refused by the launcher (/build/runner/pools-status, #54)
-  - the account's Lambda limit is the agreed 110 and the webhook is capped (#30 fix 6, PR #57)
+  - our Lambdas are each capped and the concurrency alarm exists (#30 fix 6; AWS's minimum limit is 1,000)
 
 Free calls only: Budgets, CloudWatch, EC2, Lambda and SNS reads, with Claude's read-only CLI profile.
 NOT Cost Explorer: its API costs US$0.01 a call, and nothing scheduled may call it (cost_boundary).
@@ -227,19 +227,17 @@ def evaluate(d: dict, now: dt.datetime, lim: dict) -> tuple[str, list[str], list
         warns.append(f"{len(pending)} alert subscription(s) still PendingConfirmation: "
                      + ", ".join(f"{s['TopicArn'].split(':')[-1]} ({s['Protocol']})" for s in pending))
 
-    # #30 fix 6: Lambda keeps 100 unreserved, so reserving the webhook's 5 and the kill switch's 2 needs >= 107.
-    # Kieron chose 110 (not AWS's 1,000 default) so a runaway function's ceiling stays about 100.
+    # #30 fix 6: Lambda keeps 100 unreserved, so reserving our caps and the kill switch's 2 needs >= 111. AWS won't
+    # go below 1,000 (2026-11-26), so the ceiling comes from each function's cap and the concurrency alarm instead.
     lam = d.get("lambda_limit")
-    hook = d["concurrency"].get("build-runner-webhook")
-    if isinstance(lam, int):
-        if lam < 107:
-            warns.append(f"the account's Lambda limit is {lam}: too low to cap the webhook and reserve the kill switch "
-                         "(#30 fix 6; 110 requested)")
-        elif lam > 200:
-            warns.append(f"the account's Lambda limit is {lam}, far above the agreed 110: a runaway function could run "
-                         f"{lam - 100}+ at once; ask AWS to lower it")
-        if lam >= 107 and hook is None:
-            warns.append("the webhook has no concurrency cap; deploy PR #57 (5)")
+    if isinstance(lam, int) and lam < 111:
+        warns.append(f"the account's Lambda limit is {lam}: too low to cap our Lambdas and reserve the kill switch "
+                     "(#30 fix 6; AWS's minimum is 1,000)")
+    for f, c in d["concurrency"].items():
+        if c is None:
+            warns.append(f"Lambda {f} has no concurrency cap: a fault could run hundreds at once (deploy the stack)")
+    if not any(a.get("AlarmName") == "guardrail-fast-lambda-concurrency" for a in d["alarms"]):
+        warns.append("alarm guardrail-fast-lambda-concurrency is missing: rerun bootstrap-budget-stop.sh")
     ps = d.get("pools_status") or {}
     if ps.get("state") == "refused":
         alerts.append(f"the launcher refused spellbound3d's pools.json, so the last good copy is in force: {ps.get('reason', '')[:300]}")

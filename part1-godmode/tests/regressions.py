@@ -1027,6 +1027,33 @@ def usage_before_credits_is_watched():
         problems.append("the daily check doesn't read usage before credits")
     return problems
 
+
+@rule("2026-11-26: AWS refused to lower the Lambda limit to 110 (its minimum is 1,000). The invocation alarm misses "
+      "a fault holding hundreds of long copies on few new calls (≈US$13/h, unseen by the budget for 8-36 h). "
+      "Kieron chose a concurrency alarm and a cap on every one of our functions.")
+def lambda_ceiling_without_the_quota():
+    problems = []
+    tpl = (P2 / "stack" / "template.yaml").read_text()
+    for name in ("Launcher", "Webhook"):
+        m0 = re.search(rf"^  {name}:\n(?:(?!^  \S).*\n?)*", tpl, re.M)
+        block = m0.group(0) if m0 else ""
+        m = re.search(r"^\s+ReservedConcurrentExecutions:\s*(\d+)", block, re.M)
+        if not m or not 1 <= int(m.group(1)) <= 10:
+            problems.append(f"template.yaml: the {name} needs ReservedConcurrentExecutions between 1 and 10")
+    boot = (P1 / "bootstrap-budget-stop.sh").read_text()
+    if not re.search(r"guardrail-fast-lambda-concurrency[\s\S]{0,300}--metric-name ConcurrentExecutions --statistic Maximum", boot):
+        problems.append("bootstrap-budget-stop.sh doesn't create the Lambda concurrency alarm")
+    mc = re.search(r"^      lambda_concurrent: (\d+)", (P1 / "policy.yaml").read_text(), re.M)
+    if not mc or not 11 <= int(mc.group(1)) <= 50:
+        problems.append("policy.yaml fast_stop.lambda_concurrent must be 11-50 (above the caps' 4+5+2, far below 1,000)")
+    checklist = (P1 / "CHECKLIST.md").read_text()
+    if re.search(r"delete-function-concurrency[^`]*build-runner-launcher", checklist):
+        problems.append("CHECKLIST.md recovers the launcher by deleting its concurrency, which removes its cap")
+    check = (P2 / "laptop" / "daily_check.py").read_text()
+    if "far above the agreed 110" in check or "guardrail-fast-lambda-concurrency" not in check:
+        problems.append("the daily check still wants 110, or doesn't check the concurrency alarm")
+    return problems
+
 def main():
     wanted = sys.argv[1:]  # rule names; none = all
     unknown = set(wanted) - {name for name, _, _ in RULES}

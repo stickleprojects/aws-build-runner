@@ -389,7 +389,8 @@ def summary(p: dict, pending: list, sizes: dict) -> str:
         if fast:
             w("- **Fast stop, without waiting for billing data:** CloudWatch alarms (Sydney, whole account) trigger the "
               "kill switch when, for 2 periods of 5 minutes in a row (≈10 minutes), instances send more than "
-              f"{fast['network_out_gib']} GiB, Lambdas are called more than {fast['lambda_invocations']:,} times, or "
+              f"{fast['network_out_gib']} GiB, Lambdas are called more than {fast['lambda_invocations']:,} times, "
+              f"more than {fast.get('lambda_concurrent', '?')} Lambda executions run at once, or "
               f"logs take in more than {fast['log_ingest_mib']} MiB, per 5 minutes. It then terminates every instance, "
               "cancels spot requests and throttles our Lambdas, and emails Kieron. It keeps the AMIs, disks and IPs, so "
               "a false alarm costs only the interrupted jobs. Turning the Lambdas back on is Kieron's call.")

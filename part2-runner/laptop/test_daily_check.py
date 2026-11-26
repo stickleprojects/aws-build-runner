@@ -31,14 +31,16 @@ BASE = {
     "budget": {"BudgetLimit": {"Amount": "29.0"}, "LastUpdatedTime": "2026-11-15T08:00:00+11:00",
                "CalculatedSpend": {"ActualSpend": {"Amount": "4.10"}, "ForecastedSpend": {"Amount": "9.50"}}},
     "actions": [{"ActionType": "APPLY_IAM_POLICY", "Status": "STANDBY"}],
-    "alarms": [{"AlarmName": "guardrail-fast-network-out", "StateValue": "OK"}],
+    "alarms": [{"AlarmName": "guardrail-fast-network-out", "StateValue": "OK"},
+               {"AlarmName": "guardrail-fast-lambda-concurrency", "StateValue": "OK"}],
     "concurrency": {"build-runner-launcher": None, "build-runner-webhook": None},
     "instances": [], "volumes": [], "addresses": [], "images": [{}, {}, {}],
     "subscriptions": [{"TopicArn": "arn:aws:sns:x:1:guardrail-fast-stop", "Protocol": "email", "SubscriptionArn": "arn:x"}],
-    "lambda_limit": 110,
+    "lambda_limit": 1000,
     "usage": {"BudgetLimit": {"Amount": "29.0"}, "CalculatedSpend": {"ActualSpend": {"Amount": "4.10"}}},
 }
 BASE["concurrency"]["build-runner-webhook"] = 5
+BASE["concurrency"]["build-runner-launcher"] = 4
 
 
 def run(**changes):
@@ -126,12 +128,17 @@ check("pools.json ok: quiet", not a and not w)
 s, a, w = run(lambda_limit=10)
 check("Lambda limit 10: a warning (can't reserve)", any("too low" in x for x in w), w)
 check("the Lambda limit doesn't change the budget figures in the summary", "(stop US$29," in s, s)
+# 2026-11-26: AWS's minimum is 1,000, so 1,000 is fine; each function's cap and the alarm hold the ceiling.
 s, a, w = run(lambda_limit=1000)
-check("Lambda limit 1,000: a warning (above the agreed 110)", any("far above" in x for x in w), w)
-s, a, w = run(lambda_limit=110, concurrency={"build-runner-launcher": None, "build-runner-webhook": None})
-check("limit raised but webhook not capped: a warning", any("no concurrency cap" in x for x in w), w)
+check("Lambda limit 1,000 (AWS's minimum): quiet", not a and not w, (a, w))
+s, a, w = run(concurrency={"build-runner-launcher": None, "build-runner-webhook": 5})
+check("launcher not capped: a warning naming it", any("build-runner-launcher has no concurrency cap" in x for x in w), w)
+s, a, w = run(concurrency={"build-runner-launcher": 4, "build-runner-webhook": None})
+check("webhook not capped: a warning naming it", any("build-runner-webhook has no concurrency cap" in x for x in w), w)
+s, a, w = run(alarms=[{"AlarmName": "guardrail-fast-network-out", "StateValue": "OK"}])
+check("no concurrency alarm: a warning", any("guardrail-fast-lambda-concurrency is missing" in x for x in w), w)
 s, a, w = run()
-check("limit 110 and webhook capped at 5: quiet", not a and not w, (a, w))
+check("limit 1,000, both capped, alarm there: quiet", not a and not w, (a, w))
 
 # Telegram config: missing is reported (not fatal); a file others can read is refused.
 with tempfile.TemporaryDirectory() as d:

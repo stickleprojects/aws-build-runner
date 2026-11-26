@@ -274,6 +274,9 @@ account_settings:
     fast_stop:
       network_out_gib: 1             # sent by instances (normal: a few MiB; 4 capped runners max out at ≈3 GiB)
       lambda_invocations: 1000       # normal: ≈1 a minute (the launcher), plus webhook calls
+      lambda_concurrent: 20          # most running at once (Maximum); normal 1-2, capped ones at most 4+5+2.
+                                     # AWS won't set the account limit below 1,000 (2026-11-26), so this catches
+                                     # long-running copies that the invocation count misses
       log_ingest_mib: 100            # normal: ≈500 bytes per 5 minutes (measured 2026-11-17)
   # Cost Anomaly Detection (free): emails Kieron when a day's spend on any service is unusual by this much.
   anomaly_alert_usd: 3
@@ -320,3 +323,6 @@ changes:
   - date: 2026-11-18
     what: "SNS read-only (Sydney): list topics and their subscriptions, so Claude can check the alert emails are confirmed and the budget and fast stops still reach the kill switch. Free; no publishing, subscribing or changes"
     approved: 2026-11-18 Kieron
+  - date: 2026-11-26
+    what: "Lambda concurrency (#30 fix 6): AWS won't set the account's Lambda limit below 1,000, so a fast-stop alarm fires when more than 20 Lambda executions run at once for 10 minutes, and the launcher is capped at 4 (the webhook stays at 5). Both free"
+    approved: 2026-11-27 Kieron
