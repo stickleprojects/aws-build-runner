@@ -16,8 +16,12 @@ the IAM policies, so the description and what AWS enforces can't drift apart.
   nothing Claude makes can do more than Claude can.
 - **No AWS-managed policies.** AWS changes those without asking (its `ViewOnlyAccess` is on
   version 49 and now includes paid AI-model calls). Every action is listed in `policy.yaml`.
-- **Godmode is temporary**: an admin session only to apply an approved change or do a one-off
-  account action. Day to day, Claude works as its IAM user.
+- **Godmode is temporary**: an admin session only for what could widen permissions (see step 5 below), or
+  a one-off account action. Day to day, Claude works as its IAM user, and changes reach AWS through
+  workflows that wait for Kieron's approval.
+- **Nothing a pipeline runs can widen permissions.** The guardrails role may change the helper roles only
+  while `guardrails/guardrail-roles-boundary` is on them, and may never remove it, edit trust or edit any
+  managed policy (#80, 2026-11-27). The regression rule `pipeline_roles_cannot_escalate` checks it.
 
 ## Lifecycle of a policy change
 
@@ -47,10 +51,20 @@ part-way is recorded as a failed deployment.
    line). If it removes a block, it also removes that action from `MUST_STAY_DENIED` in `verify.py`
    (deliberately a second edit). The PR template asks for need, smallest permission, worst-case cost, risk.
 3. **CI generates and checks it**; the run summary shows the POLICY.md diff and what's pending.
-4. **You approve**: tell Claude (it sets `approved: YYYY-MM-DD Kieron`) or edit it yourself. Then
-   **you merge**. Claude never merges policy PRs and never marks anything approved without your word.
-5. **It gets applied**: Actions → **apply** → Run workflow on `main` → you approve the run. Or by hand in
-   CloudShell with `./apply.sh`. Step by step: [CHECKLIST.md](CHECKLIST.md). The deployment record shows it applied.
+4. **You approve**: write **"approve N"**. Claude sets `approved: YYYY-MM-DD Kieron`, pushes, and arms auto-merge, so
+   the PR merges itself once the required `policy` and `approved` checks pass. Or edit it and merge yourself.
+   Claude never marks anything approved, or arms auto-merge, without your word, and never merges by hand.
+5. **It gets applied**, by the workflow for what changed. You approve each run on its page, which shows the
+   most its role can change and the diff of the code it will execute since the last approved run:
+   - **apply**: Claude's policies, budgets and account settings. Or by hand in CloudShell with `./apply.sh`.
+   - **guardrails**: the budget stop, kill switch, alarms and anomaly alert (`bootstrap-budget-stop.sh`).
+   - **CloudShell**, only for what could widen permissions: `./bootstrap-github-apply.sh` (the godmode roles,
+     `guardrails/budget-stop`, the helper roles' boundary and trust), and the org stop in the management account.
+
+   Step by step: [CHECKLIST.md](CHECKLIST.md). The deployment record shows it applied.
+6. **The drift check confirms it**: **guardrails-check** runs after every apply and guardrails run, and daily at
+   07:30 Sydney. If anything live differs from the repo it opens one "Guardrails drift" issue, with the fix
+   for each item, and closes it once everything matches.
 
 Removing permissions works the same way and is always welcome.
 

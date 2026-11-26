@@ -19,14 +19,26 @@ Read [readme.md](readme.md) first; costs in [PRICING.md](PRICING.md).
   point Kieron at the POLICY.md diff in the CI summary. Kieron approves; a godmode session applies it.
   Process: [part1-godmode/README.md](part1-godmode/README.md#change-process).
 - **Never merge a policy PR, and never set `approved:` without Kieron's explicit word.** Claude's `gh`
-  runs as Kieron's GitHub account, so GitHub can't enforce this; it's on Claude.
+  runs as Kieron's GitHub account, so GitHub can't enforce this; it's on Claude. His word is **"approve N"**
+  for that PR: Claude then sets `approved:`, pushes, and arms auto-merge (`gh pr merge N --auto --squash`), so it
+  merges once the required `policy` and `approved` checks pass (Kieron chose this, 2026-11-27). Never arm it
+  on anything else, and never merge by hand.
 - Repo: github.com/stickleprojects/aws-build-runner. `main` is protected: work on a branch, open a PR.
-- **Applying** an approved, merged change: the **apply** GitHub Actions workflow on `main` (Kieron approves the
-  run; it signs in by OIDC as `godmode/aws-build-runner-apply`), or `apply.sh` in CloudShell as the fallback.
-  Rollback is the same workflow with action `rollback`. Claude may *start* the workflow when Kieron asks, but
-  never approves it; approval is Kieron's click.
-- **Godmode** = Kieron's admin session (GitHub sign-in → CloudShell), only for applying, the one-time
-  bootstrap, or a one-off account action he asked for. Never create admin access keys or IAM users on the laptop.
+- **Applying** an approved, merged change, by GitHub Actions on `main`. Claude may *start* these when Kieron asks;
+  approval is always Kieron's click. Each approval page shows the role's limits and the diff of the code the
+  run executes since the last approved run (`release_preview.py`).
+  - **apply**: Claude's policies, the budgets and account settings (`godmode/aws-build-runner-apply`).
+    Rollback is the same workflow with action `rollback`. `apply.sh` in CloudShell is the fallback.
+  - **guardrails**: `bootstrap-budget-stop.sh`, i.e. the budget stop, kill switch, fast-stop alarms and anomaly alert
+    (`godmode/aws-build-runner-guardrails`, which can't widen any permission).
+  - **guardrails-check** runs after both, and daily at 07:30 Sydney (read-only). It opens or closes one
+    "Guardrails drift" issue, naming each fix.
+- **CloudShell (godmode)** is only for what could widen permissions: `bootstrap-github-apply.sh` (the godmode
+  roles, `guardrails/budget-stop`, the helper roles' boundary and trust; the drift check says when), the org stop
+  (`bootstrap-org-budget-stop.sh`, management account), the one-time bootstrap, or a one-off account action
+  Kieron asked for. Give Kieron the full command, with the `export` of `AWS_ACCOUNT_ID`, `AWS_CLAUDE_USER` and
+  `AWS_ALERT_EMAIL`, in chat only, never in the repo or a PR. "Merge PR N" always comes before a CloudShell step
+  that pulls `main`. Never create admin access keys or IAM users on the laptop.
 
 ## Cost boundary
 
