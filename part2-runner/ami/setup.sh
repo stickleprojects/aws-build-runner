@@ -127,6 +127,9 @@ say "web browsers: the system libraries Playwright's browsers need (ami/MACHINE-
 # the checked names. Its own environment and cache are in /tmp: the browsers and Playwright aren't baked.
 web="$(python3 "$FILES/web_deps.py" browsers "$SB3D/tools/web/machine-requirements.txt")"
 eval "$web"
+# Mesa's GL driver asked for as a browser extra counts as the llvmpipe driver, so the smoke test checks Chromium
+# draws with it (spellbound3d 0082, until their 0069 adds driver lines to runner-smoke; agreed 2026-11-26).
+case " ${WEB_EXTRA} " in *" libgl1-mesa-dri "*) DRIVERS="${DRIVERS} llvmpipe" ;; esac
 pw="cd '$SB3D' && UV_CACHE_DIR=/tmp/pw-cache UV_PROJECT_ENVIRONMENT=/tmp/pw-venv uv run --frozen --quiet --only-group web playwright"
 # The dry run exits 1 when anything is missing; web_deps.py decides whether its output is a list.
 missing="$(as_runner "$pw install-deps --dry-run ${WEB_BROWSERS}" || true)"
@@ -207,7 +210,7 @@ jq -n -c \
     tools: {godot: $godot, claude_code: $claude, uv: $uv, gitleaks: $gitleaks, node: $node, npm: $npm,
             python: $python, git: $git, jq: $jq, make: $make, gh: $gh},
     web: {playwright: $playwright, libraries_for: ($browsers | split(" "))},
-    drivers: ($drivers | split(" ") | map(select(. != ""))),
+    drivers: ($drivers | split(" ") | map(select(. != "")) | unique),
     on_path: ["godot", "claude", "uv", "uvx", "gitleaks", "node", "npm", "python3", "git", "jq", "make"],
     caches: ["~/.cache/godot (Godot zip)", "~/.local/opt/godot-<ver>", "~/.cache/uv (uv.lock)",
              "~/.cache/pip (uv wheel)", "~/.npm (Claude Code)"],

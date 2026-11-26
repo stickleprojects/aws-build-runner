@@ -992,6 +992,8 @@ def every_driver_has_a_smoke_check():
                 for d in re.findall(r'"(\w+)"', names.group(1)) if not re.search(rf"^\s*{d}\) check ", smoke, re.M)]
     if not re.search(r"^\s*drivers: \(\$drivers", setup, re.M):
         problems.append("setup.sh doesn't write the image's drivers into the manifest")
+    if not re.search(r'\*" libgl1-mesa-dri "\*\) DRIVERS="\$\{DRIVERS\} llvmpipe"', setup):
+        problems.append("setup.sh doesn't count the web file's libgl1-mesa-dri as the llvmpipe driver (spellbound3d 0082)")
     if ".drivers" not in smoke:
         problems.append("smoke-test.sh doesn't read the manifest's drivers")
     if "llvmpipe" in names.group(1) and not re.search(r'"llvmpipe" in r and "swiftshader" not in r\.lower\(\)', smoke):
