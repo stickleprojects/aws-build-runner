@@ -1,0 +1,87 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "TheGuardrailBudgetAndItsStop",
+      "Effect": "Allow",
+      "Action": ["budgets:ViewBudget", "budgets:ModifyBudget", "budgets:DescribeBudgetActionsForBudget",
+                 "budgets:CreateBudgetAction", "budgets:UpdateBudgetAction", "budgets:DescribeBudgetAction"],
+      "Resource": ["arn:aws:budgets::{{ACCOUNT_ID}}:budget/guardrail-monthly",
+                   "arn:aws:budgets::{{ACCOUNT_ID}}:budget/guardrail-monthly/action/*"]
+    },
+    {
+      "Sid": "TheBudgetStopPolicy",
+      "Effect": "Allow",
+      "Action": ["iam:GetPolicy", "iam:GetPolicyVersion", "iam:ListPolicyVersions", "iam:CreatePolicy",
+                 "iam:CreatePolicyVersion", "iam:DeletePolicyVersion"],
+      "Resource": "arn:aws:iam::{{ACCOUNT_ID}}:policy/guardrails/budget-stop"
+    },
+    {
+      "Sid": "OnlyTheTwoGuardrailRoles",
+      "Effect": "Allow",
+      "Action": ["iam:GetRole", "iam:CreateRole", "iam:UpdateAssumeRolePolicy", "iam:PutRolePolicy", "iam:GetRolePolicy"],
+      "Resource": ["arn:aws:iam::{{ACCOUNT_ID}}:role/guardrails/budget-action-runner",
+                   "arn:aws:iam::{{ACCOUNT_ID}}:role/guardrails/budget-kill-switch"]
+    },
+    {
+      "Sid": "PassThemOnlyToTheirServices",
+      "Effect": "Allow",
+      "Action": "iam:PassRole",
+      "Resource": ["arn:aws:iam::{{ACCOUNT_ID}}:role/guardrails/budget-action-runner",
+                   "arn:aws:iam::{{ACCOUNT_ID}}:role/guardrails/budget-kill-switch"],
+      "Condition": {"StringEquals": {"iam:PassedToService": ["budgets.amazonaws.com", "lambda.amazonaws.com"]}}
+    },
+    {
+      "Sid": "SeeWhichStopTargetsExist",
+      "Effect": "Allow",
+      "Action": "iam:GetRole",
+      "Resource": "arn:aws:iam::{{ACCOUNT_ID}}:role/claude/*"
+    },
+    {
+      "Sid": "TheKillSwitch",
+      "Effect": "Allow",
+      "Action": ["lambda:GetFunction", "lambda:GetFunctionConfiguration", "lambda:CreateFunction",
+                 "lambda:UpdateFunctionCode", "lambda:UpdateFunctionConfiguration", "lambda:AddPermission",
+                 "lambda:PutFunctionConcurrency", "lambda:InvokeFunction"],
+      "Resource": "arn:aws:lambda:ap-southeast-2:{{ACCOUNT_ID}}:function:guardrail-kill-switch"
+    },
+    {
+      "Sid": "LambdaAccountLimit",
+      "Effect": "Allow",
+      "Action": "lambda:GetAccountSettings",
+      "Resource": "*"
+    },
+    {
+      "Sid": "TheKillSwitchLogs",
+      "Effect": "Allow",
+      "Action": ["logs:CreateLogGroup", "logs:PutRetentionPolicy"],
+      "Resource": "arn:aws:logs:ap-southeast-2:{{ACCOUNT_ID}}:log-group:/aws/lambda/guardrail-kill-switch*"
+    },
+    {
+      "Sid": "TheStopTopics",
+      "Effect": "Allow",
+      "Action": ["sns:CreateTopic", "sns:SetTopicAttributes", "sns:Subscribe", "sns:ListSubscriptionsByTopic"],
+      "Resource": ["arn:aws:sns:ap-southeast-2:{{ACCOUNT_ID}}:guardrail-budget-stop",
+                   "arn:aws:sns:ap-southeast-2:{{ACCOUNT_ID}}:guardrail-fast-stop"]
+    },
+    {
+      "Sid": "TheFastStopAlarms",
+      "Effect": "Allow",
+      "Action": "cloudwatch:PutMetricAlarm",
+      "Resource": "arn:aws:cloudwatch:ap-southeast-2:{{ACCOUNT_ID}}:alarm:guardrail-fast-*"
+    },
+    {
+      "Sid": "ListTheAlarms",
+      "Effect": "Allow",
+      "Action": "cloudwatch:DescribeAlarms",
+      "Resource": "arn:aws:cloudwatch:ap-southeast-2:{{ACCOUNT_ID}}:alarm:*"
+    },
+    {
+      "Sid": "TheAnomalyAlert",
+      "Effect": "Allow",
+      "Action": ["ce:GetAnomalyMonitors", "ce:CreateAnomalyMonitor", "ce:GetAnomalySubscriptions",
+                 "ce:CreateAnomalySubscription", "ce:UpdateAnomalySubscription"],
+      "Resource": "*"
+    }
+  ]
+}

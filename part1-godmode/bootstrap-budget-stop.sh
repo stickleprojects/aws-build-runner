@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Godmode, once (and again when the list of roles changes): the automatic stop at the budget.
-# Run in CloudShell as admin:
+# Normally run by the guardrails GitHub workflow after Kieron's approval (#42 A, as
+# godmode/aws-build-runner-guardrails). It also runs in CloudShell as admin:
 #
 #   export PATH=$HOME/bin:$PATH; cd ~/aws-build-runner/part1-godmode && git pull && ./bootstrap-budget-stop.sh
 #

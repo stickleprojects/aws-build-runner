@@ -14,7 +14,8 @@
       "Action": ["iam:GetPolicy", "iam:GetPolicyVersion", "iam:GetRole", "iam:GetRolePolicy"],
       "Resource": ["arn:aws:iam::{{ACCOUNT_ID}}:policy/guardrails/budget-stop",
                    "arn:aws:iam::{{ACCOUNT_ID}}:role/godmode/aws-build-runner-apply",
-                   "arn:aws:iam::{{ACCOUNT_ID}}:role/godmode/aws-build-runner-guardrails-check"]
+                   "arn:aws:iam::{{ACCOUNT_ID}}:role/godmode/aws-build-runner-guardrails-check",
+                   "arn:aws:iam::{{ACCOUNT_ID}}:role/godmode/aws-build-runner-guardrails"]
     },
     {
       "Sid": "ReadTheKillSwitchAndOurLambdaCaps",

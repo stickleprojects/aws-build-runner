@@ -1,0 +1,63 @@
+# Guardrails (#42 A): runs part1-godmode/bootstrap-budget-stop.sh from main, in place of CloudShell. It sets up
+# the budget stop, the kill switch, the fast-stop alarms and the anomaly alert to match the repo, and ends with
+# a dry run of the kill switch. The guardrails-check workflow then confirms everything matches.
+#
+# The job waits for Kieron's approval (GitHub environment "guardrails"), then signs in by OIDC as
+# godmode/aws-build-runner-guardrails (bootstrap-github-apply.sh), which only that environment on main can
+# assume. That role can change only the guardrails, by name: never Claude's user or policies, the apply role,
+# or itself. Account details are environment secrets, masked in the logs.
+name: guardrails
+run-name: "guardrails: ${{ inputs.note }}"
+
+on:
+  workflow_dispatch:
+    inputs:
+      note:
+        description: "What this run is for (shown as the run title)"
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: guardrails
+  cancel-in-progress: false
+
+jobs:
+  guardrails:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: guardrails
+    timeout-minutes: 20
+    permissions:
+      id-token: write   # OIDC: sign in to AWS without keys
+    env:
+      AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+      AWS_CLAUDE_USER: ${{ secrets.AWS_CLAUDE_USER }}
+      AWS_ALERT_EMAIL: ${{ secrets.AWS_ALERT_EMAIL }}
+      PYYAML_VERSION: "6.0.3"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - run: pip install --quiet "pyyaml==${PYYAML_VERSION}"
+
+      - name: Sign in to AWS (OIDC)
+        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ secrets.AWS_GUARDRAILS_ROLE_ARN }}
+          role-session-name: github-guardrails-${{ github.run_id }}
+          aws-region: ap-southeast-2
+
+      - name: Set up the guardrails (bootstrap-budget-stop.sh)
+        env:
+          NOTE: ${{ inputs.note }}
+        run: |
+          echo "NOTE: ${NOTE}"
+          part1-godmode/bootstrap-budget-stop.sh

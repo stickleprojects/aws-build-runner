@@ -1063,7 +1063,7 @@ def guardrails_drift_is_checked():
     if not wf_path.exists():
         return ["there's no guardrails-check workflow"]
     wf = wf_path.read_text()
-    for need, why in (("schedule:", "it doesn't run daily"), ("workflows: [apply]", "it doesn't run after apply"),
+    for need, why in (("schedule:", "it doesn't run daily"), ("workflows: [apply", "it doesn't run after apply"),
                       ("environment: guardrails-check", "it doesn't use the guardrails-check environment"),
                       ("guardrails_check.py", "it doesn't run guardrails_check.py"),
                       ("secrets.AWS_ACCOUNT_ID", "the account id isn't masked in its logs")):
@@ -1103,6 +1103,50 @@ def guardrails_check_can_list_alarms():
                 return [f"the check role's DescribeAlarms is scoped to {res}; prefix listing needs alarm:*"]
             return []
     return ["the check role can't describe alarms"]
+
+
+@rule("2026-11-27 (#42 A): bootstrap-budget-stop.sh moves from CloudShell to the guardrails workflow. Its role can "
+      "change the guardrails, so it must stay behind Kieron's approval on main, and must not reach anything that "
+      "would let an approved run widen its own or Claude's permissions.")
+def guardrails_workflow_is_fenced():
+    problems = []
+    wf_path = ROOT / ".github" / "workflows" / "guardrails.yml"
+    if not wf_path.exists():
+        return ["there's no guardrails workflow"]
+    wf = wf_path.read_text()
+    for need, why in (("environment: guardrails\n", "it doesn't wait for the guardrails environment's approval"),
+                      ("bootstrap-budget-stop.sh", "it doesn't run bootstrap-budget-stop.sh"),
+                      ("github.ref == 'refs/heads/main'", "it isn't limited to main")):
+        if need not in wf:
+            problems.append(f"guardrails.yml: {why}")
+    if re.search(r"^\s+(push|pull_request|schedule|workflow_run):", wf, re.M):
+        problems.append("guardrails.yml starts on its own; it must only be started by hand")
+    trust = json.loads((P1 / "bootstrap" / "guardrails-role-trust.json").read_text())
+    cond = trust["Statement"][0]["Condition"]["StringEquals"]
+    if cond.get("token.actions.githubusercontent.com:ref") != "refs/heads/main" or \
+            not str(cond.get("token.actions.githubusercontent.com:sub", "")).endswith(":environment:guardrails"):
+        problems.append("the guardrails role can be assumed from outside main's guardrails environment")
+    pol = json.loads((P1 / "bootstrap" / "guardrails-role-policy.json").read_text())
+    for st in pol["Statement"]:
+        acts = [st["Action"]] if isinstance(st["Action"], str) else st["Action"]
+        res = [st["Resource"]] if isinstance(st["Resource"], str) else st["Resource"]
+        if st["Effect"] != "Allow":
+            continue
+        if any(a.endswith(":*") or a == "*" for a in acts):
+            problems.append(f"{st['Sid']}: a wildcard action ({acts})")
+        if any(a.startswith("organizations:") or "User" in a or "AttachRolePolicy" in a or "AccessKey" in a for a in acts):
+            problems.append(f"{st['Sid']}: reaches users, Organizations or managed-policy attachment ({acts})")
+        if any("role/godmode" in r or ":user/" in r or "policy/claude" in r or r.endswith(":policy/*") for r in res):
+            problems.append(f"{st['Sid']}: reaches godmode roles, users or Claude's policies ({res})")
+        writes = [a for a in acts if a.startswith("iam:") and not re.match(r"iam:(Get|List)", a)]
+        if writes and any(r.endswith("*") for r in res):
+            problems.append(f"{st['Sid']}: IAM changes on a wildcard resource ({res})")
+        if "iam:PassRole" in acts and "iam:PassedToService" not in json.dumps(st.get("Condition", {})):
+            problems.append(f"{st['Sid']}: PassRole without an iam:PassedToService condition")
+    boot = (P1 / "bootstrap-github-apply.sh").read_text()
+    if "aws-build-runner-guardrails" not in boot or "guardrails-policy.json" not in boot:
+        problems.append("bootstrap-github-apply.sh doesn't create the guardrails role")
+    return problems
 
 
 def main():

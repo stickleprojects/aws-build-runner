@@ -104,7 +104,7 @@ jobs:
           AWS_CLAUDE_USER: example-claude-user
         run: |
           status=0
-          for f in part1-godmode/out/*.json part1-godmode/bootstrap/apply-role-policy.json part1-godmode/bootstrap/guardrails-check-role-policy.json; do
+          for f in part1-godmode/out/*.json part1-godmode/bootstrap/apply-role-policy.json part1-godmode/bootstrap/guardrails-check-role-policy.json part1-godmode/bootstrap/guardrails-role-policy.json; do
             doc="$(python3 -I part1-godmode/config.py --render "$f")"
             findings="$(parliament --minimum_severity MEDIUM --string "$doc" < /dev/null 2>/dev/null || true)"
             # rds:DatabaseClass is a real key that parliament's data doesn't know; nothing else is expected.

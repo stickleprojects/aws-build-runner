@@ -332,3 +332,6 @@ changes:
   - date: 2026-11-27
     what: "Guardrails check fix: its read-only role may describe any alarm in Sydney (alarm:*, was guardrail-fast-*), because listing alarms by name prefix is authorized against all of them. Still read-only; it can change no alarm. Free"
     approved: 2026-11-27 Kieron
+  - date: 2026-11-27
+    what: "Guardrails workflow (#42 A): role godmode/aws-build-runner-guardrails, which only the guardrails workflow on main can assume after Kieron's approval, runs bootstrap-budget-stop.sh in place of CloudShell. It can change only the guardrails, by name: the guardrail-monthly budget and its stop action, policy guardrails/budget-stop, the roles guardrails/budget-action-runner and guardrails/budget-kill-switch (passed only to Budgets and Lambda), the kill switch Lambda and its logs, the two guardrail topics, the guardrail-fast-* alarms and the anomaly alert. Never Claude's user or policies, the godmode roles or itself. The drift check also watches this role. Free"
+    approved: 2026-11-27 Kieron
