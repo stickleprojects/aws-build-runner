@@ -100,7 +100,8 @@ def fit_notes(jobs: list[dict], queues: list[dict]) -> list[str]:
     """jobs: per (class, workflow, job) over 7 days; queues: per label. -> plain-English notes, worst first."""
     notes = []
     for j in jobs:
-        name = f"`{j['workflow']} / {j['job']}` ({j['class']}, {j['n']:.0f} runs)"
+        on = f" on {j['type']}" if j.get("type") else ""
+        name = f"`{j['workflow']} / {j['job']}` ({j['class']}{on}, {j['n']:.0f} runs)"
         total = j.get("memory_mb") or 0
         # Real use when memwatch recorded it: memory.peak counts file cache too (2026-11-27).
         used = j.get("anon_peak_mb") if j.get("anon_peak_mb") is not None else j.get("mem_peak_mb")
@@ -111,8 +112,12 @@ def fit_notes(jobs: list[dict], queues: list[dict]) -> list[str]:
             notes.append(f"**CPU-starved?** {name}: tasks waited for CPU {j['cpu_stall_pct']:.0f}% of the time.")
         if (j.get("wall_max_s") or 0) > FIT_WALL_HIGH:
             notes.append(f"**Near the 90-minute limit:** {name}: longest run {j['wall_max_s'] / 60:.0f} min.")
-        if j["class"] == "heavy" and j.get("avg_vcpu") is not None and j["avg_vcpu"] < FIT_HEAVY_LOW_VCPU:
-            notes.append(f"**Could be light?** {name}: averaged {j['avg_vcpu']:.1f} busy vCPUs of 4 "
+        # Its machine's real vCPUs (pools differ: spellbound3d's heavy is 2 vCPU since 2026-11-24); light is 2.
+        vcpus = j.get("nproc")
+        if (j["class"] == "heavy" and j.get("avg_vcpu") is not None and j["avg_vcpu"] < FIT_HEAVY_LOW_VCPU
+                and (vcpus is None or vcpus > 2)):
+            of = f" of {vcpus:.0f}" if vcpus else ""
+            notes.append(f"**Could be light?** {name}: averaged {j['avg_vcpu']:.1f} busy vCPUs{of} "
                          "(check its timing tests on 2 vCPU before moving it).")
     for q in queues:
         if (q.get("wait_p95") or 0) > FIT_QUEUE_P95:
@@ -123,16 +128,20 @@ def fit_notes(jobs: list[dict], queues: list[dict]) -> list[str]:
 
 def fit_table(jobs: list[dict], queues: list[dict]) -> list[str]:
     if not jobs and not queues:
-        return ["## Job fit, last 7 days", "", "No per-job records yet."]
+        return ["## Job fit, last 7 days", "", "No per-job records yet (only records from the 2026-11-27 image count)."]
     def n(v, fmt):
         return format(v, fmt) if v is not None else "–"
     lines = ["## Job fit, last 7 days", "",
-             "| Job | Class | Runs | Avg / max time | Avg busy vCPU | Peak memory | CPU wait |",
+             "| Job | Class / machine | Runs | Avg / max time | Avg busy vCPU | Real memory / with file cache | CPU wait |",
              "|---|---|---|---|---|---|---|"]
     for j in jobs:
-        mem = f"{n(j.get('mem_peak_mb'), '.0f')} of {n(j.get('memory_mb'), '.0f')} MB"
-        lines.append(f"| {j['workflow']} / {j['job']} | {j['class']} | {j['n']:.0f} | "
-                     f"{n(j.get('wall_s'), '.0f')} / {n(j.get('wall_max_s'), '.0f')} s | {n(j.get('avg_vcpu'), '.2f')} | "
+        # Real (anonymous) memory is what sizing needs; the cache-inclusive peak is shown beside it (2026-11-27).
+        mem = (f"{n(j.get('anon_peak_mb'), '.0f')} / {n(j.get('mem_peak_mb'), '.0f')} of "
+               f"{n(j.get('memory_mb'), '.0f')} MB")
+        cpus = f" of {j['nproc']:.0f}" if j.get("nproc") else ""
+        machine = f" / {j['type']}" if j.get("type") else ""
+        lines.append(f"| {j['workflow']} / {j['job']} | {j['class']}{machine} | {j['n']:.0f} | "
+                     f"{n(j.get('wall_s'), '.0f')} / {n(j.get('wall_max_s'), '.0f')} s | {n(j.get('avg_vcpu'), '.2f')}{cpus} | "
                      f"{mem} | {n(j.get('cpu_stall_pct'), '.0f')}% |")
     if queues:
         lines += ["", "| Label | Jobs | Wait for a runner: avg / 95% / max |", "|---|---|---|"]
@@ -152,7 +161,7 @@ def summary(month: dict, week: dict, projected: float, now: dt.datetime,
     return "\n".join([
         f"## Runner usage, {now:%Y-%m-%d} (estimate)",
         "",
-        "| Period | light (2 vCPU) | heavy (4 vCPU) | All runners | Heavy share of hours |",
+        "| Period | light | heavy | All runners | Heavy share of hours |",
         "|---|---|---|---|---|",
         row("Last 7 days", week),
         row(f"{now:%B} so far", month),
@@ -210,9 +219,11 @@ def numbers(row: dict, keep: tuple) -> dict:
 
 # Aliases never reuse a field's own name (see usage_rows).
 # ispresent(job): a runner that never got a job (reaped idle, or a test) has nothing to say about job sizes.
-JOBS_QUERY = ('filter msg = "job" and ispresent(job) | stats count(*) as n, avg(wall_s) as wall_avg_s, max(wall_s) as wall_max_s, '
+# ispresent(box_counters_from): only records from the #87 image (2026-11-27). Older ones counted CPU from boot and
+# memory with file cache, so they misled sizing. By machine type too: one job can run on different pools' machines.
+JOBS_QUERY = ('filter msg = "job" and ispresent(job) and ispresent(box_counters_from) | stats count(*) as n, avg(wall_s) as wall_avg_s, max(wall_s) as wall_max_s, '
               'avg(avg_vcpu) as vcpu_avg, max(box_mem_peak_mb) as mem_max_mb, max(box_anon_peak_mb) as anon_max_mb, max(memory_mb) as mem_total_mb, '
-              'avg(cpu_stall_pct) as cpu_wait_pct by class, workflow, job | sort n desc')
+              'max(nproc) as nproc_max, avg(cpu_stall_pct) as cpu_wait_pct by class, workflow, job, type | sort n desc')
 QUEUE_QUERY = ('filter msg = "job-completed" | stats count(*) as n, avg(queue_s) as wait_avg, '
                'pct(queue_s, 95) as wait_p95, max(queue_s) as wait_max by label')
 
@@ -220,11 +231,12 @@ QUEUE_QUERY = ('filter msg = "job-completed" | stats count(*) as n, avg(queue_s)
 def job_rows(start: dt.datetime, end: dt.datetime) -> list[dict]:
     rows = []
     for f in insights(JOBS_LOG_GROUP, JOBS_QUERY, start, end):
-        r = numbers(f, ("class", "workflow", "job"))
-        rows.append({"class": r["class"], "workflow": r["workflow"], "job": r["job"], "n": r.get("n") or 0,
+        r = numbers(f, ("class", "workflow", "job", "type"))
+        rows.append({"class": r["class"], "workflow": r["workflow"], "job": r["job"], "type": r.get("type"),
+                     "n": r.get("n") or 0,
                      "wall_s": r.get("wall_avg_s"), "wall_max_s": r.get("wall_max_s"), "avg_vcpu": r.get("vcpu_avg"),
                      "mem_peak_mb": r.get("mem_max_mb"), "anon_peak_mb": r.get("anon_max_mb"), "memory_mb": r.get("mem_total_mb"),
-                     "cpu_stall_pct": r.get("cpu_wait_pct")})
+                     "nproc": r.get("nproc_max"), "cpu_stall_pct": r.get("cpu_wait_pct")})
     return rows
 
 

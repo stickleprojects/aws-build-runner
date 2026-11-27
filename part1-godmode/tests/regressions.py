@@ -1344,6 +1344,25 @@ def usage_records_count_the_job_and_real_memory():
     return problems
 
 
+
+@rule("2026-11-28: the weekly usage report still misled sizing after #87. Its job table showed only the peak "
+      "with file cache (6.2 GB for a job that used 1 GB), 'Could be light?' said '0.95 busy vCPUs of 4' on a 2-vCPU "
+      "machine, and the header said 'heavy (4 vCPU)'. It also mixed machine types and pre-#87 records. Now: real memory "
+      "beside the cache, per machine type, from #87 records only.")
+def usage_report_shows_real_sizes():
+    problems = []
+    report = (P2 / "usage" / "report.py").read_text()
+    if "busy vCPUs of 4" in report or "heavy (4 vCPU)" in report or "light (2 vCPU)" in report:
+        problems.append("report.py hardcodes the machines' vCPUs; pools differ, so use each job's nproc")
+    if "anon_peak_mb'), '.0f')} / " not in report:
+        problems.append("report.py's job table doesn't show real memory beside the cache-inclusive peak")
+    if "max(nproc)" not in report or "by class, workflow, job, type" not in report:
+        problems.append("report.py's query doesn't read each job's vCPUs per machine type")
+    if "ispresent(box_counters_from)" not in report:
+        problems.append("report.py still mixes in records from before #87 (CPU from boot, memory with cache)")
+    return problems
+
+
 def main():
     wanted = sys.argv[1:]  # rule names; none = all
     unknown = set(wanted) - {name for name, _, _ in RULES}
