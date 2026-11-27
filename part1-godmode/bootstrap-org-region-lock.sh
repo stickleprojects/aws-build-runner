@@ -5,10 +5,10 @@
 #
 # Creates or updates two SCPs and attaches both to Root. An explicit allow-list (Kieron, 2026-11-27): named services
 # in named regions only, everything else denied. Two short policies, so each list is in one place:
-#   - org-region-lock (bootstrap/org-region-lock-scp.json): outside Sydney, only a named list of global services
+#   - org-region-lock (bootstrap/org-region-lock-scp.json): in us-east-1, only a named list of global services
 #     (IAM, STS, Organizations, Budgets, Cost Explorer, billing, support, Health, CloudTrail lookups, sign-in /
-#     Identity Center, console settings), and only in us-east-1, where AWS hosts them and where this organization's
-#     Identity Center lives (checked 2026-11-27). Nothing at all in any other region.
+#     Identity Center, console settings): AWS hosts them there, and so is this organization's Identity Center
+#     (checked 2026-11-27). In every other region, nothing.
 #   - org-sydney-services (bootstrap/org-sydney-services-scp.json): in Sydney, only the named services we use.
 #     Everything else (Bedrock, SageMaker, RDS...) is denied there too.
 # It adds to AWS's AdvancedModeRegionRestriction SCP (still attached); the stricter always wins. SCPs never apply

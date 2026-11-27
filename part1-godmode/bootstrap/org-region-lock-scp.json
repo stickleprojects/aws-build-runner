@@ -2,26 +2,65 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "OutsideSydneyOnlyGlobalServices",
+      "Sid": "InUsEast1OnlyTheseGlobalServices",
       "Effect": "Deny",
       "NotAction": [
-        "iam:*", "sts:*", "organizations:*", "account:*",
-        "budgets:*", "ce:*", "cur:*", "billing:*", "aws-portal:*", "payments:*", "tax:*", "invoicing:*",
-        "freetier:*", "consolidatedbilling:*", "pricing:*",
-        "support:*", "supportplans:*", "support-console:*", "health:*", "trustedadvisor:*",
+        "iam:*",
+        "sts:*",
+        "organizations:*",
+        "account:*",
+        "budgets:*",
+        "ce:*",
+        "cur:*",
+        "billing:*",
+        "aws-portal:*",
+        "payments:*",
+        "tax:*",
+        "invoicing:*",
+        "freetier:*",
+        "consolidatedbilling:*",
+        "pricing:*",
+        "support:*",
+        "supportplans:*",
+        "support-console:*",
+        "health:*",
+        "trustedadvisor:*",
         "cloudtrail:LookupEvents",
-        "sso:*", "sso-directory:*", "sso-oauth:*", "identitystore:*", "identitystore-auth:*", "signin:*",
-        "uxc:*", "consoleapp:*", "notifications:*", "notifications-contacts:*"
+        "sso:*",
+        "sso-directory:*",
+        "sso-oauth:*",
+        "identitystore:*",
+        "identitystore-auth:*",
+        "signin:*",
+        "uxc:*",
+        "consoleapp:*",
+        "notifications:*",
+        "notifications-contacts:*"
       ],
       "Resource": "*",
-      "Condition": {"StringNotEquals": {"aws:RequestedRegion": "ap-southeast-2"}}
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": [
+            "us-east-1",
+            "unspecified"
+          ]
+        }
+      }
     },
     {
-      "Sid": "NothingOutsideSydneyAndUsEast1",
+      "Sid": "NothingAnywhereElse",
       "Effect": "Deny",
       "Action": "*",
       "Resource": "*",
-      "Condition": {"StringNotEquals": {"aws:RequestedRegion": ["ap-southeast-2", "us-east-1", "unspecified"]}}
+      "Condition": {
+        "StringNotEquals": {
+          "aws:RequestedRegion": [
+            "ap-southeast-2",
+            "us-east-1",
+            "unspecified"
+          ]
+        }
+      }
     }
   ]
 }

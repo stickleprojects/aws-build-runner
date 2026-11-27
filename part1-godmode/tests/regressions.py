@@ -1236,13 +1236,13 @@ def region_lock_holds():
     syd = {x["Sid"]: x for x in json.loads(files["sydney"].read_text())["Statement"]}
     if any(x["Effect"] != "Deny" for x in list(lock.values()) + list(syd.values())):
         problems.append("the region lock SCPs only deny")
-    out = lock.get("OutsideSydneyOnlyGlobalServices", {})
-    if out.get("Condition") != {"StringNotEquals": {"aws:RequestedRegion": "ap-southeast-2"}} or "NotAction" not in out:
-        problems.append("org-region-lock doesn't deny everything but the named global services outside Sydney")
+    out = lock.get("InUsEast1OnlyTheseGlobalServices", {})
+    if out.get("Condition") != {"StringEquals": {"aws:RequestedRegion": ["us-east-1", "unspecified"]}} or "NotAction" not in out:
+        problems.append("org-region-lock doesn't limit us-east-1 to the named global services")
     for svc in ("ec2", "ssm", "lambda", "s3", "kms", "logs", "cloudwatch", "cloudshell", "bedrock", "cloudformation"):
         if any(a.split(":")[0] == svc for a in out.get("NotAction", [])):
             problems.append(f"org-region-lock lets the regional service {svc} out of Sydney")
-    rest = lock.get("NothingOutsideSydneyAndUsEast1", {})
+    rest = lock.get("NothingAnywhereElse", {})
     regions = set(rest.get("Condition", {}).get("StringNotEquals", {}).get("aws:RequestedRegion", []))
     if rest.get("Action") != "*" or regions - {"ap-southeast-2", "us-east-1", "unspecified"} or \
             not {"ap-southeast-2", "us-east-1"} <= regions:

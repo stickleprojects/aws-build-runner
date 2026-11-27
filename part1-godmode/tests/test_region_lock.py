@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Offline tests for the organization's region lock, #30 fix 7: two SCPs, evaluated together.
-    bootstrap/org-region-lock-scp.json       outside Sydney: only the named global services, and only in us-east-1
+    bootstrap/org-region-lock-scp.json       in us-east-1 only the named global services; elsewhere nothing
     bootstrap/org-sydney-services-scp.json   in Sydney: only the named services we use
 
     python3 -I part1-godmode/tests/test_region_lock.py
