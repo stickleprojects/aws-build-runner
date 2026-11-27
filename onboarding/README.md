@@ -28,6 +28,7 @@ The platform doesn't survey the project's repos: it describes what it needs, and
 - **Jobs:** which repos and jobs would move, why, and where they run today. "None" is fine.
 - **Per job:** OS or container; tools and versions; whether it needs root, Docker, privileged mode, a display, a GPU or network access; time, CPU, peak memory, disk.
 - **Volume:** runs a day, the busiest hour, how urgent, and whether no runners from 22:00 to 07:00 Sydney is a problem.
+- **Own schedule rules:** any step that checks the time or a curfew itself. It has to go ([the curfew lives only here](#the-curfew-lives-only-here)).
 - **Trust:** repo visibility, who can trigger jobs, whether fork PRs run, secrets needed.
 - **Caches and artifacts:** sizes, and where they go.
 
@@ -38,6 +39,18 @@ The platform doesn't survey the project's repos: it describes what it needs, and
 - Jobs get no sudo and no Docker, and upload at about 20 Mbps.
 - No Windows or macOS.
 - All projects share the US$35 ceiling and the US$29 stop: one project's spend can stop the others' builds.
+
+### The curfew lives only here
+
+The platform alone decides when runners run. A project must not add its own curfew check (a step that reads the clock
+and refuses late jobs): it can't see an extension, so the two drift apart. On 2026-11-27 Kieron extended the runners
+to 23:14 for a release, and spellbound3d's own "after 21:30" guard failed it anyway (0085).
+
+- Submit jobs whenever you like. During the curfew they queue (GitHub keeps them 24 h) and start at 07:00.
+- To run past the stop, ask this repo's Claude session before it, naming the run and how long it needs. Claude
+  extends 1 or 2 hours at a time, only once Kieron approves.
+- Jobs still running at the stop are terminated. Don't start anything that mustn't be cut off (a release, a deploy)
+  close to the stop without an extension.
 
 The limits are `cost_boundary` in [policy.yaml](../part1-godmode/policy.yaml). Raising one, or adding an always-on cost, is Kieron's decision.
 
