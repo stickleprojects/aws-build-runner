@@ -1224,43 +1224,42 @@ def approvals_show_what_will_run():
 
 
 @rule("2026-11-27 (#30 fix 7): the organization's AWS-generated region SCP allowed EC2 in us-east-1 and Bedrock in "
-      "every region. Kieron: deny every service outside Australia, and grant named services in named regions only. "
-      "org-region-lock allows regional services in Sydney only, a named list of global services in Sydney and "
-      "us-east-1 (where Identity Center and the global endpoints live) only, and no Bedrock anywhere.")
+      "every region. Kieron: nothing unless named, then only these services, in these regions; no double negatives. "
+      "org-allowed-services replaces FullAWSAccess at Root: in Sydney only the services we use, in us-east-1 only the "
+      "named global services (where AWS hosts them and Identity Center lives), nothing anywhere else.")
 def region_lock_holds():
     problems = []
-    files = {"lock": P1 / "bootstrap" / "org-region-lock-scp.json", "sydney": P1 / "bootstrap" / "org-sydney-services-scp.json"}
-    if not all(f.exists() for f in files.values()):
-        return ["org-region-lock-scp.json or org-sydney-services-scp.json is missing"]
-    lock = {x["Sid"]: x for x in json.loads(files["lock"].read_text())["Statement"]}
-    syd = {x["Sid"]: x for x in json.loads(files["sydney"].read_text())["Statement"]}
-    if any(x["Effect"] != "Deny" for x in list(lock.values()) + list(syd.values())):
-        problems.append("the region lock SCPs only deny")
-    out = lock.get("InUsEast1OnlyTheseGlobalServices", {})
-    if out.get("Condition") != {"StringEquals": {"aws:RequestedRegion": ["us-east-1", "unspecified"]}} or "NotAction" not in out:
-        problems.append("org-region-lock doesn't limit us-east-1 to the named global services")
-    for svc in ("ec2", "ssm", "lambda", "s3", "kms", "logs", "cloudwatch", "cloudshell", "bedrock", "cloudformation"):
-        if any(a.split(":")[0] == svc for a in out.get("NotAction", [])):
-            problems.append(f"org-region-lock lets the regional service {svc} out of Sydney")
-    rest = lock.get("NothingAnywhereElse", {})
-    regions = set(rest.get("Condition", {}).get("StringNotEquals", {}).get("aws:RequestedRegion", []))
-    if rest.get("Action") != "*" or regions - {"ap-southeast-2", "us-east-1", "unspecified"} or \
-            not {"ap-southeast-2", "us-east-1"} <= regions:
-        problems.append(f"org-region-lock doesn't deny everything outside Sydney and us-east-1 ({sorted(regions)})")
-    inside = syd.get("InSydneyOnlyTheseServices", {})
-    if inside.get("Condition") != {"StringEquals": {"aws:RequestedRegion": "ap-southeast-2"}} or "NotAction" not in inside:
-        problems.append("org-sydney-services doesn't deny every unnamed service in Sydney")
-    named = {a.split(":")[0] for a in inside.get("NotAction", [])}
-    if any(a.endswith("*") and a == "*" for a in inside.get("NotAction", [])) or {"bedrock", "bedrock-mantle", "sagemaker"} & named:
-        problems.append(f"org-sydney-services lets in what nobody uses: {sorted({'bedrock', 'bedrock-mantle', 'sagemaker'} & named)}")
-    if not {"iam", "kms", "sts"} <= named:
-        problems.append("org-sydney-services must name iam, kms and sts: PassRole and encrypted disks are checked in Sydney")
+    path = P1 / "bootstrap" / "org-allowed-services-scp.json"
+    if not path.exists():
+        return ["there's no bootstrap/org-allowed-services-scp.json"]
+    st = {x.get("Sid"): x for x in json.loads(path.read_text())["Statement"]}
+    if any(x["Effect"] != "Allow" or "NotAction" in x or x.get("Resource") != "*" for x in st.values()):
+        problems.append("org-allowed-services: only plain Allow statements (no Deny, no NotAction)")
+    syd, east = st.get("InSydneyTheseServices", {}), st.get("InUsEast1TheseGlobalServices", {})
+    if syd.get("Condition") != {"StringEquals": {"aws:RequestedRegion": "ap-southeast-2"}}:
+        problems.append("org-allowed-services: the Sydney list isn't limited to Sydney")
+    if east.get("Condition") != {"StringEquals": {"aws:RequestedRegion": ["us-east-1", "unspecified"]}}:
+        problems.append("org-allowed-services: the global list isn't limited to us-east-1")
+    if set(st) != {"InSydneyTheseServices", "InUsEast1TheseGlobalServices"}:
+        problems.append(f"org-allowed-services has statements beyond the two lists: {sorted(st)}")
+    allowed = {a.split(":")[0] for x in st.values() for a in x.get("Action", [])}
+    if "*" in {a for x in st.values() for a in x.get("Action", [])}:
+        problems.append("org-allowed-services allows everything")
+    if {"bedrock", "bedrock-mantle", "sagemaker"} & allowed:
+        problems.append(f"org-allowed-services allows what nobody uses: {sorted({'bedrock', 'bedrock-mantle', 'sagemaker'} & allowed)}")
+    east_svcs = {a.split(":")[0] for a in east.get("Action", [])}
+    for svc in ("ec2", "ssm", "lambda", "s3", "kms", "logs", "cloudwatch", "cloudshell", "cloudformation"):
+        if svc in east_svcs:
+            problems.append(f"org-allowed-services lets the regional service {svc} into us-east-1")
+    if not {"iam", "kms", "sts"} <= {a.split(":")[0] for a in syd.get("Action", [])}:
+        problems.append("the Sydney list must name iam, kms and sts: PassRole and encrypted disks are checked in Sydney")
+    script = (P1 / "bootstrap-org-allowed-services.sh").read_text()
+    if "p-FullAWSAccess" not in script or script.index("attach-policy --policy-id \"$id\"") > script.index("detach-policy --policy-id \"$FULL\""):
+        problems.append("bootstrap-org-allowed-services.sh must attach ours before detaching FullAWSAccess from Root")
     if 'KS_REGIONS="ap-southeast-2"' not in (P1 / "bootstrap-budget-stop.sh").read_text():
         problems.append("the kill switch still sweeps a region other than Sydney")
     if "test_region_lock.py" not in (ROOT / ".github" / "workflows" / "policy.yml").read_text():
-        problems.append("CI doesn't test the region lock against our own calls")
-    if "org-sydney-services" not in (P1 / "bootstrap-org-region-lock.sh").read_text():
-        problems.append("bootstrap-org-region-lock.sh doesn't apply org-sydney-services")
+        problems.append("CI doesn't test the allow-list against our own calls")
     return problems
 
 

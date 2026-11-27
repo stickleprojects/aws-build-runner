@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Offline tests for the organization's region lock, #30 fix 7: two SCPs, evaluated together.
-    bootstrap/org-region-lock-scp.json       in us-east-1 only the named global services; elsewhere nothing
-    bootstrap/org-sydney-services-scp.json   in Sydney: only the named services we use
+"""Offline tests for the organization's allow-list, bootstrap/org-allowed-services-scp.json (#30 fix 7):
+in Sydney only the named services we use, in us-east-1 only the named global services, elsewhere nothing.
 
     python3 -I part1-godmode/tests/test_region_lock.py
 
-Evaluates the SCP's denies the way AWS does (an action matching a Deny's Action, or not matching its NotAction,
-with its region condition true, is denied), against:
+It replaces FullAWSAccess at Root, so an action is allowed only if one of its Allow statements names it and that
+statement's region condition holds; everything else is refused. Evaluated against:
   - every AWS call our scripts, workflows and Python make, in the region each runs in (Sydney, or us-east-1
     for the global services): all must stay allowed;
   - sign-in, console and billing calls in us-east-1, where Identity Center lives (checked 2026-11-27);
@@ -21,7 +20,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 P1 = HERE.parent
 ROOT = P1.parent
-SCPS = [json.loads((P1 / "bootstrap" / f).read_text()) for f in ("org-region-lock-scp.json", "org-sydney-services-scp.json")]
+SCP = json.loads((P1 / "bootstrap" / "org-allowed-services-scp.json").read_text())
 failed = 0
 
 # CLI service names that aren't the IAM prefix.
@@ -43,24 +42,23 @@ def matches(action, patterns):
 
 
 def denied(action, region):
-    for st in (st for scp in SCPS for st in scp["Statement"]):
-        if st["Effect"] != "Deny":
+    """None if the allow-list allows action in region, else why not."""
+    for st in SCP["Statement"]:
+        if st["Effect"] != "Allow":
+            raise ValueError("the allow-list has only Allow statements")
+        acts = st["Action"] if isinstance(st["Action"], list) else [st["Action"]]
+        if not matches(action, acts):
             continue
-        if "Action" in st and not matches(action, st["Action"] if isinstance(st["Action"], list) else [st["Action"]]):
-            continue
-        if "NotAction" in st and matches(action, st["NotAction"]):
-            continue
-        cond = st.get("Condition", {})
         ok = True
-        for op, kv in cond.items():
+        for op, kv in st.get("Condition", {}).items():
             for key, vals in kv.items():
                 vals = vals if isinstance(vals, list) else [vals]
-                if key != "aws:RequestedRegion":
-                    raise ValueError(f"unexpected condition key {key}")
-                ok = ok and (region not in vals if op == "StringNotEquals" else region in vals)
+                if key != "aws:RequestedRegion" or op != "StringEquals":
+                    raise ValueError(f"unexpected condition {op} {key}")
+                ok = ok and region in vals
         if ok:
-            return st["Sid"]
-    return None
+            return None
+    return "not allowed"
 
 
 def our_calls():

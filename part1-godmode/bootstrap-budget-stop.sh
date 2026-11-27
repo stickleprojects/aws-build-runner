@@ -146,8 +146,8 @@ KS_LAMBDAS="$(ks_flag throttle_lambdas)"
 KS_VOLUMES="$(ks_flag delete_detached_volumes)"
 KS_ADDRESSES="$(ks_flag release_unused_addresses)"
 KS_ENDPOINTS="$(ks_flag delete_interface_endpoints)"
-# Instances can only exist where the organization allows EC2: Sydney only, since the SCP org-region-lock
-# (bootstrap-org-region-lock.sh, #30 fix 7, 2026-11-27) denies EC2 in us-east-1, the one other region that allowed it.
+# Instances can only exist where the organization allows EC2: Sydney only, since the SCP org-allowed-services
+# (bootstrap-org-allowed-services.sh, #30 fix 7, 2026-11-27) allows EC2 nowhere else.
 KS_REGIONS="ap-southeast-2"
 
 echo "== kill switch role guardrails/${KS_ROLE}"
