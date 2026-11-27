@@ -194,6 +194,15 @@ Resources:
       Description: build-runner consumer pools, state of the latest read (runner.py POOLS_STATUS)
       Tags: {resource-group: build-runner}
 
+  CurfewWarned:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /build/runner/curfew-warned
+      Type: String
+      Value: "none"
+      Description: build-runner launcher's last curfew warning sent, stop:stage (runner.py CURFEW_WARNED)
+      Tags: {resource-group: build-runner}
+
   RecentLaunches:
     Type: AWS::SSM::Parameter
     Properties:
@@ -266,6 +275,9 @@ Resources:
                   - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/build/github/app-private-key"
                   # Kieron's curfew overrides (extend / stop), written by the curfew workflow or the skill.
                   - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/build/runner/curfew"
+                  # The curfew warnings' Telegram bot and chat (SecureStrings, put by hand; runner.py CURFEW_WARNED).
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/build/telegram/bot-token"
+                  - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/build/telegram/chat-id"
               - Sid: DecryptItThroughSsmOnly
                 Effect: Allow
                 Action: kms:Decrypt
@@ -281,6 +293,10 @@ Resources:
                 Resource:
                   - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${PoolsLastGood}"
                   - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${PoolsStatus}"
+              - Sid: CurfewWarningSent
+                Effect: Allow
+                Action: [ssm:PutParameter, ssm:GetParameter]
+                Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${CurfewWarned}"
               - Sid: RecentLaunchesRecord
                 Effect: Allow
                 Action: [ssm:PutParameter, ssm:GetParameter]

@@ -43,6 +43,9 @@ every 5 min ──> launcher: catches missed webhooks; reaps runners > 90 min, o
       `/extend 1h` or `/extend 2h` (or `/stop`, `/resume`, `/status`), or uses Actions → curfew. No answer: the
       launcher terminates every runner at 22:00 and launches none until 07:00; queued jobs wait. Role
       `/claude/build-runner-curfew` (`ci/curfew-role.sh`) can only read and write `/build/runner/curfew`.
+      While jobs run or wait, the launcher also warns Kieron on Telegram at T-15 and T-5 (bot token and chat in
+      `/build/telegram/*`), once per stop and stage (`/build/runner/curfew-warned`); see the `runner-curfew` skill
+      for relaying them to the Claude sessions that own the jobs.
 - [ ] **Job fit** (we own the runners, so sizing is ours to watch and suggest): each runner sends one line per job
       (`ami/files/job-usage.py`: CPU, memory, CPU/memory wait) and the webhook records each finished job's wait for a
       runner. The daily report adds a *Job fit* table with notes: too small, CPU-starved, could be light, near the
