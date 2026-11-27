@@ -119,7 +119,7 @@ class GH:
             raise RuntimeError("GitHub GET: HTTP 502")
         if self.status == 404:
             return 404, {}
-        return 200, {"content": base64.b64encode(json.dumps(self.doc).encode()).decode()}
+        return 200, {"content": base64.b64encode(json.dumps(self.doc).encode()).decode(), "sha": "abc123def4567890"}
 
 
 runner.BOUNDARY = B
@@ -130,6 +130,9 @@ got = runner.load_pools(GH(GOOD), 1000.0, ssm)
 check("load: a good consumer copy is used", sorted(got["pools"]) == ["aws-heavy", "aws-light"])
 check("load: ...saved as the last good copy", json.loads(ssm.p[runner.POOLS_LAST_GOOD]) == got)
 check("load: ...and the status says ok", json.loads(ssm.p[runner.POOLS_STATUS])["state"] == "ok")
+st = json.loads(ssm.p[runner.POOLS_STATUS])
+check("load: the status records the blob sha read and when (2026-11-28)",
+      st.get("sha") == "abc123def456" and st.get("read_at") == 1000, st)
 gh = GH(GOOD)
 runner.load_pools(gh, 1000.0 + 60, ssm)
 check("load: within 10 minutes it isn't read again", gh.calls == 0)
@@ -138,10 +141,11 @@ got = runner.load_pools(GH(bad), 1000.0 + 700, ssm)
 check("load: a refused copy keeps the last good one", "c7i.4xlarge" not in json.dumps(got) and "aws-heavy" in got["pools"])
 st = json.loads(ssm.p[runner.POOLS_STATUS])
 check("load: ...and the status says refused, with the reason", st["state"] == "refused" and "4xlarge" in st["reason"], st)
-n = len(ssm.puts)
+since = json.loads(ssm.p[runner.POOLS_STATUS])["since"]
 runner._pools_cache.update(at=0.0)
 runner.load_pools(GH(bad), 5000.0, ssm)
-check("load: the same refusal doesn't rewrite the status", len(ssm.puts) == n, ssm.puts[n:])
+st = json.loads(ssm.p[runner.POOLS_STATUS])
+check("load: the same refusal keeps its 'since', but read_at moves on", st["since"] == since and st["read_at"] == 5000, st)
 runner._pools_cache.update(at=0.0)
 got = runner.load_pools(GH(fail=True), 9000.0, ssm)
 check("load: GitHub unreachable keeps the last good copy", "aws-light" in got["pools"]

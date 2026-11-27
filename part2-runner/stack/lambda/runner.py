@@ -326,12 +326,12 @@ def last_good_pools(ssm) -> dict | None:
         return None
 
 
-def consumer_pools(gh: GitHub) -> dict | None:
-    """The consumer's pools.json on main, parsed; None if it doesn't exist (yet)."""
+def consumer_pools(gh: GitHub) -> tuple[dict | None, str]:
+    """The consumer's pools.json on main, parsed, and its blob sha; (None, "") if it doesn't exist (yet)."""
     status, data = gh.call("GET", f"/repos/{REPO}/contents/{CONSUMER_POOLS}?ref=main", ok=(200, 404))
     if status == 404:
-        return None
-    return json.loads(base64.b64decode(data["content"]))
+        return None, ""
+    return json.loads(base64.b64decode(data["content"])), str(data.get("sha") or "")[:12]
 
 
 def load_pools(gh: GitHub, now: float, ssm=None) -> dict:
@@ -339,8 +339,9 @@ def load_pools(gh: GitHub, now: float, ssm=None) -> dict:
     if _pools_cache["checked"] and now - _pools_cache["at"] < POOLS_TTL:
         return _pools_cache["checked"]
     ssm = ssm or aws("ssm")
+    sha = ""
     try:
-        doc = consumer_pools(gh)
+        doc, sha = consumer_pools(gh)
         if doc is None:
             raise FileNotFoundError(CONSUMER_POOLS)
         checked = pools_mod.validate(doc, BOUNDARY)
@@ -358,13 +359,18 @@ def load_pools(gh: GitHub, now: float, ssm=None) -> dict:
     if status["state"] != "ok":
         checked = last_good_pools(ssm) or bootstrap_pools()
         log("pools: keeping the last good copy", state=status["state"], reason=status["reason"])
+    # Every read is recorded (2026-11-28): the scheduled runs kept a stale copy for ~40 min after #323 merged, and
+    # with nothing logged on an unchanged read nobody could tell whether GitHub or the launcher was stale. The log
+    # line and the status carry the blob sha read; read_at lets the daily check warn when reads stop.
+    log("pools read", state=status["state"], sha=sha)
     try:
         old = json.loads(ssm.get_parameter(Name=POOLS_STATUS)["Parameter"]["Value"])
     except Exception:
         old = {}
-    if (old.get("state"), old.get("reason")) != (status["state"], status["reason"]):
-        ssm.put_parameter(Name=POOLS_STATUS, Value=json.dumps({**status, "since": int(now)}), Type="String",
-                          Overwrite=True)
+    same = (old.get("state"), old.get("reason")) == (status["state"], status["reason"])
+    since = old.get("since", int(now)) if same else int(now)
+    ssm.put_parameter(Name=POOLS_STATUS, Value=json.dumps({**status, "since": since, "sha": sha, "read_at": int(now)}),
+                      Type="String", Overwrite=True)
     _pools_cache.update(at=now, checked=checked)
     return checked
 
