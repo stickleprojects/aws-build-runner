@@ -30,6 +30,7 @@ import json
 import re
 import subprocess
 import sys
+import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -110,6 +111,31 @@ def pools_status() -> dict:
         return {}
 
 
+def curfew_telegram() -> dict:
+    """Whether the launcher's copy of the bot (/build/telegram/*, for the curfew warnings) still works: the same token
+    and chat as this laptop's, and Telegram accepts the token (getMe sends nothing). A token rotated in one place only
+    would silence the warnings without anything else noticing (2026-11-28). Never returns or prints the token."""
+    def ssm(name):
+        return aws("ssm", "get-parameter", "--name", name, "--with-decryption")["Parameter"]["Value"]
+    try:
+        token, chat = ssm("/build/telegram/bot-token"), ssm("/build/telegram/chat-id")
+    except RuntimeError as e:
+        return {"state": "missing" if "ParameterNotFound" in str(e) else "error",
+                "reason": "" if "ParameterNotFound" in str(e) else "couldn't read it from SSM"}
+    c = config()
+    if c.get("AWS_CHECK_TELEGRAM_BOT_TOKEN") and token != c["AWS_CHECK_TELEGRAM_BOT_TOKEN"]:
+        return {"state": "differs", "reason": "the bot token differs from this laptop's"}
+    if c.get("AWS_CHECK_TELEGRAM_CHAT_ID") and chat != str(c["AWS_CHECK_TELEGRAM_CHAT_ID"]):
+        return {"state": "differs", "reason": "the chat id differs from this laptop's"}
+    try:
+        ok = telegram("getMe", token).get("ok") is True
+    except urllib.error.HTTPError as e:
+        return {"state": "invalid", "reason": f"Telegram refused the token (HTTP {e.code})"}
+    except Exception as e:  # noqa: BLE001 - offline: not the token's fault
+        return {"state": "error", "reason": f"couldn't reach Telegram ({type(e).__name__})"}
+    return {"state": "ok", "reason": ""} if ok else {"state": "invalid", "reason": "Telegram said not ok"}
+
+
 def usage_budget(acct: str) -> dict | None:
     """The usage-before-credits budget (alerts only), or None if it isn't there yet."""
     try:
@@ -135,7 +161,8 @@ def gather() -> dict:
          "subscriptions": [],
          "pools_status": pools_status(),
          "lambda_limit": aws("lambda", "get-account-settings").get("AccountLimit", {}).get("ConcurrentExecutions"),
-         "usage": usage_budget(acct)}
+         "usage": usage_budget(acct),
+         "curfew_telegram": curfew_telegram()}
     for t in aws("sns", "list-topics").get("Topics", []):
         if t["TopicArn"].split(":")[-1].startswith("guardrail-"):
             d["subscriptions"] += aws("sns", "list-subscriptions-by-topic", "--topic-arn", t["TopicArn"]).get(
@@ -243,6 +270,14 @@ def evaluate(d: dict, now: dt.datetime, lim: dict) -> tuple[str, list[str], list
         alerts.append(f"the launcher refused spellbound3d's pools.json, so the last good copy is in force: {ps.get('reason', '')[:300]}")
     elif ps.get("state") == "unreachable":
         warns.append(f"the launcher couldn't read spellbound3d's pools.json: {ps.get('reason', '')[:200]}")
+
+    # The launcher's Telegram copy, for the curfew warnings (#89). Absent key: an older gather, say nothing.
+    ct = d.get("curfew_telegram")
+    if ct and ct.get("state") != "ok":
+        what = {"missing": "isn't in SSM (/build/telegram/*)", "differs": ct.get("reason", ""),
+                "invalid": ct.get("reason", ""), "error": ct.get("reason", "")}.get(ct.get("state"), ct.get("state"))
+        warns.append(f"the curfew warnings' Telegram bot {what}: you won't get the T-15 and T-5 warnings. "
+                     "Put the laptop's token and chat into /build/telegram/bot-token and chat-id (SecureString)")
 
     state = "ALERT" if alerts else "WARN" if warns else "OK"
     fc_text = f", forecast US${forecast:.2f}" if forecast is not None else ""
