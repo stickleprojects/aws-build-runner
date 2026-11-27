@@ -65,6 +65,12 @@ LOCK_STALE = 150      # longer than the launcher's 120 s timeout
 # What recent runs launched, written under the lock. DescribeInstances lags RunInstances, so the next run
 # counts these as booting until EC2 lists them (2026-11-18, #47: a second heavy instance for one job).
 LAUNCHES = "/build/runner/launches"
+# Curfew warnings (Kieron, 2026-11-27): at T-15 and T-5 before a stop, while jobs run or wait, a Telegram message
+# to Kieron through the "AWS daily check" bot, so he can extend. The last warning sent, so each goes once.
+CURFEW_WARNED = "/build/runner/curfew-warned"
+TELEGRAM_TOKEN = "/build/telegram/bot-token"   # SecureString
+TELEGRAM_CHAT = "/build/telegram/chat-id"      # SecureString
+CURFEW_ISSUE = "https://github.com/stickleprojects/aws-build-runner/issues?q=is%3Aissue+is%3Aopen+label%3Arunner-curfew"
 TOKEN_PERMISSIONS = {"administration": "write", "actions": "read", "contents": "read"}  # contents: pools.json
 # The consumer's pools (#54, phase 1): spellbound3d's tools/runner-image/pools.json on main, read at most every
 # POOLS_TTL, checked against BOUNDARY (the cost boundary from policy.yaml, passed by deploy.sh). A refused or
@@ -486,6 +492,74 @@ def write_launches(recent: list[dict], ssm=None) -> None:
     (ssm or aws("ssm")).put_parameter(Name=LAUNCHES, Value=json.dumps(recent or []), Type="String", Overwrite=True)
 
 
+# ---------------------------------------------------------------------------- curfew warnings
+
+def job_line(job: dict) -> dict:
+    """What a warning says about one job (a GitHub Actions job object)."""
+    return {"job_id": job.get("id"), "run_id": job.get("run_id"), "workflow": job.get("workflow_name"),
+            "job": job.get("name"), "branch": job.get("head_branch"), "url": job.get("html_url")}
+
+
+def warning_text(w: dict, running: list[dict], queued: list[dict], cfg: dict = CURFEW) -> str:
+    def line(j):
+        return f"- {j.get('workflow') or '?'} / {j.get('job') or '?'} on {j.get('branch') or '?'}: {j.get('url') or ''}"
+    out = [f"AWS runners stop in {w['stage']} min, at {curfew.local(w['stop_at'], cfg)} Sydney. "
+           "Running jobs are killed then; queued ones wait until 07:00."]
+    if running:
+        out += [f"Running ({len(running)}):"] + [line(j) for j in running]
+    if queued:
+        out += [f"Queued ({len(queued)}):"] + [line(j) for j in queued]
+    out += ["To keep them on, reply /extend 1h or /extend 2h on the curfew issue, or tell a Claude session:",
+            CURFEW_ISSUE, "No reply: they stop."]
+    return "\n".join(out)
+
+
+def send_telegram(text: str) -> bool:
+    import urllib.parse
+    import urllib.request
+    data = urllib.parse.urlencode({"chat_id": parameter(TELEGRAM_CHAT), "text": text,
+                                   "disable_web_page_preview": "true"}).encode()
+    with urllib.request.urlopen(f"https://api.telegram.org/bot{parameter(TELEGRAM_TOKEN)}/sendMessage",
+                                data=data, timeout=10) as r:
+        return json.load(r).get("ok") is True
+
+
+def curfew_warning(gh, now: float, override: dict, instances: list[dict], queued: list[dict],
+                   ssm=None, send=None) -> dict | None:
+    """At T-15 and T-5 (curfew.warning_due), while a runner is up or a job waits: once per stop and stage, log
+    "curfew warning" (the aws-build-machine session relays it to the Claude sessions that own the jobs) and
+    send it to Kieron on Telegram. Never stops the launcher: a failed send is logged."""
+    w = curfew.warning_due(now, override, CURFEW)
+    if not w or not (instances or queued):
+        return None
+    ssm = ssm or aws("ssm")
+    try:
+        if ssm.get_parameter(Name=CURFEW_WARNED)["Parameter"]["Value"] == w["key"]:
+            return None
+    except Exception as e:
+        if error_code(e) != "ParameterNotFound":
+            raise
+    ssm.put_parameter(Name=CURFEW_WARNED, Value=w["key"], Type="String", Overwrite=True)  # first: never twice
+    running = []
+    for i in instances[:8]:
+        if not i.get("job_id"):
+            continue
+        try:
+            _, job = gh.call("GET", f"/repos/{REPO}/actions/jobs/{i['job_id']}")
+            running.append(job_line(job))
+        except Exception as e:
+            running.append({"job_id": i["job_id"], "error": type(e).__name__})
+    waiting = [job_line(j) for j in queued[:8]]
+    log("curfew warning", stage=w["stage"], stop_at=int(w["stop_at"]), stop_local=curfew.local(w["stop_at"], CURFEW),
+        running=running, queued=waiting)
+    try:
+        sent = (send or send_telegram)(warning_text(w, running, waiting))
+        log("curfew warning sent" if sent else "curfew warning: Telegram refused it", stage=w["stage"])
+    except Exception as e:
+        log("curfew warning: couldn't send", stage=w["stage"], error=type(e).__name__)
+    return w
+
+
 @contextlib.contextmanager
 def lock(ssm=None, wait: int = 60):
     """One launcher run at a time: creating an SSM parameter fails if it already exists."""
@@ -565,7 +639,8 @@ def launcher(event, context):
 
             if source == "curfew-status":
                 return {"curfew": curfew.state(now, curfew_override(), CURFEW), "live": len(instances)}
-            night = curfew.state(now, curfew_override(), CURFEW)
+            override = curfew_override()
+            night = curfew.state(now, override, CURFEW)
             if night["active"]:
                 # Curfew: nothing runs. Running jobs are killed (Kieron's choice, 2026-11-17); queued ones wait
                 # (GitHub keeps them up to 24 h) and launch on the first run after it ends.
@@ -579,6 +654,10 @@ def launcher(event, context):
                     until=curfew.local(night["until"], CURFEW))
                 return {"ok": True, "curfew": night}
 
+            try:
+                curfew_warning(gh, now, override, instances, queued)
+            except Exception as e:  # a warning must never stop runners launching
+                log("curfew warning failed", error=type(e).__name__)
             plan = launches_needed(queued, instances, runners, now, cap=MAX_RUNNERS)
             covered = {i["job_id"] for i in instances}
             log("reconcile", source=source, queued=len(queued), live=len(instances),

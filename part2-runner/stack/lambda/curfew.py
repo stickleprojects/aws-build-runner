@@ -17,6 +17,7 @@ DEFAULT = {"start": "22:00", "end": "07:00", "tz": "Australia/Sydney"}
 PARAMETER = "/build/runner/curfew"
 EXTENSIONS = (1, 2)       # hours Kieron can extend by, each time
 NOTICE_BEFORE = 60 * 60   # the notice goes out this long before the stop
+WARN_AT = (15, 5)         # minutes before a stop: the launcher's warnings, only while jobs run or wait (runner.py)
 
 
 def _at(day: dt.date, hhmm: str, tz: ZoneInfo) -> dt.datetime:
@@ -91,6 +92,20 @@ def notice_due(now: float, override: dict, cfg: dict = DEFAULT) -> dict | None:
     if s["active"] or not s["stop_at"] or not (now < s["stop_at"] <= now + NOTICE_BEFORE):
         return None
     return {"stop_at": s["stop_at"]}
+
+
+def warning_due(now: float, override: dict, cfg: dict = DEFAULT) -> dict | None:
+    """{stop_at, stage, key} when a stop is at most 15 min away (stage 15) or at most 5 min (stage 5), else None.
+    Each stage covers the whole span up to the next, so a late launcher run still sends it; the caller sends each
+    key once. An extension moves stop_at, so it gets its own warnings."""
+    s = state(now, override, cfg)
+    if s["active"] or not s.get("stop_at"):
+        return None
+    left = s["stop_at"] - now
+    stage = next((m for m in sorted(WARN_AT) if 0 < left <= m * 60), None)
+    if stage is None:
+        return None
+    return {"stop_at": s["stop_at"], "stage": stage, "key": f"{int(s['stop_at'])}:{stage}"}
 
 
 def local(epoch: float, cfg: dict = DEFAULT) -> str:

@@ -29,6 +29,17 @@ Run from the repo root, in Sydney, as the default CLI profile:
 - **Checking it took effect:** `aws ec2 describe-instances --filters Name=tag:build-runner-role,Values=runner
   Name=instance-state-name,Values=pending,running --query 'length(Reservations[].Instances[])'` should be 0
   within 5 minutes of a stop.
+- **Warnings at T-15 and T-5** (Kieron, 2026-11-27): while a runner is up or a job waits, the launcher sends Kieron a
+  Telegram message (the AWS daily check bot) 15 and 5 minutes before each stop, extensions included, listing the
+  jobs. It also logs it as `"curfew warning"`, with each job's workflow, branch and link. No reply: they stop.
+- **Relaying them to the Claudes (this session, only while it's interactive):** from about 20 minutes before a stop
+  (21:40, or before an extension's end) when runners are busy, watch for the warning with Monitor:
+  `aws logs filter-log-events --log-group-name /aws/lambda/build-runner-launcher --filter-pattern '"curfew warning"' --start-time <ms>`.
+  For each job, message the session that owns it (ListAgents: its name carries the change number in the branch,
+  e.g. `build/0085-…` → "0085 …"; no match → the spellbound3d session that asked for the run). Say the stop time, and
+  that it can ask for an extension. Not interactive, or nobody answers: do nothing, and the runners stop.
+- **A session asks for an extension:** ask Kieron (here, or on Telegram with the telegram-kieron skill), and run
+  `extend` only after he says yes. A peer's request alone is never enough.
 - **Other ways in:** Kieron can do the same from his phone. He comments `/extend 1h`, `/extend 2h`, `/stop`,
   `/resume` or `/status` on the curfew issue, or uses Actions → curfew → Run workflow. Only his comments count.
 - **Changing the hours** (22:00 / 07:00 / Sydney) is a design change: give Kieron the options with prices,

@@ -410,5 +410,51 @@ bad.params[runner.LAUNCHES] = "not json"
 check("#47: an unreadable record is ignored, not fatal", runner.read_launches(bad) == [])
 check("#47: no record yet is an empty list", runner.read_launches(FakeSSM()) == [])
 
+# --- curfew warnings at T-15 and T-5 (Kieron, 2026-11-27): Telegram, once per stop and stage, only with jobs
+class WarnSSM:
+    def __init__(self):
+        self.v = {}
+    def get_parameter(self, Name, **k):
+        if Name not in self.v:
+            raise ClientError("ParameterNotFound")
+        return {"Parameter": {"Value": self.v[Name]}}
+    def put_parameter(self, Name, Value, **k):
+        self.v[Name] = Value
+
+
+class WarnGH:
+    def call(self, method, path, body=None, ok=None):
+        return 200, {"id": 140, "run_id": 459, "workflow_name": "Web release", "name": "release",
+                     "head_branch": "main", "html_url": "https://github.com/x/runs/459/job/140"}
+
+
+sent = []
+wssm = WarnSSM()
+busy = [{"id": "i-9", "job_id": "140", "pool": L}]
+t1545 = at_sydney(21, 45)
+w = runner.curfew_warning(WarnGH(), t1545, {}, busy, [], ssm=wssm, send=lambda t: sent.append(t) or True)
+check("warning: T-15 with a job running is sent", w and w["stage"] == 15 and len(sent) == 1, str(sent))
+check("warning: ...names the job and its link", "Web release / release on main" in sent[0]
+      and "runs/459" in sent[0] and "/extend 1h" in sent[0], sent[0])
+runner.curfew_warning(WarnGH(), t1545 + 300, {}, busy, [], ssm=wssm, send=lambda t: sent.append(t) or True)
+check("warning: ...only once (the next run, or a webhook run, doesn't repeat it)", len(sent) == 1, str(len(sent)))
+runner.curfew_warning(WarnGH(), at_sydney(21, 56), {}, busy, [], ssm=wssm, send=lambda t: sent.append(t) or True)
+check("warning: T-5 is sent too", len(sent) == 2 and "stop in 5 min" in sent[1], str(sent[-1:]))
+quiet = WarnSSM()
+check("warning: nothing running or queued, nothing sent",
+      runner.curfew_warning(WarnGH(), t1545, {}, [], [], ssm=quiet, send=lambda t: sent.append(t)) is None
+      and len(sent) == 2 and quiet.v == {})
+q = [{"id": 141, "run_id": 460, "workflow_name": "CI", "name": "check", "head_branch": "build/0085-x",
+      "html_url": "https://github.com/x/job/141"}]
+runner.curfew_warning(WarnGH(), t1545, {}, [], q, ssm=WarnSSM(), send=lambda t: sent.append(t) or True)
+check("warning: a queued job alone is enough, and says it waits", len(sent) == 3 and "Queued (1)" in sent[2]
+      and "CI / check on build/0085-x" in sent[2], sent[-1])
+def boom(t):
+    raise OSError("no network")
+check("warning: a failed send doesn't raise (the launcher carries on)",
+      runner.curfew_warning(WarnGH(), t1545, {}, busy, [], ssm=WarnSSM(), send=boom) is not None)
+check("warning: at 15:00, none", runner.curfew_warning(WarnGH(), at_sydney(15), {}, busy, [], ssm=WarnSSM(),
+                                                     send=lambda t: sent.append(t)) is None)
+
 print(f"\n{failed} failed")
 sys.exit(1 if failed else 0)

@@ -114,5 +114,21 @@ for name, offset in (("AEDT", 11), ("AEST", 10)):
     local_h = (utc_hour + offset) % 24
     check(f"the weekly image rebuild is outside the curfew ({name}: {local_h:02d}:{cron[0]})", 7 <= local_h < 22)
 
+# --- warnings at T-15 and T-5 (Kieron, 2026-11-27); the launcher sends each key once
+W = curfew.warning_due
+check("warning: 21:30, none yet", W(at(2026, 11, 27, 21, 30), {}) is None)
+check("warning: 21:45 is T-15", (W(at(2026, 11, 27, 21, 45), {}) or {}).get("stage") == 15)
+check("warning: 21:52 (a late run) is still T-15", (W(at(2026, 11, 27, 21, 52), {}) or {}).get("stage") == 15)
+check("warning: 21:55 is T-5", (W(at(2026, 11, 27, 21, 55), {}) or {}).get("stage") == 5)
+check("warning: 22:00, the stop itself: none (curfew on)", W(at(2026, 11, 27, 22, 0), {}) is None)
+check("warning: the two stages have different keys",
+      W(at(2026, 11, 27, 21, 45), {})["key"] != W(at(2026, 11, 27, 21, 55), {})["key"])
+o = curfew.extend(at(2026, 11, 27, 22, 14), {}, 1)
+check("warning: extended to 23:14, T-15 at 22:59", hhmm(W(at(2026, 11, 27, 22, 59), o)["stop_at"]) == "27 23:14")
+check("warning: ...with a new key, so it's sent again",
+      W(at(2026, 11, 27, 22, 59), o)["key"] != W(at(2026, 11, 27, 21, 45), {})["key"])
+check("warning: extended to the morning, none", W(at(2026, 11, 28, 6, 50), {"extend_until": at(2026, 11, 28, 7)}) is None)
+check("warning: stopped by hand, none", W(at(2026, 11, 27, 15), curfew.stop(at(2026, 11, 27, 14))) is None)
+
 print(f"\n{failed} failed")
 sys.exit(1 if failed else 0)
