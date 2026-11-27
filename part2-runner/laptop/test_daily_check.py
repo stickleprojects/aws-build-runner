@@ -125,6 +125,44 @@ check("pools.json not there yet (migration): quiet", not a and not w, (a, w))
 s, a, w = run(pools_status={"state": "ok", "reason": ""})
 check("pools.json ok: quiet", not a and not w)
 
+# --- the launcher's Telegram copy, for the curfew warnings (2026-11-28)
+s, a, w = run(curfew_telegram={"state": "ok", "reason": ""})
+check("curfew bot copy ok: quiet", not a and not w, (a, w))
+s, a, w = run(curfew_telegram={"state": "differs", "reason": "the bot token differs from this laptop's"})
+check("curfew bot token rotated in one place: a warning saying so", any("token differs" in x and "T-15" in x for x in w), w)
+s, a, w = run(curfew_telegram={"state": "missing", "reason": ""})
+check("curfew bot not in SSM: a warning", any("isn't in SSM" in x for x in w), w)
+s, a, w = run(curfew_telegram={"state": "invalid", "reason": "Telegram refused the token (HTTP 401)"})
+check("curfew bot token refused: a warning", any("HTTP 401" in x for x in w), w)
+
+real = (dc.aws, dc.config, dc.telegram)
+vals = {"/build/telegram/bot-token": "TOK", "/build/telegram/chat-id": "42"}
+dc.aws = lambda *a: {"Parameter": {"Value": vals[a[3]]}}
+dc.config = lambda: {"AWS_CHECK_TELEGRAM_BOT_TOKEN": "TOK", "AWS_CHECK_TELEGRAM_CHAT_ID": "42"}
+dc.telegram = lambda method, token, **f: {"ok": method == "getMe" and token == "TOK"}
+check("curfew_telegram: same token and chat, getMe ok", dc.curfew_telegram()["state"] == "ok")
+dc.config = lambda: {"AWS_CHECK_TELEGRAM_BOT_TOKEN": "NEW", "AWS_CHECK_TELEGRAM_CHAT_ID": "42"}
+r = dc.curfew_telegram()
+check("curfew_telegram: a rotated laptop token shows as differs, without the token", r["state"] == "differs"
+      and "TOK" not in str(r) and "NEW" not in str(r), r)
+dc.config = lambda: {"AWS_CHECK_TELEGRAM_BOT_TOKEN": "TOK", "AWS_CHECK_TELEGRAM_CHAT_ID": "7"}
+check("curfew_telegram: a different chat shows as differs", dc.curfew_telegram()["state"] == "differs")
+def gone(*a):
+    raise RuntimeError("aws ssm get-parameter: An error occurred (ParameterNotFound)")
+dc.aws = gone
+check("curfew_telegram: not in SSM is missing", dc.curfew_telegram()["state"] == "missing")
+dc.aws = lambda *a: {"Parameter": {"Value": vals[a[3]]}}
+dc.config = lambda: {"AWS_CHECK_TELEGRAM_BOT_TOKEN": "TOK", "AWS_CHECK_TELEGRAM_CHAT_ID": "42"}
+def refused(method, token, **f):
+    raise dc.urllib.error.HTTPError("u", 401, "Unauthorized", {}, None)
+dc.telegram = refused
+check("curfew_telegram: Telegram refusing the token is invalid", dc.curfew_telegram()["state"] == "invalid")
+def offline(method, token, **f):
+    raise OSError("no network")
+dc.telegram = offline
+check("curfew_telegram: offline is an error, not invalid", dc.curfew_telegram()["state"] == "error")
+dc.aws, dc.config, dc.telegram = real
+
 s, a, w = run(lambda_limit=10)
 check("Lambda limit 10: a warning (can't reserve)", any("too low" in x for x in w), w)
 check("the Lambda limit doesn't change the budget figures in the summary", "(stop US$29," in s, s)

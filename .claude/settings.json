@@ -13,7 +13,6 @@
       "Bash(gh api *pulls/*/merge*)",
       "Bash(gh api *branches/*/protection*)",
       "Bash(gh api *rulesets*)",
-      "Bash(claude-gh pr merge *--admin*)",
       "Bash(git push git@github.com:stickleprojects/aws-build-runner*)",
       "Bash(git push ssh://*stickleprojects/aws-build-runner*)",
       "Bash(git remote set-url*)",
