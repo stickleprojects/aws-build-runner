@@ -1223,32 +1223,44 @@ def approvals_show_what_will_run():
     return problems
 
 
-@rule("2026-11-27 (#30 fix 7): the organization's AWS-generated region SCP allowed EC2 in us-east-1, where nothing of "
-      "ours runs (only global services are needed there), and Bedrock model calls in every region. org-region-lock "
-      "denies both, and the kill switch sweeps Sydney only.")
+@rule("2026-11-27 (#30 fix 7): the organization's AWS-generated region SCP allowed EC2 in us-east-1 and Bedrock in "
+      "every region. Kieron: deny every service outside Australia, and grant named services in named regions only. "
+      "org-region-lock allows regional services in Sydney only, a named list of global services in Sydney and "
+      "us-east-1 (where Identity Center and the global endpoints live) only, and no Bedrock anywhere.")
 def region_lock_holds():
     problems = []
-    scp_path = P1 / "bootstrap" / "org-region-lock-scp.json"
-    if not scp_path.exists():
-        return ["there's no bootstrap/org-region-lock-scp.json"]
-    scp = json.loads(scp_path.read_text())
-    denied = {}
-    for st in scp["Statement"]:
-        if st["Effect"] != "Deny":
-            problems.append(f"org-region-lock {st.get('Sid')}: SCPs here only deny")
-            continue
-        region = st.get("Condition", {}).get("StringEquals", {}).get("aws:RequestedRegion", "*")
-        for a in ([st["Action"]] if isinstance(st["Action"], str) else st["Action"]):
-            denied[a] = region
-    if denied.get("ec2:*") != "us-east-1":
-        problems.append("org-region-lock doesn't deny EC2 in us-east-1")
-    if denied.get("bedrock:*") != "*":
-        problems.append("org-region-lock doesn't deny Bedrock everywhere")
-    for svc in ("iam", "sts", "budgets", "ce", "organizations", "billing", "support"):
-        if any(a.startswith(svc + ":") for a in denied):
-            problems.append(f"org-region-lock denies {svc}, a global service that must stay reachable in us-east-1")
+    files = {"lock": P1 / "bootstrap" / "org-region-lock-scp.json", "sydney": P1 / "bootstrap" / "org-sydney-services-scp.json"}
+    if not all(f.exists() for f in files.values()):
+        return ["org-region-lock-scp.json or org-sydney-services-scp.json is missing"]
+    lock = {x["Sid"]: x for x in json.loads(files["lock"].read_text())["Statement"]}
+    syd = {x["Sid"]: x for x in json.loads(files["sydney"].read_text())["Statement"]}
+    if any(x["Effect"] != "Deny" for x in list(lock.values()) + list(syd.values())):
+        problems.append("the region lock SCPs only deny")
+    out = lock.get("OutsideSydneyOnlyGlobalServices", {})
+    if out.get("Condition") != {"StringNotEquals": {"aws:RequestedRegion": "ap-southeast-2"}} or "NotAction" not in out:
+        problems.append("org-region-lock doesn't deny everything but the named global services outside Sydney")
+    for svc in ("ec2", "ssm", "lambda", "s3", "kms", "logs", "cloudwatch", "cloudshell", "bedrock", "cloudformation"):
+        if any(a.split(":")[0] == svc for a in out.get("NotAction", [])):
+            problems.append(f"org-region-lock lets the regional service {svc} out of Sydney")
+    rest = lock.get("NothingOutsideSydneyAndUsEast1", {})
+    regions = set(rest.get("Condition", {}).get("StringNotEquals", {}).get("aws:RequestedRegion", []))
+    if rest.get("Action") != "*" or regions - {"ap-southeast-2", "us-east-1", "unspecified"} or \
+            not {"ap-southeast-2", "us-east-1"} <= regions:
+        problems.append(f"org-region-lock doesn't deny everything outside Sydney and us-east-1 ({sorted(regions)})")
+    inside = syd.get("InSydneyOnlyTheseServices", {})
+    if inside.get("Condition") != {"StringEquals": {"aws:RequestedRegion": "ap-southeast-2"}} or "NotAction" not in inside:
+        problems.append("org-sydney-services doesn't deny every unnamed service in Sydney")
+    named = {a.split(":")[0] for a in inside.get("NotAction", [])}
+    if any(a.endswith("*") and a == "*" for a in inside.get("NotAction", [])) or {"bedrock", "bedrock-mantle", "sagemaker"} & named:
+        problems.append(f"org-sydney-services lets in what nobody uses: {sorted({'bedrock', 'bedrock-mantle', 'sagemaker'} & named)}")
+    if not {"iam", "kms", "sts"} <= named:
+        problems.append("org-sydney-services must name iam, kms and sts: PassRole and encrypted disks are checked in Sydney")
     if 'KS_REGIONS="ap-southeast-2"' not in (P1 / "bootstrap-budget-stop.sh").read_text():
         problems.append("the kill switch still sweeps a region other than Sydney")
+    if "test_region_lock.py" not in (ROOT / ".github" / "workflows" / "policy.yml").read_text():
+        problems.append("CI doesn't test the region lock against our own calls")
+    if "org-sydney-services" not in (P1 / "bootstrap-org-region-lock.sh").read_text():
+        problems.append("bootstrap-org-region-lock.sh doesn't apply org-sydney-services")
     return problems
 
 

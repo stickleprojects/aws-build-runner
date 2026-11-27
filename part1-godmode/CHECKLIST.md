@@ -64,8 +64,10 @@ a dry run of both modes. After a fast stop, once you've found the cause: turn ou
 
 ### Region lock (management account, once; again when bootstrap/org-region-lock-scp.json changes)
 
-`./bootstrap-org-region-lock.sh` in the management account's CloudShell attaches the SCP `org-region-lock` to Root:
-no EC2 or SSM in us-east-1 (only global services are needed there), and no Bedrock anywhere (#30 fix 7). Then run
+`./bootstrap-org-region-lock.sh` in the management account's CloudShell attaches two SCPs to Root: `org-region-lock` (outside Sydney) and `org-sydney-services` (in Sydney):
+in Sydney only the named services we use; outside Sydney only a named list of global services (IAM, Budgets, billing,
+sign-in...), and only in us-east-1; nothing anywhere else (#30 fix 7). SCPs never apply to the management account, so they can be
+detached there; the script prints the command. Then run
 the **guardrails** workflow, so the kill switch sweeps Sydney only.
 
 When [bootstrap/budget-stop-policy.json](bootstrap/budget-stop-policy.json) or `budget_usd` changes, rerun

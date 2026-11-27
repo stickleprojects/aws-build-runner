@@ -2,17 +2,26 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "NoComputeInUsEast1",
+      "Sid": "OutsideSydneyOnlyGlobalServices",
       "Effect": "Deny",
-      "Action": ["ec2:*", "ec2messages:*", "ssm:*", "ssmmessages:*", "ec2-instance-connect:*"],
+      "NotAction": [
+        "iam:*", "sts:*", "organizations:*", "account:*",
+        "budgets:*", "ce:*", "cur:*", "billing:*", "aws-portal:*", "payments:*", "tax:*", "invoicing:*",
+        "freetier:*", "consolidatedbilling:*", "pricing:*",
+        "support:*", "supportplans:*", "support-console:*", "health:*", "trustedadvisor:*",
+        "cloudtrail:LookupEvents",
+        "sso:*", "sso-directory:*", "sso-oauth:*", "identitystore:*", "identitystore-auth:*", "signin:*",
+        "uxc:*", "consoleapp:*", "notifications:*", "notifications-contacts:*"
+      ],
       "Resource": "*",
-      "Condition": {"StringEquals": {"aws:RequestedRegion": "us-east-1"}}
+      "Condition": {"StringNotEquals": {"aws:RequestedRegion": "ap-southeast-2"}}
     },
     {
-      "Sid": "NoBedrockAnywhere",
+      "Sid": "NothingOutsideSydneyAndUsEast1",
       "Effect": "Deny",
-      "Action": ["bedrock:*", "bedrock-mantle:*"],
-      "Resource": "*"
+      "Action": "*",
+      "Resource": "*",
+      "Condition": {"StringNotEquals": {"aws:RequestedRegion": ["ap-southeast-2", "us-east-1", "unspecified"]}}
     }
   ]
 }

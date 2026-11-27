@@ -1,0 +1,17 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "InSydneyOnlyTheseServices",
+      "Effect": "Deny",
+      "NotAction": [
+        "ec2:*", "ec2messages:*", "ssm:*", "ssmmessages:*", "lambda:*", "s3:*", "kms:*", "logs:*",
+        "cloudwatch:*", "sns:*", "events:*", "scheduler:*", "cloudformation:*", "cloudtrail:*",
+        "servicequotas:*", "tag:*", "resource-groups:*", "access-analyzer:*",
+        "iam:*", "sts:*", "cloudshell:*", "health:*", "uxc:*", "consoleapp:*", "notifications:*"
+      ],
+      "Resource": "*",
+      "Condition": {"StringEquals": {"aws:RequestedRegion": "ap-southeast-2"}}
+    }
+  ]
+}
