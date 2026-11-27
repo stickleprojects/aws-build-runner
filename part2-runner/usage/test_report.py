@@ -60,7 +60,8 @@ check("warn: on track for the US$25 stop, whatever the mix",
 check("warn: both when both", [x["key"] for x in report.alerts(heavy_week, heavy_week, 27)] == ["heavy", "budget"])
 
 s = report.summary(week, week, 12.34, now)
-check("summary: a table with both classes and the projection", "light (2 vCPU)" in s and "heavy (4 vCPU)" in s
+check("summary: a table with both classes and the projection", "| light | heavy |" in s
+      and "4 vCPU" not in s
       and "US$12.34" in s, s)
 
 # --- job fit: our suggestions about sizes
@@ -81,6 +82,13 @@ check("fit: CPU wait over 20% → CPU-starved?", len(n) == 1 and "CPU-starved?" 
 n = report.fit_notes([job("heavy", avg_vcpu=0.6, memory_mb=7800)], [])
 check("fit: heavy job barely using its CPUs → could be light?", len(n) == 1 and "Could be light?" in n[0], str(n))
 check("fit: a light job using little CPU is fine", report.fit_notes([job(avg_vcpu=0.2)], []) == [])
+n = report.fit_notes([job("heavy", avg_vcpu=0.95, memory_mb=7776, nproc=2)], [])
+check("fit: a heavy job on a 2-vCPU machine isn't told it 'could be light' (2026-11-28)", n == [], str(n))
+n = report.fit_notes([job("heavy", avg_vcpu=0.5, memory_mb=15701, nproc=4)], [])
+check("fit: ...on a 4-vCPU machine it is, with the real count", len(n) == 1 and "of 4 " in n[0], str(n))
+rows = report.fit_table([job("heavy", mem_peak_mb=4795, anon_peak_mb=1000, memory_mb=7776, nproc=2)], [])
+check("fit table: shows real memory beside the cache-inclusive peak, and the vCPUs",
+      any("1000 / 4795 of 7776 MB" in r and "of 2" in r for r in rows), "\n".join(rows))
 check("fit: a heavy job using its CPUs is fine", report.fit_notes([job("heavy", avg_vcpu=3.2, memory_mb=7800)], []) == [])
 n = report.fit_notes([job(wall_max_s=80 * 60)], [])
 check("fit: near the 90-minute limit", len(n) == 1 and "90-minute" in n[0], str(n))
@@ -94,7 +102,7 @@ check("fit: unknown numbers (None) never crash or warn",
 s = report.summary(week, week, 1.0, now, [job("heavy", avg_vcpu=0.6, memory_mb=7800)], q)
 check("summary: a job fit table with the notes", "Job fit, last 7 days" in s and "CI / check" in s
       and "Could be light?" in s and "Waiting for runners" in s, s)
-check("summary: before any per-job records, says so", "No per-job records yet." in report.summary(week, week, 1.0, now))
+check("summary: before any per-job records, says so", "No per-job records yet" in report.summary(week, week, 1.0, now))
 for qtext in (report.JOBS_QUERY, report.QUEUE_QUERY):
     import re
     shadow = [m for m in re.finditer(r"\b\w+\((\w+)(?:,[^)]*)?\) as (\w+)", qtext) if m.group(1) == m.group(2)]
