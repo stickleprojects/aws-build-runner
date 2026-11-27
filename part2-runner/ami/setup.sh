@@ -181,7 +181,9 @@ install -m 644 "$FILES/build-runner-boot.service" /etc/systemd/system/build-runn
 install -m 644 "$FILES/github-runner-jit.service" /etc/systemd/system/github-runner-jit.service
 # Reads the tools at boot so EBS fetches them before the job does (first touch was 10-40 s per job).
 install -m 644 "$FILES/build-runner-prewarm.service" /etc/systemd/system/build-runner-prewarm.service
-[[ -n "$IN_CONTAINER" ]] || systemctl enable build-runner-boot.service github-runner-jit.service build-runner-prewarm.service
+install -m 755 "$FILES/memwatch.py" /opt/github-runners/memwatch.py   # the job's real memory peak (2026-11-27)
+install -m 644 "$FILES/build-runner-memwatch.service" /etc/systemd/system/build-runner-memwatch.service
+[[ -n "$IN_CONTAINER" ]] || systemctl enable build-runner-boot.service github-runner-jit.service build-runner-prewarm.service build-runner-memwatch.service
 
 chown -R ghrunner:ghrunner "$H"
 

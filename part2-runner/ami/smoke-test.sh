@@ -89,6 +89,9 @@ check "egress capped for jobs"  "iptables -S OUTPUT | grep -E -- '--uid-owner [0
 check "hook"                    "bash -n /etc/github-runner/job-started.sh && test -x /etc/github-runner/job-started.sh && echo syntax ok"
 check "job-completed hook"      "bash -n /etc/github-runner/job-completed.sh && grep -qx ACTIONS_RUNNER_HOOK_JOB_COMPLETED=/etc/github-runner/job-completed.sh $R/.env && echo installed"
 check "job usage record"        "/opt/github-runners/job-usage.py --dry-run | jq -e '.msg == \"job\" and .nproc == 2 and .memory_mb > 0 and (.box_mem_peak_mb | type) == \"number\" and (.box_cpu_s | type) == \"number\"'"
+# The job's real (anonymous) memory peak, without file cache (2026-11-27): memwatch samples it from boot.
+for _ in $(seq 1 15); do test -s /run/build-runner-memwatch.json && break; sleep 2; done
+check "memwatch samples real memory" "systemctl is-active build-runner-memwatch.service && jq -e '.boot_peak_mb > 0 and .updated > 0' /run/build-runner-memwatch.json"
 check "hook refuses an unknown repo" "cd /tmp && GITHUB_REPOSITORY=someone/else GITHUB_ACTOR=stickleprojects GITHUB_EVENT_NAME=push GITHUB_EVENT_PATH=/dev/null /etc/github-runner/job-started.sh; test \$? -ne 0 && echo refused"
 
 # Tools work, as the job user (not just report a version).

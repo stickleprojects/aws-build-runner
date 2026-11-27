@@ -1,0 +1,19 @@
+[Unit]
+Description=build-runner memwatch: the job's real (anonymous) memory peak, for its usage record
+After=local-fs.target
+DefaultDependencies=yes
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 -I /opt/github-runners/memwatch.py
+Restart=on-failure
+RestartSec=5
+Nice=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/run
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -130,5 +130,43 @@ check("service: the record is sent before the power-off",
 check("service: a failing record never blocks the power-off (ExecStopPost=-, with a timeout)",
       "ExecStopPost=-+" in service and "timeout 20 /opt/github-runners/job-usage.py" in service)
 
+# 2026-11-27: the box counters ran from boot, so a 4 s job read 3.99 of 2 vCPUs (the prewarm's CPU counted).
+now = {"cpu_s": 500.0, "cpu_stall_s": 40.0, "mem_stall_s": 1.0, "mem_peak_mb": 4000}
+got, ok = ju.since_start(now, {"cpu_s": 492.0, "cpu_stall_s": 39.0, "mem_stall_s": 1.0})
+check("box counters count the job only (now minus the job-started copy)",
+      ok and got["cpu_s"] == 8.0 and got["cpu_stall_s"] == 1.0 and got["mem_stall_s"] == 0.0 and got["mem_peak_mb"] == 4000, str(got))
+rec = ju.record({"mem_peak_mb": 1, "cpu_s": 1.0, "cpu_stall_s": 0.0, "mem_stall_s": 0.0}, got,
+                {"nproc": 2, "memory_mb": 8000}, {"started": "1", "ended": "5"}, 4.0)
+check("so a 4 s job using 8 CPU-seconds reads 2 vCPUs, not 125", rec["avg_vcpu"] == 2.0, str(rec.get("avg_vcpu")))
+got, ok = ju.since_start(now, {"cpu_s": None, "cpu_stall_s": 1.0, "mem_stall_s": 1.0})
+check("a missing start copy: counters stay since boot, and say so", not ok and got == now)
+got, ok = ju.since_start(now, {"cpu_s": 900.0, "cpu_stall_s": 1.0, "mem_stall_s": 1.0})
+check("a start copy above now (the job user's file, tampered): not trusted", not ok and got == now)
+check("memwatch's peak is used only for this job", ju.anon_peak_mb('{"job_started": 100, "job_peak_mb": 1800}', {"started": "100"}) == 1800.0)
+check("memwatch's peak from another job is ignored", ju.anon_peak_mb('{"job_started": 90, "job_peak_mb": 1800}', {"started": "100"}) is None)
+check("no memwatch: no anon peak", ju.anon_peak_mb("", {"started": "100"}) is None and ju.anon_peak_mb("junk", {"started": "1"}) is None)
+hook = (HERE / "files" / "job-started.sh").read_text()
+check("the job-started hook copies the counters at the job's start",
+      '"$STATE_DIR/start.$f"' in hook and "cpu.stat cpu.pressure memory.pressure" in hook)
+
+# memwatch.py: the job's real (anonymous) memory peak, without file cache.
+spec_mw = importlib.util.spec_from_file_location("memwatch", HERE / "files" / "memwatch.py")
+mw = importlib.util.module_from_spec(spec_mw)
+spec_mw.loader.exec_module(mw)
+MiB = 2**20
+check("memwatch: anon from memory.stat", mw.anon_bytes("anon 2097152\nfile 9999999\n") == 2097152 and mw.anon_bytes("file 1\n") is None)
+st = mw.step({}, 900 * MiB, None, 10)
+check("memwatch: before the job, only the boot peak", st["boot_peak_mb"] == 900 and "job_peak_mb" not in st, str(st))
+st = mw.step(st, 300 * MiB, 20, 21)
+st = mw.step(st, 1800 * MiB, 20, 23)
+st = mw.step(st, 600 * MiB, 20, 25)
+check("memwatch: the job's peak is the highest since it started", st["job_started"] == 20 and st["job_peak_mb"] == 1800, str(st))
+st = mw.step(st, 400 * MiB, 40, 41)
+check("memwatch: a new job starts its peak afresh", st["job_started"] == 40 and st["job_peak_mb"] == 400, str(st))
+check("memwatch: an unreadable sample changes nothing", mw.step(st, None, 40, 50) == st)
+unit = (HERE / "files" / "build-runner-memwatch.service").read_text()
+setup = (HERE / "setup.sh").read_text()
+check("memwatch: a root service, enabled at boot", "memwatch.py" in unit and "build-runner-memwatch.service" in setup and "WantedBy=multi-user.target" in unit)
+
 print(f"\n{failed} failed")
 sys.exit(1 if failed else 0)

@@ -33,6 +33,7 @@ LOG_GROUP = "/build/runner/jobs"
 # job-info.json is written by the job user, so only these fields, as short strings, are kept.
 JOB_FIELDS = ("repository", "workflow", "job", "run_id", "run_attempt", "event", "ready", "started", "ended")
 JOB_STARTED = JOB_INFO.with_name("job-started")  # the job-started hook's note of the job's real start
+MEMWATCH = Path("/run/build-runner-memwatch.json")  # memwatch.py's anon peak (root's)
 
 
 # ---------------------------------------------------------------------------- reading (pure-ish)
@@ -67,6 +68,26 @@ def cgroup_stats(path: Path) -> dict:
             "cpu_s": cpu_seconds(read(path / "cpu.stat")),
             "cpu_stall_s": stall_seconds(read(path / "cpu.pressure")),
             "mem_stall_s": stall_seconds(read(path / "memory.pressure"))}
+
+
+def since_start(now: dict, start: dict) -> tuple[dict, bool]:
+    """The box counters for the job only: now minus the job-started hook's copy. The copy is the job user's,
+    so a missing one, or one above now, isn't trusted: then the counters stay since boot (and say so)."""
+    keys = ("cpu_s", "cpu_stall_s", "mem_stall_s")
+    if any(start.get(k) is None or now.get(k) is None or start[k] > now[k] for k in keys):
+        return now, False
+    return {**now, **{k: round(now[k] - start[k], 3) for k in keys}}, True
+
+
+def anon_peak_mb(raw: str, job: dict) -> float | None:
+    """memwatch.py's anonymous-memory peak for this job (real use, without file cache); None if it didn't run."""
+    try:
+        w = json.loads(raw)
+        if str(w.get("job_started")) == str(job.get("started")) and isinstance(w.get("job_peak_mb"), (int, float)):
+            return float(w["job_peak_mb"])
+    except (ValueError, AttributeError):
+        pass
+    return None
 
 
 def clean_job(raw: str) -> dict:
@@ -150,7 +171,15 @@ def collect() -> dict:
             del job["started"]
     if "ended" not in job:
         job["ended"] = str(int(time.time()))  # the hook didn't run (e.g. the job was cancelled)
-    rec = record(cgroup_stats(SERVICE), cgroup_stats(SYSTEM), instance, job, wall_seconds(job))
+    start = {"cpu_s": cpu_seconds(read(JOB_INFO.with_name("start.cpu.stat"))),
+             "cpu_stall_s": stall_seconds(read(JOB_INFO.with_name("start.cpu.pressure"))),
+             "mem_stall_s": stall_seconds(read(JOB_INFO.with_name("start.memory.pressure")))}
+    system, from_start = since_start(cgroup_stats(SYSTEM), start)
+    rec = record(cgroup_stats(SERVICE), system, instance, job, wall_seconds(job))
+    rec["box_counters_from"] = "job-start" if from_start else "boot"
+    anon = anon_peak_mb(read(MEMWATCH), job)
+    if anon is not None:
+        rec["box_anon_peak_mb"] = anon
     idle = idle_seconds(job)
     if idle is not None:
         rec["idle_s"] = round(idle, 1)
