@@ -18,11 +18,16 @@ Read [readme.md](readme.md) first; costs in [PRICING.md](PRICING.md).
   it costs and risks, then open a PR with it in `policy.yaml` as `approved: pending`, tested, and
   point Kieron at the POLICY.md diff in the CI summary. Kieron approves; a godmode session applies it.
   Process: [part1-godmode/README.md](part1-godmode/README.md#change-process).
-- **Never merge a policy PR, and never set `approved:` without Kieron's explicit word.** Claude's `gh`
-  runs as Kieron's GitHub account, so GitHub can't enforce this; it's on Claude. His word is **"approve N"**
-  for that PR: Claude then sets `approved:`, pushes, and arms auto-merge (`gh pr merge N --auto --squash`), so it
-  merges once the required `policy` and `approved` checks pass (Kieron chose this, 2026-11-27). Never arm it
-  on anything else, and never merge by hand.
+- **In this repo Claude acts as its own GitHub App, `aws-build-runner-claude`** (#23, #85), through the
+  `agent-identity` plugin (stickleprojects/agent-identity, enabled and pinned to a commit in `.claude/settings.json`).
+  Its SessionStart hook makes `git` and `gh` act as `aws-build-runner-claude[bot]`. Check with
+  `echo "${SDLC_AGENT_IDENTITY:-person}"`: if it says `person`, stop and ask Kieron. Never act as him here.
+  Follow the plugin's `agent-identity` skill: sign posts `— Claude`, add a `Requested-by:` trailer, `git add` by
+  explicit path, and no @-mentions.
+- **Only Kieron's GitHub review approves.** A policy PR's change entries say `approved: review on PR #N` (that PR),
+  never a date and name. Right after opening a PR, Claude runs `part1-godmode/arm-auto-merge.sh <N>`. The PR merges
+  when Kieron clicks **Approve** on its latest commit and `policy` and `approved` pass. Claude never approves,
+  never merges by hand, and never edits `.claude/settings.json`; its deny rules enforce that.
 - Repo: github.com/stickleprojects/aws-build-runner. `main` is protected: work on a branch, open a PR.
 - **Applying** an approved, merged change, by GitHub Actions on `main`. Claude may *start* these when Kieron asks;
   approval is always Kieron's click. Each approval page shows the role's limits and the diff of the code the

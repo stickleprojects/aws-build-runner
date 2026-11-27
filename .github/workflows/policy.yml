@@ -4,8 +4,7 @@
 #             same-repo PR branch), lints them, and runs the offline allow/deny checks. Then it stores
 #             the checked files as the artifact "policies-<commit>", with SHA256SUMS and
 #             manifest.json. apply.sh applies only that artifact, for the commit at main's head.
-#   approved  Fails while anything in policy.yaml is "approved: pending". Required for merging,
-#             so main only ever holds approved policy.
+#   (The required "approved" check is its own workflow, approval.yml, so it re-runs on reviews.)
 name: policy
 
 on:
@@ -124,6 +123,9 @@ jobs:
 
       - name: Release preview tests (offline)
         run: python3 -I part1-godmode/tests/test_release_preview.py
+
+      - name: Approval check tests (offline)
+        run: python3 -I part1-godmode/tests/test_check_approvals.py
 
       - name: Region lock allows every call we make, and refuses the rest (offline)
         run: python3 -I part1-godmode/tests/test_region_lock.py
@@ -248,20 +250,3 @@ jobs:
               echo '```'
             fi
           } >> "$GITHUB_STEP_SUMMARY"
-
-  approved:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          persist-credentials: false
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          python-version: "3.12"
-      - run: pip install --quiet "pyyaml==${PYYAML_VERSION}"
-      - name: Everything in policy.yaml is approved
-        # Exits 2 and lists what's pending; otherwise builds, which must change nothing.
-        run: |
-          python3 -I part1-godmode/build-policies.py
-          git diff --exit-code -- part1-godmode/out part1-godmode/POLICY.md

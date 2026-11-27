@@ -1,0 +1,59 @@
+# The required "approved" check (#23): main only ever holds policy Kieron approved, in GitHub.
+#
+# On a pull request, every approval field it adds or changes in policy.yaml must read "review on PR #N"
+# (this PR), and a code owner (.github/CODEOWNERS, Kieron) must have approved the PR's latest commit
+# (part1-godmode/check_approvals.py). It re-runs when a review is submitted or dismissed, so Kieron's Approve
+# click is what turns it green; a newer push needs a new approval. Then, as before, nothing may still be
+# "approved: pending", and the generated files must match.
+name: approval
+
+on:
+  pull_request:
+  pull_request_review:
+    types: [submitted, dismissed]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: approval-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  PYYAML_VERSION: "6.0.3"
+
+jobs:
+  approved:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read   # the PR's reviews
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - run: pip install --quiet "pyyaml==${PYYAML_VERSION}"
+      - name: Policy changes are approved by Kieron's GitHub review
+        if: github.event.pull_request
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -o pipefail   # GitHub runs steps with bash -e, without pipefail: keep the check's exit code
+          python3 -I part1-godmode/check_approvals.py --base "$BASE" --head "$HEAD" --pr "$PR" --repo "$REPO" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Nothing is still pending, and the generated files match
+        # Exits 2 and lists what's pending; otherwise builds, which must change nothing.
+        run: |
+          python3 -I part1-godmode/build-policies.py
+          git diff --exit-code -- part1-godmode/out part1-godmode/POLICY.md

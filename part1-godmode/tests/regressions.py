@@ -1263,6 +1263,64 @@ def region_lock_holds():
     return problems
 
 
+@rule("2026-11-27 (#23): GitHub couldn't tell Claude from Kieron (Claude's gh ran as his account), so 'Claude never "
+      "merges or approves' was only Claude's word. Claude now acts as its own App; a policy change is approved only by "
+      "Kieron's GitHub review on the latest commit; and Claude Code's settings deny Claude his token and the approve, "
+      "merge and protection commands. 2026-11-27 (#85): the identity is the pinned agent-identity plugin.")
+def only_kieron_approves_in_github():
+    problems = []
+    wf = (ROOT / ".github" / "workflows" / "approval.yml")
+    if not wf.exists():
+        return ["there's no approval.yml"]
+    text = wf.read_text()
+    for need, why in (("pull_request_review:", "it doesn't re-run when Kieron reviews"),
+                      ("check_approvals.py", "it doesn't check Kieron's review"),
+                      ("\n  approved:\n", "its job isn't called 'approved' (the required check)"),
+                      ("pull-requests: read", "it can't read the reviews")):
+        if need not in text:
+            problems.append(f"approval.yml: {why}")
+    if re.search(r"^  approved:\n", (ROOT / ".github" / "workflows" / "policy.yml").read_text(), re.M):
+        problems.append("policy.yml still has its own 'approved' job: two checks would answer to one name")
+    owners = (ROOT / ".github" / "CODEOWNERS")
+    if not owners.exists() or not re.search(r"^\*\s+@stickleprojects\b", owners.read_text(), re.M):
+        problems.append(".github/CODEOWNERS doesn't make Kieron (@stickleprojects) the owner of everything")
+    check = (P1 / "check_approvals.py").read_text()
+    if 'f"review on PR #{pr}"' not in check or 'commit_id") == head_sha' not in check:
+        problems.append("check_approvals.py doesn't require 'review on PR #N' and a review of the latest commit")
+    settings = ROOT / ".claude" / "settings.json"
+    deny = set(json.loads(settings.read_text())["permissions"]["deny"]) if settings.exists() else set()
+    for rule in ("Bash(gh auth token*)", "Bash(gh pr merge*)", "Bash(gh pr review*)", "Bash(gh api *branches/*/protection*)",
+                 "Read(~/.ssh/**)", "Read(~/.config/gh/**)", "Edit(.claude/settings.json)", "Bash(git remote set-url*)"):
+        if rule not in deny:
+            problems.append(f".claude/settings.json doesn't deny {rule}")
+    cfg = json.loads(settings.read_text()) if settings.exists() else {}
+    if cfg.get("enabledPlugins", {}).get("agent-identity@stickleprojects-agent-identity") is not True:
+        problems.append(".claude/settings.json doesn't enable the agent-identity plugin (#85)")
+    ref = cfg.get("extraKnownMarketplaces", {}).get("stickleprojects-agent-identity", {}).get("source", {}).get("ref", "")
+    if not re.fullmatch(r"[0-9a-f]{40}", ref):
+        problems.append(f"the agent-identity plugin isn't pinned to a full commit (ref {ref!r}): a branch would run unreviewed code")
+    arm = P1 / "arm-auto-merge.sh"
+    if not arm.exists() or "reviewDecision" not in arm.read_text() or "SDLC_AGENT_IDENTITY" not in arm.read_text():
+        problems.append("arm-auto-merge.sh is missing, or doesn't refuse without a required review or as Kieron")
+    return problems
+
+
+@rule("2026-11-27: approval.yml piped check_approvals.py into tee, and GitHub runs steps with bash -e but without "
+      "pipefail, so a failed check would have passed. Caught before it shipped.")
+def piped_checks_keep_their_exit_code():
+    problems = []
+    for wf in WORKFLOWS:
+        text = wf.read_text()
+        for m in re.finditer(r"run: \|\n((?:\s{10,}.*\n?)+)", text):
+            block = m.group(1)
+            # A command continued over lines with a trailing backslash is one command: join them first.
+            for line in re.sub(r"\\\n\s*", " ", block).splitlines():
+                if re.search(r"\b(python3|\./[\w./-]+\.(?:sh|py))\b.*\|\s*(tee|grep)\b", line) and "|| true" not in line \
+                        and "pipefail" not in block and "shell: bash" not in text[max(0, m.start() - 200):m.start()]:
+                    problems.append(f"{wf.name}: '{line.strip()[:80]}' pipes a check without set -o pipefail")
+    return problems
+
+
 def main():
     wanted = sys.argv[1:]  # rule names; none = all
     unknown = set(wanted) - {name for name, _, _ in RULES}
