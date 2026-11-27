@@ -1,0 +1,3 @@
+# Every change to this repo needs Kieron's review in GitHub (#23). Branch protection requires it, and the
+# "approved" check (approval.yml) reads the owner below.
+* @stickleprojects

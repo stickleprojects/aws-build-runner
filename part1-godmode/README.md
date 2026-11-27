@@ -51,9 +51,10 @@ part-way is recorded as a failed deployment.
    line). If it removes a block, it also removes that action from `MUST_STAY_DENIED` in `verify.py`
    (deliberately a second edit). The PR template asks for need, smallest permission, worst-case cost, risk.
 3. **CI generates and checks it**; the run summary shows the POLICY.md diff and what's pending.
-4. **You approve**: write **"approve N"**. Claude sets `approved: YYYY-MM-DD Kieron`, pushes, and arms auto-merge, so
-   the PR merges itself once the required `policy` and `approved` checks pass. Or edit it and merge yourself.
-   Claude never marks anything approved, or arms auto-merge, without your word, and never merges by hand.
+4. **You approve, in GitHub**: Claude, as its App `aws-build-runner-claude`, writes `approved: review on PR #N` and
+   arms auto-merge (`arm-auto-merge.sh`). You click **Approve** on the PR, and it merges once `policy` and
+   `approved` pass. `approved` checks your review is on the latest commit, so a later push needs a new approval.
+   Only your review approves (#23, #85).
 5. **It gets applied**, by the workflow for what changed. You approve each run on its page, which shows the
    most its role can change and the diff of the code it will execute since the last approved run:
    - **apply**: Claude's policies, budgets and account settings. Or by hand in CloudShell with `./apply.sh`.

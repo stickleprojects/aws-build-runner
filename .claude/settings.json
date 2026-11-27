@@ -1,0 +1,41 @@
+{
+  "permissions": {
+    "deny": [
+      "Bash(gh auth token*)",
+      "Bash(gh auth login*)",
+      "Bash(gh auth switch*)",
+      "Bash(gh auth refresh*)",
+      "Bash(gh auth setup-git*)",
+      "Bash(secret-tool*)",
+      "Bash(gh pr merge*)",
+      "Bash(gh pr review*)",
+      "Bash(gh api *pulls/*/reviews*)",
+      "Bash(gh api *pulls/*/merge*)",
+      "Bash(gh api *branches/*/protection*)",
+      "Bash(gh api *rulesets*)",
+      "Bash(claude-gh pr merge *--admin*)",
+      "Bash(git push git@github.com:stickleprojects/aws-build-runner*)",
+      "Bash(git push ssh://*stickleprojects/aws-build-runner*)",
+      "Bash(git remote set-url*)",
+      "Bash(git config --local --unset*credential*)",
+      "Bash(git config --local user.*)",
+      "Read(~/.config/gh/**)",
+      "Read(~/.ssh/**)",
+      "Read(~/.cache/claude-github-app/**)",
+      "Edit(.claude/settings.json)",
+      "Edit(.claude/settings.local.json)"
+    ]
+  },
+  "enabledPlugins": {
+    "agent-identity@stickleprojects-agent-identity": true
+  },
+  "extraKnownMarketplaces": {
+    "stickleprojects-agent-identity": {
+      "source": {
+        "source": "github",
+        "repo": "stickleprojects/agent-identity",
+        "ref": "75a940d1a45a591e8a8fdb61be5d45d179bcd9f4"
+      }
+    }
+  }
+}
