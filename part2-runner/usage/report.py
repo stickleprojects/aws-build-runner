@@ -102,8 +102,11 @@ def fit_notes(jobs: list[dict], queues: list[dict]) -> list[str]:
     for j in jobs:
         name = f"`{j['workflow']} / {j['job']}` ({j['class']}, {j['n']:.0f} runs)"
         total = j.get("memory_mb") or 0
-        if total and (j.get("mem_peak_mb") or 0) > FIT_MEM_HIGH * total:
-            notes.append(f"**Too small?** {name}: memory peaked at {j['mem_peak_mb']:.0f} of {total:.0f} MB.")
+        # Real use when memwatch recorded it: memory.peak counts file cache too (2026-11-27).
+        used = j.get("anon_peak_mb") if j.get("anon_peak_mb") is not None else j.get("mem_peak_mb")
+        if total and (used or 0) > FIT_MEM_HIGH * total:
+            what = "real memory use" if j.get("anon_peak_mb") is not None else "memory (with file cache)"
+            notes.append(f"**Too small?** {name}: {what} peaked at {used:.0f} of {total:.0f} MB.")
         if (j.get("cpu_stall_pct") or 0) > FIT_CPU_STALL:
             notes.append(f"**CPU-starved?** {name}: tasks waited for CPU {j['cpu_stall_pct']:.0f}% of the time.")
         if (j.get("wall_max_s") or 0) > FIT_WALL_HIGH:
@@ -208,7 +211,7 @@ def numbers(row: dict, keep: tuple) -> dict:
 # Aliases never reuse a field's own name (see usage_rows).
 # ispresent(job): a runner that never got a job (reaped idle, or a test) has nothing to say about job sizes.
 JOBS_QUERY = ('filter msg = "job" and ispresent(job) | stats count(*) as n, avg(wall_s) as wall_avg_s, max(wall_s) as wall_max_s, '
-              'avg(avg_vcpu) as vcpu_avg, max(box_mem_peak_mb) as mem_max_mb, max(memory_mb) as mem_total_mb, '
+              'avg(avg_vcpu) as vcpu_avg, max(box_mem_peak_mb) as mem_max_mb, max(box_anon_peak_mb) as anon_max_mb, max(memory_mb) as mem_total_mb, '
               'avg(cpu_stall_pct) as cpu_wait_pct by class, workflow, job | sort n desc')
 QUEUE_QUERY = ('filter msg = "job-completed" | stats count(*) as n, avg(queue_s) as wait_avg, '
                'pct(queue_s, 95) as wait_p95, max(queue_s) as wait_max by label')
@@ -220,7 +223,7 @@ def job_rows(start: dt.datetime, end: dt.datetime) -> list[dict]:
         r = numbers(f, ("class", "workflow", "job"))
         rows.append({"class": r["class"], "workflow": r["workflow"], "job": r["job"], "n": r.get("n") or 0,
                      "wall_s": r.get("wall_avg_s"), "wall_max_s": r.get("wall_max_s"), "avg_vcpu": r.get("vcpu_avg"),
-                     "mem_peak_mb": r.get("mem_max_mb"), "memory_mb": r.get("mem_total_mb"),
+                     "mem_peak_mb": r.get("mem_max_mb"), "anon_peak_mb": r.get("anon_max_mb"), "memory_mb": r.get("mem_total_mb"),
                      "cpu_stall_pct": r.get("cpu_wait_pct")})
     return rows
 

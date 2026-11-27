@@ -110,6 +110,11 @@ fi
 # job with the same label took the runner launched for it: 4 runners, about 4 min each, 2026-11-22), so
 # the runner's own start isn't the job's. Never refuses the job if it can't be written.
 date +%s > "$STATE_DIR/job-started" 2>/dev/null || true
+# And the machine's CPU and stall counters at that moment, so the record counts the job only, not the boot and
+# prewarm before it (a 4 s job read as 3.99 of 2 vCPUs, 2026-11-27). job-usage.py checks them before use.
+for f in cpu.stat cpu.pressure memory.pressure; do
+	cp "/sys/fs/cgroup/system.slice/$f" "$STATE_DIR/start.$f" 2>/dev/null || true
+done
 
 echo "Runner hook: allowed $event by $actor ($triggering) on $repo"
 exit 0

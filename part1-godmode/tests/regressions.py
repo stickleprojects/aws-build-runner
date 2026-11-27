@@ -1321,6 +1321,29 @@ def piped_checks_keep_their_exit_code():
     return problems
 
 
+@rule("2026-11-27: usage records misled sizing twice. A 4 s plan job read 3.99 busy vCPUs of 2 with 77% CPU stall: "
+      "the box counters ran from boot, so the prewarm's CPU was charged to the job. And an 8.9 GB machine peak was "
+      "mostly file cache; the job needed under 2 GB. Records now count from the job's start and keep real memory apart.")
+def usage_records_count_the_job_and_real_memory():
+    problems = []
+    usage = (P2 / "ami" / "files" / "job-usage.py").read_text()
+    if "since_start(cgroup_stats(SYSTEM)" not in usage:
+        problems.append("job-usage.py doesn't count the box counters from the job's start")
+    if "box_anon_peak_mb" not in usage:
+        problems.append("job-usage.py doesn't record the real (anonymous) memory peak")
+    hook = (P2 / "ami" / "files" / "job-started.sh").read_text()
+    if "cpu.stat cpu.pressure memory.pressure" not in hook:
+        problems.append("job-started.sh doesn't copy the counters at the job's start")
+    setup = (P2 / "ami" / "setup.sh").read_text()
+    if "memwatch.py" not in setup or "build-runner-memwatch.service" not in setup.split("systemctl enable", 1)[-1]:
+        problems.append("setup.sh doesn't install and enable memwatch")
+    if "memwatch" not in (P2 / "ami" / "smoke-test.sh").read_text():
+        problems.append("the smoke test doesn't check memwatch runs")
+    if 'j.get("anon_peak_mb")' not in (P2 / "usage" / "report.py").read_text():
+        problems.append("report.py's 'too small?' still judges by a peak that counts file cache")
+    return problems
+
+
 def main():
     wanted = sys.argv[1:]  # rule names; none = all
     unknown = set(wanted) - {name for name, _, _ in RULES}
