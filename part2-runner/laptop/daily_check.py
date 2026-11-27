@@ -270,6 +270,13 @@ def evaluate(d: dict, now: dt.datetime, lim: dict) -> tuple[str, list[str], list
         alerts.append(f"the launcher refused spellbound3d's pools.json, so the last good copy is in force: {ps.get('reason', '')[:300]}")
     elif ps.get("state") == "unreachable":
         warns.append(f"the launcher couldn't read spellbound3d's pools.json: {ps.get('reason', '')[:200]}")
+    # The launcher re-reads pools.json every 10 minutes, curfew or not (2026-11-28: a stale copy went unseen for 40 min).
+    read_at = ps.get("read_at")
+    if ps and not read_at:
+        warns.append("the launcher's pools status doesn't say when it last read pools.json (deploy the stack)")
+    elif read_at and (now.timestamp() - read_at) > 30 * 60:
+        warns.append(f"the launcher hasn't read spellbound3d's pools.json for {(now.timestamp() - read_at) / 60:.0f} min "
+                     f"(it should every 10): its pools may be stale (last sha {ps.get('sha') or '?'})")
 
     # The launcher's Telegram copy, for the curfew warnings (#89). Absent key: an older gather, say nothing.
     ct = d.get("curfew_telegram")

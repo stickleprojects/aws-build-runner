@@ -1363,6 +1363,20 @@ def usage_report_shows_real_sizes():
     return problems
 
 
+
+@rule("2026-11-28: after spellbound3d #323 merged, the launcher's scheduled runs kept the old pools.json for ~40 min, "
+      "and nothing showed it: an unchanged read logged nothing, so nobody could tell whether GitHub or the launcher was "
+      "stale. Every read now logs and records the blob sha and when, and the daily check warns when reads stop.")
+def pools_reads_are_visible():
+    problems = []
+    runner = (P2 / "stack" / "lambda" / "runner.py").read_text()
+    if 'log("pools read"' not in runner or '"read_at": int(now)' not in runner or '"sha": sha' not in runner:
+        problems.append("runner.py's load_pools doesn't log and record every read with its sha and read_at")
+    if "hasn't read spellbound3d's pools.json" not in (P2 / "laptop" / "daily_check.py").read_text():
+        problems.append("daily_check.py doesn't warn when the launcher stops reading pools.json")
+    return problems
+
+
 def main():
     wanted = sys.argv[1:]  # rule names; none = all
     unknown = set(wanted) - {name for name, _, _ in RULES}

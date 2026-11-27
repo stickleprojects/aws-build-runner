@@ -116,14 +116,21 @@ s, a, w = run(subscriptions=[{"TopicArn": "arn:aws:sns:x:1:guardrail-fast-stop",
                               "SubscriptionArn": "PendingConfirmation"}])
 check("an unconfirmed alert email: a warning", any("PendingConfirmation" in x for x in w), w)
 
-s, a, w = run(pools_status={"state": "refused", "reason": "pools.aws-heavy.spot: c7i.4xlarge is bigger than the boundary allows"})
+RECENT0 = int(NOW.timestamp()) - 60
+s, a, w = run(pools_status={"read_at": RECENT0, "state": "refused", "reason": "pools.aws-heavy.spot: c7i.4xlarge is bigger than the boundary allows"})
 check("pools.json refused by the launcher: an alert", any("refused spellbound3d's pools.json" in x for x in a), a)
-s, a, w = run(pools_status={"state": "unreachable", "reason": "RuntimeError: HTTP 502"})
+s, a, w = run(pools_status={"state": "unreachable", "reason": "RuntimeError: HTTP 502", "read_at": RECENT0})
 check("pools.json unreachable: a warning", any("couldn't read" in x for x in w), w)
-s, a, w = run(pools_status={"state": "missing", "reason": "no file yet"})
+s, a, w = run(pools_status={"state": "missing", "reason": "no file yet", "read_at": RECENT0})
 check("pools.json not there yet (migration): quiet", not a and not w, (a, w))
+RECENT = int(NOW.timestamp()) - 300
+s, a, w = run(pools_status={"state": "ok", "reason": "", "read_at": RECENT, "sha": "abc"})
+check("pools.json ok and read 5 min ago: quiet", not a and not w, (a, w))
+s, a, w = run(pools_status={"state": "ok", "reason": "", "read_at": RECENT - 3600, "sha": "abc"})
+check("pools.json not read for over 30 min: a warning naming the sha (2026-11-28)",
+      any("hasn't read" in x and "abc" in x for x in w), w)
 s, a, w = run(pools_status={"state": "ok", "reason": ""})
-check("pools.json ok: quiet", not a and not w)
+check("pools status without read_at (stack not deployed): a warning", any("doesn't say when" in x for x in w), w)
 
 # --- the launcher's Telegram copy, for the curfew warnings (2026-11-28)
 s, a, w = run(curfew_telegram={"state": "ok", "reason": ""})
