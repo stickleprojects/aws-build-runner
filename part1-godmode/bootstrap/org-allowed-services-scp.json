@@ -1,0 +1,88 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "InSydneyTheseServices",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:*",
+        "ec2messages:*",
+        "ssm:*",
+        "ssmmessages:*",
+        "lambda:*",
+        "s3:*",
+        "kms:*",
+        "logs:*",
+        "cloudwatch:*",
+        "sns:*",
+        "events:*",
+        "scheduler:*",
+        "cloudformation:*",
+        "cloudtrail:*",
+        "servicequotas:*",
+        "tag:*",
+        "resource-groups:*",
+        "access-analyzer:*",
+        "iam:*",
+        "sts:*",
+        "cloudshell:*",
+        "health:*",
+        "uxc:*",
+        "consoleapp:*",
+        "notifications:*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": "ap-southeast-2"
+        }
+      }
+    },
+    {
+      "Sid": "InUsEast1TheseGlobalServices",
+      "Effect": "Allow",
+      "Action": [
+        "iam:*",
+        "sts:*",
+        "organizations:*",
+        "account:*",
+        "budgets:*",
+        "ce:*",
+        "cur:*",
+        "billing:*",
+        "aws-portal:*",
+        "payments:*",
+        "tax:*",
+        "invoicing:*",
+        "freetier:*",
+        "consolidatedbilling:*",
+        "pricing:*",
+        "support:*",
+        "supportplans:*",
+        "support-console:*",
+        "health:*",
+        "trustedadvisor:*",
+        "cloudtrail:LookupEvents",
+        "sso:*",
+        "sso-directory:*",
+        "sso-oauth:*",
+        "identitystore:*",
+        "identitystore-auth:*",
+        "signin:*",
+        "uxc:*",
+        "consoleapp:*",
+        "notifications:*",
+        "notifications-contacts:*"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": [
+            "us-east-1",
+            "unspecified"
+          ]
+        }
+      }
+    }
+  ]
+}

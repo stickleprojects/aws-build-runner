@@ -62,6 +62,14 @@ a dry run of both modes. After a fast stop, once you've found the cause: turn ou
 `aws lambda put-function-concurrency --function-name build-runner-webhook --reserved-concurrent-executions 5`
 (each keeps its cap, #30 fix 6: AWS won't set the account limit below 1,000; don't delete them), or tell Claude to.
 
+### Allowed services (management account, once; again when bootstrap/org-allowed-services-scp.json changes)
+
+`./bootstrap-org-allowed-services.sh` in the management account's CloudShell: nothing is allowed unless named. At Root
+the SCP `org-allowed-services` replaces `FullAWSAccess`: in Sydney only the services we use; in us-east-1 only the
+global services (IAM, Organizations, Budgets, billing, sign-in...); nothing anywhere else (#30 fix 7). SCPs never
+apply to the management account, so it can always be undone there; the script prints the commands. Then run
+the **guardrails** workflow, so the kill switch sweeps Sydney only.
+
 When [bootstrap/budget-stop-policy.json](bootstrap/budget-stop-policy.json) or `budget_usd` changes, rerun
 `./bootstrap-org-budget-stop.sh` in the management account (below): it updates the `org-budget-stop` SCP
 and the org budget from the repo, so there's nothing to paste.
