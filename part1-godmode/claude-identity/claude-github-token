@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Prints a GitHub installation token for Claude's own App, stickleprojects-claude (#23), valid up to 1 hour.
+# Claude's gh and git use it, so what Claude does in GitHub shows as the App, never as Kieron.
+#
+#   ~/.config/claude-github-app/key.pem   the App's private key (chmod 600; never in a repo, never printed)
+#   ~/.config/claude-github-app/app.env   APP_ID=<the App's id>   REPO=stickleprojects/aws-build-runner
+#
+# Caches the token in ~/.cache/claude-github-app/token (chmod 600) and mints a new one when under 10 minutes
+# remain. Needs curl, jq, openssl. Exits 1 with a reason on stderr if it can't.
+set -euo pipefail
+dir="${HOME}/.config/claude-github-app"
+cache="${HOME}/.cache/claude-github-app/token"
+[[ -r "$dir/key.pem" && -r "$dir/app.env" ]] || { echo "claude-github-token: needs $dir/key.pem and $dir/app.env" >&2; exit 1; }
+# shellcheck source=/dev/null
+. "$dir/app.env"
+[[ "${APP_ID:-}" =~ ^[0-9]+$ && "${REPO:-}" =~ ^[A-Za-z0-9._-]+/[A-Za-z0-9._-]+$ ]] \
+  || { echo "claude-github-token: app.env needs APP_ID=<digits> and REPO=<owner>/<repo>" >&2; exit 1; }
+[[ "$(stat -c %a "$dir/key.pem")" == 600 ]] || { echo "claude-github-token: $dir/key.pem must be chmod 600" >&2; exit 1; }
+
+now="$(date +%s)"
+if [[ -s "$cache" ]] && read -r expires token < "$cache" && (( expires - now > 600 )); then
+  printf '%s\n' "$token"; exit 0
+fi
+
+b64() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+header="$(printf '{"alg":"RS256","typ":"JWT"}' | b64)"
+payload="$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' $((now - 60)) $((now + 540)) "$APP_ID" | b64)"
+signature="$(printf '%s.%s' "$header" "$payload" | openssl dgst -sha256 -sign "$dir/key.pem" | b64)"
+jwt="${header}.${payload}.${signature}"
+api() { curl -fsS -H "Authorization: Bearer ${jwt}" -H "Accept: application/vnd.github+json" "$@"; }
+installation="$(api "https://api.github.com/repos/${REPO}/installation" | jq -r .id)"
+[[ "$installation" =~ ^[0-9]+$ ]] || { echo "claude-github-token: the App isn't installed on ${REPO}" >&2; exit 1; }
+response="$(api -X POST "https://api.github.com/app/installations/${installation}/access_tokens")"
+token="$(jq -r .token <<<"$response")"
+expires="$(date -d "$(jq -r .expires_at <<<"$response")" +%s)"
+[[ "$token" == ghs_* ]] || { echo "claude-github-token: GitHub didn't return a token" >&2; exit 1; }
+mkdir -p "$(dirname "$cache")"; chmod 700 "$(dirname "$cache")"
+( umask 077; printf '%s %s\n' "$expires" "$token" > "$cache" )
+printf '%s\n' "$token"

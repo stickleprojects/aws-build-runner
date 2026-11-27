@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# gh as Claude's own App (#23): a fresh App token, and its own gh config, so Kieron's login is never used.
+set -euo pipefail
+token="$(claude-github-token)"
+export GH_CONFIG_DIR="${HOME}/.config/gh-claude"
+mkdir -p "$GH_CONFIG_DIR"
+GH_TOKEN="$token" exec gh "$@"
