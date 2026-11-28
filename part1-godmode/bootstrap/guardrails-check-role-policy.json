@@ -61,6 +61,20 @@
       "Resource": "arn:aws:cloudwatch:ap-southeast-2:{{ACCOUNT_ID}}:alarm:*"
     },
     {
+      "Sid": "ReadCloudTrailForTheRunAudit",
+      "Effect": "Allow",
+      "Action": "cloudtrail:LookupEvents",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "aws:RequestedRegion": [
+            "ap-southeast-2",
+            "us-east-1"
+          ]
+        }
+      }
+    },
+    {
       "Sid": "ReadTheAnomalySubscription",
       "Effect": "Allow",
       "Action": "ce:GetAnomalySubscriptions",

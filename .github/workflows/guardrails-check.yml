@@ -1,5 +1,6 @@
 # Guardrails drift check (#42 C): compares what's live in the account with the repo, daily and after every
-# apply (part1-godmode/guardrails_check.py). On a difference it opens or updates one issue, "Guardrails drift"
+# apply (part1-godmode/guardrails_check.py). After an apply or guardrails run it also audits what that run did
+# in AWS, from CloudTrail (run_audit.py), and opens an issue for Kieron if AWS refused any of its calls. On a difference it opens or updates one issue, "Guardrails drift"
 # (label guardrails-drift), assigned to Kieron, with what differs and the command that fixes it. It closes
 # the issue once everything matches again. It changes nothing in AWS.
 #
@@ -29,7 +30,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: guardrails-check
-    timeout-minutes: 10
+    timeout-minutes: 30   # the run audit waits ~12 min for CloudTrail
     permissions:
       issues: write     # the drift issue
       id-token: write   # OIDC: sign in to AWS without keys
@@ -89,3 +90,40 @@ jobs:
             gh issue comment "$n" --body-file "$body"
             gh issue close "$n"
           fi
+
+      # After an apply or guardrails run: what its AWS session changed, from CloudTrail (run_audit.py, #42).
+      # A refused call means the run's code tried something outside its role: an issue for Kieron, and this run fails.
+      - name: What the run did in AWS (CloudTrail)
+        id: audit
+        if: always() && github.event_name == 'workflow_run'
+        env:
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          ENDED: ${{ github.event.workflow_run.updated_at }}
+        run: |
+          set +e
+          python3 -I part1-godmode/run_audit.py --workflow "$WORKFLOW" --run-id "$RUN_ID" --ended "$ENDED" > "$RUNNER_TEMP/audit.md"
+          rc=$?
+          set -e
+          cat "$RUNNER_TEMP/audit.md"
+          cat "$RUNNER_TEMP/audit.md" >> "$GITHUB_STEP_SUMMARY"
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+
+      - name: Issue for calls AWS refused
+        if: always() && steps.audit.outputs.rc == '1'
+        env:
+          WORKFLOW: ${{ github.event.workflow_run.name }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          gh label create run-audit --color b60205 --description "A pipeline run tried something outside its role (run_audit.py)" 2>/dev/null || true
+          { cat "$RUNNER_TEMP/audit.md"; echo; echo "Audited run: $RUN_URL"; } > "$RUNNER_TEMP/audit-body.md"
+          gh issue create --title "Run audit: AWS refused calls in a $WORKFLOW run" --label run-audit \
+            --assignee stickleprojects --body-file "$RUNNER_TEMP/audit-body.md"
+
+      - name: Fail if the audit found refused calls or couldn't run
+        if: always() && steps.audit.outputs.rc != '' && steps.audit.outputs.rc != '0'
+        env:
+          RC: ${{ steps.audit.outputs.rc }}
+        run: |
+          echo "run audit: exit $RC (1 refused calls, 2 couldn't run); see the summary"
+          exit 1

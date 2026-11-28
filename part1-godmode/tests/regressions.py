@@ -1081,7 +1081,7 @@ def guardrails_drift_is_checked():
         problems.append("the check role can be assumed from outside main's guardrails-check environment")
     pol = json.loads((P1 / "bootstrap" / "guardrails-check-role-policy.json").read_text())
     writes = [a for st in pol["Statement"] for a in ([st["Action"]] if isinstance(st["Action"], str) else st["Action"])
-              if not re.match(r"[a-z]+:(Get|List|Describe|View)", a)]
+              if not re.match(r"[a-z]+:(Get|List|Describe|View|LookupEvents$)", a)]
     if writes:
         problems.append(f"the check role can do more than read: {writes}")
     boot = (P1 / "bootstrap-github-apply.sh").read_text()
@@ -1395,6 +1395,17 @@ def new_tools_baked_before_listed():
                 problems.append(f"smoke-test.sh doesn't check {tool} (from AHEAD_PACKAGES' {pkg}) runs for the job user")
     if "## Adding a tool" not in (P2 / "ami" / "MACHINE-REQUIREMENTS.md").read_text():
         problems.append("MACHINE-REQUIREMENTS.md doesn't say how a new tool gets onto the image before it's listed")
+    return problems
+
+
+
+@rule("2026-11-28 (#96): Claude wrote `approved: review on PR #96` unquoted. YAML reads `#96` as a comment, so the "
+      "entry said only 'review on PR' and the approved check failed. The PR number must be quoted.")
+def approval_pr_number_is_quoted():
+    problems = []
+    for n, line in enumerate((P1 / "policy.yaml").read_text().splitlines(), 1):
+        if re.match(r"\s*approved:\s*review on PR", line):
+            problems.append(f"policy.yaml:{n}: `{line.strip()}` is unquoted, so YAML drops the #N; quote it")
     return problems
 
 
