@@ -303,6 +303,11 @@ def notify(state: str, summary: str, details: list[str]) -> None:
         pass
 
 
+def footer(stamp: str) -> str:
+    """The report's last line: when it ran (laptop time, Sydney) and which script sent it."""
+    return f"sent at {stamp} by daily_check.py"
+
+
 def main(argv) -> int:
     if "--telegram-chats" in argv:
         token = config().get("AWS_CHECK_TELEGRAM_BOT_TOKEN", "")
@@ -326,7 +331,7 @@ def main(argv) -> int:
         with LOG.open("a") as f:
             f.write("".join(f"{stamp} {line}\n" for line in lines))
         icon = {"OK": "✅", "WARN": "⚠️", "ALERT": "🚨"}.get(state, "")
-        why = send_telegram(f"{icon} " + "\n".join(lines) + f"\n\n{stamp} Sydney · part2-runner/laptop/daily_check.py")
+        why = send_telegram(f"{icon} " + "\n".join(lines) + "\n\n" + footer(stamp))
         if why:
             lines.append(f"WARN  {why}")
             with LOG.open("a") as f:
