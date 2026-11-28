@@ -109,6 +109,19 @@ tool unzip - distro:unzip
 
 The `sha256` was checked against nodejs.org's `SHASUMS256.txt` for v22.23.5 by both sides on 2026-11-18.
 
+## Adding a tool
+
+A new `tool` line can't go straight into the file: spellbound3d's CI checks every machine against it, so the line
+fails every job until an image has the tool (spellbound3d PR #333, 2026-11-28). So:
+
+1. The consumer asks us. We add its package to `AHEAD_PACKAGES` in [setup.sh](setup.sh), and a check that it runs to
+   [smoke-test.sh](smoke-test.sh).
+2. We bake. Once the image passes and is current, we tell the consumer.
+3. The consumer adds the line; its prereqs check guards it from then on.
+4. We remove the package from `AHEAD_PACKAGES` (a package in both is harmless meanwhile).
+
+Ahead now: `ffmpeg` (ffmpeg, ffprobe) and `xvfb` (xvfb-run), for spellbound3d 0089's `movie.yml`.
+
 ## Web browsers: `tools/web/machine-requirements.txt`
 
 A second file, owned by spellbound3d (their change 0030), for the system libraries of the browsers the web checks

@@ -1377,6 +1377,27 @@ def pools_reads_are_visible():
     return problems
 
 
+
+@rule("2026-11-28: spellbound3d listed ffmpeg, ffprobe and xvfb-run in machine-requirements.txt before any image had "
+      "them, and its smoke test failed every CI job (PR #333). A new tool is baked first (setup.sh AHEAD_PACKAGES, "
+      "checked by smoke-test.sh), and the consumer lists it after.")
+def new_tools_baked_before_listed():
+    problems = []
+    setup = (P2 / "ami" / "setup.sh").read_text()
+    m = re.search(r'^AHEAD_PACKAGES="([^"]*)"', setup, re.M)
+    if not m or "$AHEAD_PACKAGES" not in setup:
+        return ["setup.sh has no AHEAD_PACKAGES install, so a consumer can't get a new tool before it lists it"]
+    smoke = (P2 / "ami" / "smoke-test.sh").read_text()
+    tools = {"ffmpeg": ["ffmpeg", "ffprobe"], "xvfb": ["xvfb-run"]}
+    for pkg in m.group(1).split():
+        for tool in tools.get(pkg, [pkg]):
+            if f"command -v" not in smoke or tool not in smoke:
+                problems.append(f"smoke-test.sh doesn't check {tool} (from AHEAD_PACKAGES' {pkg}) runs for the job user")
+    if "## Adding a tool" not in (P2 / "ami" / "MACHINE-REQUIREMENTS.md").read_text():
+        problems.append("MACHINE-REQUIREMENTS.md doesn't say how a new tool gets onto the image before it's listed")
+    return problems
+
+
 def main():
     wanted = sys.argv[1:]  # rule names; none = all
     unknown = set(wanted) - {name for name, _, _ in RULES}
