@@ -1398,6 +1398,17 @@ def new_tools_baked_before_listed():
     return problems
 
 
+
+@rule("2026-11-28 (#96): Claude wrote `approved: review on PR #96` unquoted. YAML reads `#96` as a comment, so the "
+      "entry said only 'review on PR' and the approved check failed. The PR number must be quoted.")
+def approval_pr_number_is_quoted():
+    problems = []
+    for n, line in enumerate((P1 / "policy.yaml").read_text().splitlines(), 1):
+        if re.match(r"\s*approved:\s*review on PR", line):
+            problems.append(f"policy.yaml:{n}: `{line.strip()}` is unquoted, so YAML drops the #N; quote it")
+    return problems
+
+
 def main():
     wanted = sys.argv[1:]  # rule names; none = all
     unknown = set(wanted) - {name for name, _, _ in RULES}
