@@ -1,0 +1,42 @@
+# Clears a stale "approved" failure once Kieron approves (2026-11-28, #96).
+#
+# On a policy PR, the "approved" check runs on every push and fails until Kieron's review is on that commit. When
+# he approves, the review re-runs it and that run passes, but the earlier failed run stays on the same commit, and
+# GitHub keeps blocking the merge on it. After an "approval" run triggered by a review passes, this re-runs the
+# failed "approval" runs from pull_request events on the same commit. They check again, see his review, and pass.
+#
+# It runs main's copy of this file (workflow_run), with one permission: re-run Actions runs. It re-runs nothing
+# but approval.yml's failed runs for that exact commit, so it can't approve anything, and a re-run still fails
+# without Kieron's review on the latest commit.
+name: approval-rerun
+
+on:
+  workflow_run:
+    workflows: [approval]
+    types: [completed]
+
+permissions: {}
+
+jobs:
+  rerun-stale:
+    if: github.event.workflow_run.event == 'pull_request_review' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write   # re-run the stale approval runs
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - name: Re-run the failed approval runs on the approved commit
+        run: |
+          [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "unexpected head sha" >&2; exit 1; }
+          ids="$(gh api "repos/$REPO/actions/workflows/approval.yml/runs?head_sha=$HEAD_SHA&event=pull_request&status=failure" \
+            --jq '.workflow_runs[].id')"
+          if [[ -z "$ids" ]]; then echo "no stale approval failures on ${HEAD_SHA:0:12}"; exit 0; fi
+          for id in $ids; do
+            [[ "$id" =~ ^[0-9]+$ ]] || continue
+            echo "re-running approval run $id on ${HEAD_SHA:0:12}"
+            gh run rerun "$id" --failed --repo "$REPO"
+          done
