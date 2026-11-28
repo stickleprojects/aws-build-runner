@@ -1435,6 +1435,45 @@ def stale_approved_failure_is_rerun():
     return problems
 
 
+
+@rule("2026-11-28 (#98): with two accounts during the move (#17), a script run with a profile left on the wrong "
+      "account would change that account. The part 2 scripts didn't check at all (deploy.sh there would start a "
+      "second launcher, and one job would get two runners), and rollback.sh checked only the user name.")
+def every_aws_writer_checks_the_account():
+    problems = []
+    writes = re.compile(r"\baws [a-z0-9-]+ (create|put|delete|update|deploy|run-instances|terminate|attach|detach|"
+                        r"tag|untag|register|deregister|copy|modify|start|stop|send|invoke|add|remove|set|enable|disable)")
+    on_instance = {"setup.sh"}   # runs on the bake instance with its own narrow role, not a laptop or CI profile
+    for path in SHELL_SCRIPTS:
+        rel = path.relative_to(ROOT)
+        # Libraries are sourced by scripts that check; files/ runs on the instances.
+        if "files" in path.parts or path.name in on_instance or path.parent.name == "lib" or path.name == "lib.sh":
+            continue
+        text = path.read_text()
+        code = "\n".join(l for l in text.splitlines() if not l.lstrip().startswith("#"))
+        if not writes.search(code):
+            continue
+        if path.is_relative_to(P2):
+            src = '. "$(dirname "$0")/../lib/account.sh" && require_account'
+            first_write = writes.search(code).start()
+            if src not in code:
+                problems.append(f"{rel} changes AWS without require_account (part2-runner/lib/account.sh)")
+            elif code.index(src) > first_write:
+                problems.append(f"{rel} calls require_account only after changing AWS")
+        elif "get-caller-identity --query Account" not in code:
+            problems.append(f"{rel} changes AWS without comparing the credentials' account with the target's")
+    cfg = (P1 / "config.py").read_text()
+    if "if not TARGET:" not in cfg or "_from_gh" not in cfg.split("if not TARGET:")[1].split("\n")[1]:
+        problems.append("config.py lets a named target fall back to the GitHub variables, which hold the default account")
+    if ".env.*.local" not in (ROOT / ".gitignore").read_text().splitlines():
+        problems.append(".gitignore doesn't ignore the targets' env files (.env.*.local)")
+    ids = subprocess.run(["git", "grep", "-nE", r"\b[0-9]{12}\b", "--", ".", ":!*.lock"], cwd=ROOT,
+                         capture_output=True, text=True).stdout.splitlines()
+    problems += [f"a 12-digit account id in the repo: {l[:100]}" for l in ids
+                 if not re.search(r"000000000000|123456789012|111111111111|222222222222|999999999999|111122223333", l)]
+    return problems
+
+
 def main():
     wanted = sys.argv[1:]  # rule names; none = all
     unknown = set(wanted) - {name for name, _, _ in RULES}

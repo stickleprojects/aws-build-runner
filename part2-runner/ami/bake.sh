@@ -11,6 +11,8 @@
 #
 #   part2-runner/ami/bake.sh
 set -Eeuo pipefail
+# shellcheck source=../lib/account.sh
+. "$(dirname "$0")/../lib/account.sh" && require_account   # the target account only (#98)
 cd "$(dirname "$0")"
 # shellcheck source=../lib/github-app.sh
 . ../lib/github-app.sh

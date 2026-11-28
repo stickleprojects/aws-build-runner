@@ -8,6 +8,8 @@
 # Testing the candidate and passing: it becomes current (/build/runner/ami-id, /build/runner/manifest),
 # which is what runners launch from. Failing: the current image stays as it is.
 set -Eeuo pipefail
+# shellcheck source=../lib/account.sh
+. "$(dirname "$0")/../lib/account.sh" && require_account   # the target account only (#98)
 cd "$(dirname "$0")"
 
 export AWS_REGION=ap-southeast-2

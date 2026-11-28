@@ -8,6 +8,8 @@
 # subject). Read-only: query the runner's logs (launcher, webhook, per-job usage) and read Sydney spot
 # prices. Nothing else.
 set -euo pipefail
+# shellcheck source=../lib/account.sh
+. "$(dirname "$0")/../lib/account.sh" && require_account   # the target account only (#98)
 
 NAME=build-runner-usage
 GROUP=build-runner

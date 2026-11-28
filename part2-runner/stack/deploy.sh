@@ -13,6 +13,8 @@
 #
 # Runners aren't used until spellbound3d's SDLC_RUNNER says aws-light; this only makes them possible.
 set -Eeuo pipefail
+# shellcheck source=../lib/account.sh
+. "$(dirname "$0")/../lib/account.sh" && require_account   # the target account only (#98)
 cd "$(dirname "$0")"
 export AWS_REGION=ap-southeast-2
 GROUP=build-runner
