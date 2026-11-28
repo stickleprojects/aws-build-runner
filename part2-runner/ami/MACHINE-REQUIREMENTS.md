@@ -120,7 +120,7 @@ fails every job until an image has the tool (spellbound3d PR #333, 2026-11-28). 
 3. The consumer adds the line; its prereqs check guards it from then on.
 4. We remove the package from `AHEAD_PACKAGES` (a package in both is harmless meanwhile).
 
-Ahead now: `ffmpeg` (ffmpeg, ffprobe) and `xvfb` (xvfb-run), for spellbound3d 0089's `movie.yml`.
+Ahead now: none. The first were `ffmpeg` (ffmpeg, ffprobe) and `xvfb` (xvfb-run) for spellbound3d 0089's `movie.yml`: baked on 2026-11-28 (#94), listed by spellbound3d #336 the same day, then removed here.
 
 ## Web browsers: `tools/web/machine-requirements.txt`
 

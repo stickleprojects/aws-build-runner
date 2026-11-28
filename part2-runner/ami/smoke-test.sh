@@ -95,8 +95,9 @@ check "memwatch samples real memory" "systemctl is-active build-runner-memwatch.
 check "hook refuses an unknown repo" "cd /tmp && GITHUB_REPOSITORY=someone/else GITHUB_ACTOR=stickleprojects GITHUB_EVENT_NAME=push GITHUB_EVENT_PATH=/dev/null /etc/github-runner/job-started.sh; test \$? -ne 0 && echo refused"
 
 # Tools work, as the job user (not just report a version).
-# Tools baked ahead of the consumer listing them (setup.sh AHEAD_PACKAGES): on the job's PATH and they run.
-check "ffmpeg, ffprobe, xvfb-run"  "as_job 'command -v ffmpeg ffprobe xvfb-run >/dev/null && ffmpeg -hide_banner -f lavfi -i testsrc=d=1:s=64x64 -f null - && ffprobe -version | head -1'"
+# Tools baked ahead of the consumer listing them (setup.sh AHEAD_PACKAGES) each get a check here that they run as
+# the job user, e.g. (2026-11-28, until spellbound3d listed them):
+#   check "ffmpeg, ffprobe, xvfb-run"  "as_job 'command -v ffmpeg ffprobe xvfb-run >/dev/null && ffmpeg -version'"
 check "godot runs a script"     "as_job 'printf \"extends SceneTree\nfunc _init():\n\tprint(\\\"smoke-ok\\\")\n\tquit()\n\" > /tmp/smoke.gd && godot --headless -s /tmp/smoke.gd' | grep -m1 smoke-ok"
 check "godot where install-godot.sh looks" "as_job 'test -x \$HOME/.local/opt/godot-*/godot && test -s \$HOME/.cache/godot/*.zip && echo present'"
 # spellbound3d's own Godot smoke test (their change 0034, on their main since ed2b2a8), offline, as ghrunner.
