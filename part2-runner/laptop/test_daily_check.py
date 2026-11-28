@@ -193,6 +193,9 @@ with tempfile.TemporaryDirectory() as d:
     os.chmod(dc.CONFIG, 0o644)
     check("a config others can read is refused", "chmod 600" in (dc.send_telegram("x") or ""))
 
+check("the report ends 'sent at <time> by daily_check.py'",
+      dc.footer("2026-11-28 11:52") == "sent at 2026-11-28 11:52 by daily_check.py", dc.footer("2026-11-28 11:52"))
+
 src = (HERE / "daily_check.py").read_text()
 code = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("#"))
 check("never calls Cost Explorer (US$0.01 a call)", '"ce"' not in code and "'ce'" not in code and " ce " not in code)
