@@ -1409,6 +1409,32 @@ def approval_pr_number_is_quoted():
     return problems
 
 
+
+@rule("2026-11-28 (#96): Kieron approved a policy PR and its 'approved' check re-ran green, but the run from the "
+      "earlier push had failed (no review yet). That failure stayed on the commit and blocked the merge, which "
+      "looked like his approval had failed. approval-rerun.yml re-runs it once a review run passes.")
+def stale_approved_failure_is_rerun():
+    import yaml
+    f = ROOT / ".github" / "workflows" / "approval-rerun.yml"
+    if not f.exists():
+        return ["no approval-rerun.yml: an approved PR keeps the stale 'approved' failure from before the review"]
+    wf = yaml.safe_load(f.read_text())
+    on = wf.get(True) or wf.get("on") or {}
+    problems = []
+    if on.get("workflow_run", {}).get("workflows") != ["approval"] or set(on) != {"workflow_run"}:
+        problems.append("approval-rerun.yml must run only after the approval workflow (workflow_run)")
+    job = wf.get("jobs", {}).get("rerun-stale", {})
+    cond = job.get("if", "")
+    if "workflow_run.event == 'pull_request_review'" not in cond or "conclusion == 'success'" not in cond:
+        problems.append("approval-rerun.yml must act only after a review-triggered approval run passed")
+    if wf.get("permissions") != {} or job.get("permissions") != {"actions": "write"}:
+        problems.append("approval-rerun.yml may hold only actions: write")
+    run = "".join(st.get("run", "") for st in job.get("steps", []))
+    if "workflows/approval.yml/runs?head_sha=$HEAD_SHA&event=pull_request&status=failure" not in run:
+        problems.append("approval-rerun.yml must re-run only approval.yml's failed pull_request runs on that commit")
+    return problems
+
+
 def main():
     wanted = sys.argv[1:]  # rule names; none = all
     unknown = set(wanted) - {name for name, _, _ in RULES}

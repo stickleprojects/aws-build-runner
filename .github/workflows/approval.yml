@@ -3,7 +3,8 @@
 # On a pull request, every approval field it adds or changes in policy.yaml must read "review on PR #N"
 # (this PR), and a code owner (.github/CODEOWNERS, Kieron) must have approved the PR's latest commit
 # (part1-godmode/check_approvals.py). It re-runs when a review is submitted or dismissed, so Kieron's Approve
-# click is what turns it green; a newer push needs a new approval. Then, as before, nothing may still be
+# click is what turns it green; a newer push needs a new approval. The push's own failed run is then re-run by
+# approval-rerun.yml, so it doesn't stay on the commit and block the merge. Then, as before, nothing may still be
 # "approved: pending", and the generated files must match.
 name: approval
 
