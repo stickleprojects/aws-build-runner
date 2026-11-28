@@ -71,10 +71,10 @@ say "  apt: ${APT_PACKAGES}; node ${NODE_VERSION}; drivers: ${DRIVERS:-none}"
 apt-get install -y -q --no-install-recommends $APT_PACKAGES
 # Ahead of the consumer (MACHINE-REQUIREMENTS.md, "Adding a tool"): tools a consumer needs but can't list yet,
 # because its CI checks every machine against the file. Remove each once the consumer's file lists it.
-# ffmpeg (ffmpeg, ffprobe) and xvfb (xvfb-run): spellbound3d 0089's movie.yml, 2026-11-28.
-AHEAD_PACKAGES="ffmpeg xvfb"
+# None now: ffmpeg and xvfb went in for spellbound3d 0089 on 2026-11-28 and moved to their file (#336) the same day.
+AHEAD_PACKAGES=""
 # shellcheck disable=SC2086 # one word per package
-apt-get install -y -q --no-install-recommends $AHEAD_PACKAGES
+[[ -z "$AHEAD_PACKAGES" ]] || apt-get install -y -q --no-install-recommends $AHEAD_PACKAGES
 curl -fsSL --retry 3 -o "/tmp/${NODE_FILE}" "https://nodejs.org/dist/v${NODE_VERSION}/${NODE_FILE}"
 echo "${NODE_SHA256}  /tmp/${NODE_FILE}" | sha256sum -c --quiet
 t="${NODE_FILE%.tar.xz}"
