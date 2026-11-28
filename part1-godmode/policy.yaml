@@ -340,4 +340,4 @@ changes:
     approved: 2026-11-27 Kieron
   - date: 2026-11-28
     what: "Run audit (#42): the read-only check role, godmode/aws-build-runner-guardrails-check, may look up CloudTrail events (cloudtrail:LookupEvents) in Sydney and us-east-1 only; us-east-1 because IAM, STS, Budgets and Cost Explorer record their events there. After every apply and guardrails run, guardrails-check lists what that run's AWS session changed, and opens an issue for Kieron if AWS refused any of its calls. It reads the account's 90-day event history, which covers every session, but prints only the audited run's, with the account id and Claude's user name redacted. It creates no trail and changes nothing. Free (management-event lookups cost nothing)"
-    approved: pending
+    approved: review on PR #96
