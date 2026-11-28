@@ -5,6 +5,8 @@
 #
 #   part2-runner/ami/prune-amis.sh [KEEP]
 set -Eeuo pipefail
+# shellcheck source=../lib/account.sh
+. "$(dirname "$0")/../lib/account.sh" && require_account   # the target account only (#98)
 export AWS_REGION=ap-southeast-2
 KEEP="${1:-3}"
 

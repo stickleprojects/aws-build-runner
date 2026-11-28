@@ -8,6 +8,8 @@
 #   - read its bundle (setup.sh and files/): s3:GetObject on bake/* in the artifacts bucket only (fetch.py, #48)
 #   - register with Systems Manager, so a running bake instance can be inspected (Run Command, Session Manager)
 set -Eeuo pipefail
+# shellcheck source=../lib/account.sh
+. "$(dirname "$0")/../lib/account.sh" && require_account   # the target account only (#98)
 cd "$(dirname "$0")"
 
 NAME=build-runner-bake

@@ -29,6 +29,9 @@ else
 fi
 [[ "$(aws sts get-caller-identity --query Arn --output text)" != *":user/${USER_NAME}" ]] \
   || { echo "Refusing: run this as admin, not as Claude's user." >&2; exit 1; }
+caller_account="$(aws sts get-caller-identity --query Account --output text)"
+[[ "$caller_account" == "$ACCOUNT_ID" ]] \
+  || { echo "Refusing: credentials are for …${caller_account: -4}, the target is …${ACCOUNT_ID: -4} (#98)." >&2; exit 1; }
 
 arn_of() { echo "arn:aws:iam::${ACCOUNT_ID}:policy/$1"; }
 from_commit="$(aws iam list-policy-tags --policy-arn "$(arn_of claude-assistant-policy)" \

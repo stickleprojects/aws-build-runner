@@ -127,6 +127,9 @@ jobs:
       - name: Run audit tests (offline)
         run: python3 -I part1-godmode/tests/test_run_audit.py
 
+      - name: Config target tests (offline)
+        run: python3 -I part1-godmode/tests/test_config.py
+
       - name: Approval check tests (offline)
         run: python3 -I part1-godmode/tests/test_check_approvals.py
 

@@ -8,6 +8,8 @@
 # subject). It can read and write ONE parameter, /build/runner/curfew (Kieron's extend / stop), which the
 # launcher reads on every run. Nothing else: it can't start, stop or see any instance itself.
 set -euo pipefail
+# shellcheck source=../lib/account.sh
+. "$(dirname "$0")/../lib/account.sh" && require_account   # the target account only (#98)
 
 NAME=build-runner-curfew
 GROUP=build-runner

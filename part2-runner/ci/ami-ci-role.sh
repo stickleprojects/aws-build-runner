@@ -8,6 +8,8 @@
 # repo sends GitHub's immutable, ID-based subject). It can do what bake.sh, smoke-test.sh and
 # prune-amis.sh need, in Sydney, and no IAM beyond passing the existing bake role to EC2.
 set -euo pipefail
+# shellcheck source=../lib/account.sh
+. "$(dirname "$0")/../lib/account.sh" && require_account   # the target account only (#98)
 cd "$(dirname "$0")"
 
 NAME=build-runner-ami-ci

@@ -8,6 +8,8 @@
 # per-job usage line to the one log group /build/runner/jobs (ami/files/job-usage.py, as root). Jobs run
 # as ghrunner, which the boot step blocks from the instance metadata service, so jobs can't use it at all.
 set -Eeuo pipefail
+# shellcheck source=../lib/account.sh
+. "$(dirname "$0")/../lib/account.sh" && require_account   # the target account only (#98)
 
 NAME=build-runner-instance
 GROUP=build-runner
