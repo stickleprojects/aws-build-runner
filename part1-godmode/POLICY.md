@@ -2,6 +2,9 @@
 
 Generated from [policy.yaml](policy.yaml) by `build-policies.py`. Don't edit this file.
 
+> **DRAFT, not approved yet.** Pending:
+> - change 2026-11-28: Run audit (#42): the read-only check role, godmode/aws-build-runner-guardrails-check, may look up CloudTrail events (cloudtrail:LookupEvents) in Sydney and us-east-1 only; us-east-1 because IAM, STS, Budgets and Cost Explorer record their events there. After every apply and guardrails run, guardrails-check lists what that run's AWS session changed, and opens an issue for Kieron if AWS refused any of its calls. It reads the account's 90-day event history, which covers every session, but prints only the audited run's, with the account id and Claude's user name redacted. It creates no trail and changes nothing. Free (management-event lookups cost nothing)
+
 Claude's IAM user (`AWS_CLAUDE_USER`) in the account `AWS_ACCOUNT_ID` · home region Sydney (`ap-southeast-2`). The account id and user name aren't in the repo: see [config.py](config.py).
 
 ## In short
@@ -143,6 +146,7 @@ Each group also has an AWS Resource Group of the same name (a saved tag search) 
 | 2026-11-27 | Guardrails check fix: its read-only role may describe any alarm in Sydney (alarm:*, was guardrail-fast-*), because listing alarms by name prefix is authorized against all of them. Still read-only; it can change no alarm. Free | 2026-11-27 Kieron |
 | 2026-11-27 | Guardrails workflow (#42 A): role godmode/aws-build-runner-guardrails, which only the guardrails workflow on main can assume after Kieron's approval, runs bootstrap-budget-stop.sh in place of CloudShell. It can change only the guardrails, by name: the guardrail-monthly budget and its stop action, policy guardrails/budget-stop, the roles guardrails/budget-action-runner and guardrails/budget-kill-switch (passed only to Budgets and Lambda), the kill switch Lambda and its logs, the two guardrail topics, the guardrail-fast-* alarms and the anomaly alert. Never Claude's user or policies, the godmode roles or itself. The drift check also watches this role. Free | 2026-11-27 Kieron |
 | 2026-11-27 | Close the guardrails role's escalation paths: a permissions boundary, guardrails/guardrail-roles-boundary, caps the two helper roles at what the kill switch and budget action do. The guardrails workflow may create them or change their inline policies only while that boundary is on them, and may never remove it, change their trust, or create or edit any managed policy (budget-stop included). Those are set only from CloudShell (bootstrap-github-apply.sh). The drift check also checks the boundary and the helper roles. Free | 2026-11-27 Kieron |
+| 2026-11-28 | Run audit (#42): the read-only check role, godmode/aws-build-runner-guardrails-check, may look up CloudTrail events (cloudtrail:LookupEvents) in Sydney and us-east-1 only; us-east-1 because IAM, STS, Budgets and Cost Explorer record their events there. After every apply and guardrails run, guardrails-check lists what that run's AWS session changed, and opens an issue for Kieron if AWS refused any of its calls. It reads the account's 90-day event history, which covers every session, but prints only the audited run's, with the account id and Claude's user name redacted. It creates no trail and changes nothing. Free (management-event lookups cost nothing) | pending |
 
 ## Policy sizes
 

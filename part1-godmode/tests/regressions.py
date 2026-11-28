@@ -1081,7 +1081,7 @@ def guardrails_drift_is_checked():
         problems.append("the check role can be assumed from outside main's guardrails-check environment")
     pol = json.loads((P1 / "bootstrap" / "guardrails-check-role-policy.json").read_text())
     writes = [a for st in pol["Statement"] for a in ([st["Action"]] if isinstance(st["Action"], str) else st["Action"])
-              if not re.match(r"[a-z]+:(Get|List|Describe|View)", a)]
+              if not re.match(r"[a-z]+:(Get|List|Describe|View|LookupEvents$)", a)]
     if writes:
         problems.append(f"the check role can do more than read: {writes}")
     boot = (P1 / "bootstrap-github-apply.sh").read_text()
